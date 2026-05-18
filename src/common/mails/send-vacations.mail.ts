@@ -35,7 +35,7 @@ export const sendMailTemplate = (
         "
       >
         <img
-          src="${logoUrl}"
+          src="https://sigerh.senasa.gob.hn/logos/logo.svg"
           alt="SIGERH"
           style="max-width: 180px; margin-bottom: 18px"
         />
