@@ -1,0 +1,38 @@
+name: SIGERH-SENASA CI
+
+on:
+  push:
+    branches: [ "deploy-server" ]
+
+jobs:
+  build:
+    runs-on: [self-hosted, sigerh-backend]
+
+    strategy:
+      matrix:
+        node-version: [22.x]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Build and Deploy
+        run: |
+          npm install -E
+          rm -rf dist
+          npx nest build
+
+          rm -rf /home/senasa/projects/sigerh-backend/src
+          cp -r dist /home/senasa/projects/sigerh-backend/src
+          cp package.json /home/senasa/projects/sigerh-backend/package.json
+
+          cd /home/senasa/projects/sigerh-backend
+          npm install -E --omit=dev
+
+          pm2 restart sigerh-backend || pm2 start src/main.js --name sigerh-backend
+          pm2 save
