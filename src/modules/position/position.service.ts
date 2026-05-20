@@ -36,7 +36,7 @@ export class PositionService {
     }
 
     const position = this.positionRepository.create({
-      code: 'dto.code.trim()',
+      code: dto.code.trim(),
       name: dto.name.trim(),
       description: dto.description?.trim() || null,
       responsibilities: dto.responsibilities?.trim() || null,
