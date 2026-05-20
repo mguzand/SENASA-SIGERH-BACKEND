@@ -21,13 +21,13 @@ export class Position {
   name: string;
 
   @Column({ nullable: true, type: 'text' })
-  description: string;
+  description: string | null;
 
   @Column({ nullable: true, type: 'text' })
-  responsibilities: string;
+  responsibilities: string | null;
 
   @Column({ nullable: true, type: 'text' })
-  requirements: string;
+  requirements: string | null;
 
   @Column({ default: true })
   isActive: boolean;

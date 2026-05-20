@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, Repository } from 'typeorm';
 import { Position } from './entities/position.entity';
@@ -32,7 +36,7 @@ export class PositionService {
     }
 
     const position = this.positionRepository.create({
-      code: dto.code.trim(),
+      code: 'dto.code.trim()',
       name: dto.name.trim(),
       description: dto.description?.trim() || null,
       responsibilities: dto.responsibilities?.trim() || null,
@@ -72,13 +76,17 @@ export class PositionService {
     position.code = dto.code?.trim() ?? position.code;
     position.name = dto.name?.trim() ?? position.name;
     position.description =
-      dto.description !== undefined ? dto.description?.trim() || null : position.description;
+      dto.description !== undefined
+        ? dto.description?.trim() || null
+        : position.description;
     position.responsibilities =
       dto.responsibilities !== undefined
         ? dto.responsibilities?.trim() || null
         : position.responsibilities;
     position.requirements =
-      dto.requirements !== undefined ? dto.requirements?.trim() || null : position.requirements;
+      dto.requirements !== undefined
+        ? dto.requirements?.trim() || null
+        : position.requirements;
     if (dto.isActive !== undefined) {
       position.isActive = dto.isActive;
     }
@@ -128,7 +136,7 @@ export class PositionService {
       query.andWhere(
         new Brackets((qb) => {
           qb.where('area.id = :departmentId', {
-            departmentId: params.departmentId.trim(),
+            departmentId: params.departmentId!.trim(),
           });
         }),
       );
@@ -140,11 +148,13 @@ export class PositionService {
       query.andWhere(
         new Brackets((qb) => {
           qb.where('LOWER(position.name) LIKE :search', { search });
-          qb.orWhere('LOWER(COALESCE(position.description, \'\')) LIKE :search', {
+          qb.orWhere("LOWER(COALESCE(position.description, '')) LIKE :search", {
             search,
           });
-          qb.orWhere('LOWER(COALESCE(area.name, \'\')) LIKE :search', { search });
-          qb.orWhere('LOWER(COALESCE(position.code, \'\')) LIKE :search', { search });
+          qb.orWhere("LOWER(COALESCE(area.name, '')) LIKE :search", { search });
+          qb.orWhere("LOWER(COALESCE(position.code, '')) LIKE :search", {
+            search,
+          });
         }),
       );
     }
@@ -188,34 +198,41 @@ export class PositionService {
       )
       .leftJoin('record.area', 'area');
 
-    const [totalPositionsRaw, departmentsCoveredRaw, employeesAssignedRaw, withoutDepartmentRaw] =
-      await Promise.all([
-        this.positionRepository
-          .createQueryBuilder('position')
-          .select('COUNT(position.id)', 'total')
-          .getRawOne(),
-        statsBaseQuery
-          .clone()
-          .andWhere('area.id IS NOT NULL')
-          .select('COUNT(DISTINCT area.id)', 'total')
-          .getRawOne(),
-        statsBaseQuery.clone().select('COUNT(DISTINCT record.id)', 'total').getRawOne(),
-        this.positionRepository
-          .createQueryBuilder('position')
-          .leftJoin(
-            EmployeeJobRecord,
-            'record',
-            `(record.nominal_position = position.id OR record.functional_position = position.id)
+    const [
+      totalPositionsRaw,
+      departmentsCoveredRaw,
+      employeesAssignedRaw,
+      withoutDepartmentRaw,
+    ] = await Promise.all([
+      this.positionRepository
+        .createQueryBuilder('position')
+        .select('COUNT(position.id)', 'total')
+        .getRawOne(),
+      statsBaseQuery
+        .clone()
+        .andWhere('area.id IS NOT NULL')
+        .select('COUNT(DISTINCT area.id)', 'total')
+        .getRawOne(),
+      statsBaseQuery
+        .clone()
+        .select('COUNT(DISTINCT record.id)', 'total')
+        .getRawOne(),
+      this.positionRepository
+        .createQueryBuilder('position')
+        .leftJoin(
+          EmployeeJobRecord,
+          'record',
+          `(record.nominal_position = position.id OR record.functional_position = position.id)
              AND LOWER(record.status) = :status`,
-            {
-              status: 'active',
-            },
-          )
-          .leftJoin('record.area', 'area')
-          .where('record.id IS NULL OR area.id IS NULL')
-          .select('COUNT(DISTINCT position.id)', 'total')
-          .getRawOne(),
-      ]);
+          {
+            status: 'active',
+          },
+        )
+        .leftJoin('record.area', 'area')
+        .where('record.id IS NULL OR area.id IS NULL')
+        .select('COUNT(DISTINCT position.id)', 'total')
+        .getRawOne(),
+    ]);
 
     return {
       data: data.map((item) => ({
