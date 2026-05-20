@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { Brackets, DataSource, Repository } from 'typeorm';
 
 import { VacationRequest } from './entities/vacation-request.entity';
 
@@ -21,7 +21,11 @@ import { EmployeeVacationPeriodService } from '../employee-vacation-period/emplo
 import { VacationMovementService } from '../vacation-movement/vacation-movement.service';
 import { VacationRequestDayService } from '../vacation_request_days/vacation_request_days.service';
 import { CreateVacationRequestDto } from './dtos/create-vacation-request.dto';
+import { ListHrVacationRequestsDto } from './dtos/list-hr-vacation-requests.dto';
 import { ReviewVacationRequestDto } from './dtos/review-vacation-request.dto';
+import { sendVacations } from 'src/common/helpers/send-email.helper';
+import { AreaManagerService } from '../area-manager/area-manager.service';
+import { AreaManagerRole } from '../area-manager/interfaces/area-manager-role.enum';
 
 @Injectable()
 export class VacationRequestService {
@@ -35,9 +39,203 @@ export class VacationRequestService {
     private readonly vacationRequestDetailService: VacationRequestDetailService,
     private readonly employeeVacationPeriodService: EmployeeVacationPeriodService,
     private readonly vacationMovementService: VacationMovementService,
+    private readonly areaManagerService: AreaManagerService,
   ) {}
 
-  async create(dto: CreateVacationRequestDto) {
+  async findHrInbox(
+    params: ListHrVacationRequestsDto,
+    currentEmployeeId: string,
+  ) {
+    // const areaIds = await this.areaManagerService.findAreaIdsByEmployeeAndRole(
+    //   currentEmployeeId,
+    //   AreaManagerRole.HR,
+    // );
+
+    //if (!areaIds.length) {
+    // return {
+    //   data: [],
+    //   meta: {
+    //     page: 1,
+    //     limit: Math.min(Math.max(Number(params.limit) || 6, 1), 24),
+    //     total: 0,
+    //     totalPages: 0,
+    //   },
+    //   stats: {
+    //     pending: 0,
+    //     requestedDays: 0,
+    //     approved: 0,
+    //     rejected: 0,
+    //     total: 0,
+    //   },
+    // };
+    //}
+
+    const page = Math.max(Number(params.page) || 1, 1);
+    const limit = Math.min(Math.max(Number(params.limit) || 6, 1), 24);
+    const status = params.status || 'pending';
+
+    const query = this.vacationRequestRepository
+      .createQueryBuilder('request')
+      .leftJoinAndSelect('request.employee', 'employee')
+      .leftJoinAndSelect('request.area', 'area')
+      //.where('request.area_id IN (:...areaIds)', { areaIds })
+      .andWhere('request.boss_status = :bossApproved', {
+        bossApproved: VacationRequestStatus.APPROVED,
+      });
+
+    if (params.search?.trim()) {
+      const search = `%${params.search.trim().toLowerCase()}%`;
+
+      query.andWhere(
+        new Brackets((qb) => {
+          qb.where(
+            "LOWER(COALESCE(request.employee_comment, '')) LIKE :search",
+            {
+              search,
+            },
+          );
+          qb.orWhere('LOWER(employee.firstName) LIKE :search', { search });
+          qb.orWhere("LOWER(COALESCE(employee.middleName, '')) LIKE :search", {
+            search,
+          });
+          qb.orWhere('LOWER(employee.lastName) LIKE :search', { search });
+          qb.orWhere(
+            "LOWER(COALESCE(employee.secondLastName, '')) LIKE :search",
+            { search },
+          );
+          qb.orWhere("LOWER(COALESCE(employee.dni, '')) LIKE :search", {
+            search,
+          });
+          qb.orWhere(
+            "LOWER(COALESCE(employee.biometric_id, '')) LIKE :search",
+            { search },
+          );
+          qb.orWhere("LOWER(COALESCE(area.name, '')) LIKE :search", { search });
+          qb.orWhere(
+            `LOWER(
+              CONCAT(
+                employee.firstName, ' ',
+                COALESCE(employee.middleName, ''), ' ',
+                employee.lastName, ' ',
+                COALESCE(employee.secondLastName, '')
+              )
+            ) LIKE :search`,
+            { search },
+          );
+        }),
+      );
+    }
+
+    this.applyHrInboxStatusFilter(query, status, currentEmployeeId);
+
+    query
+      .addSelect(
+        `CASE
+          WHEN request.hr_status = '${VacationRequestStatus.PENDING}' THEN 0
+          WHEN request.hr_status = '${VacationRequestStatus.APPROVED}' THEN 1
+          ELSE 2
+        END`,
+        'hr_status_order',
+      )
+      .orderBy('hr_status_order', 'ASC')
+      .addOrderBy('request.start_date', 'DESC')
+      .addOrderBy('request.created_at', 'DESC');
+
+    const [requests, total] = await query
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+
+    const statsBaseQuery = this.vacationRequestRepository
+      .createQueryBuilder('request')
+      //.where('request.area_id IN (:...areaIds)', { areaIds })
+      .andWhere('request.boss_status = :bossApproved', {
+        bossApproved: VacationRequestStatus.APPROVED,
+      });
+
+    const pendingCount = await this.applyHrInboxStatusFilter(
+      statsBaseQuery.clone(),
+      'pending',
+      currentEmployeeId,
+    ).getCount();
+
+    const approvedCount = await this.applyHrInboxStatusFilter(
+      statsBaseQuery.clone(),
+      'approved',
+      currentEmployeeId,
+    ).getCount();
+
+    const rejectedCount = await this.applyHrInboxStatusFilter(
+      statsBaseQuery.clone(),
+      'rejected',
+      currentEmployeeId,
+    ).getCount();
+
+    const pendingDaysQuery = this.applyHrInboxStatusFilter(
+      statsBaseQuery
+        .clone()
+        .select('COALESCE(SUM(request.requested_days), 0)', 'totalDays'),
+      'pending',
+      currentEmployeeId,
+    );
+    const pendingDaysRaw = (await pendingDaysQuery.getRawOne()) as {
+      totalDays: string;
+    } | null;
+
+    return {
+      data: requests.map((request) => {
+        const employee = request.employee;
+        const fullName = [
+          employee?.firstName,
+          employee?.middleName,
+          employee?.lastName,
+          employee?.secondLastName,
+        ]
+          .filter(Boolean)
+          .join(' ');
+
+        return {
+          id: request.id,
+          employeeId: employee?.id || null,
+          employeeCode: employee?.biometric_id
+            ? `EMP-${String(employee.biometric_id).padStart(4, '0')}`
+            : employee?.id
+              ? `EMP-${employee.id.slice(0, 4).toUpperCase()}`
+              : 'EMP-0000',
+          employeeName: fullName || 'Empleado sin nombre',
+          employeeInitials:
+            `${employee?.firstName?.[0] || ''}${employee?.lastName?.[0] || ''}`
+              .toUpperCase()
+              .trim(),
+          departmentName: request.area?.name || 'Sin área asignada',
+          status: request.hr_status,
+          stage: request.stage,
+          startDate: request.start_date,
+          endDate: request.end_date,
+          requestedDays: Number(request.requested_days || 0),
+          approvedDays: Number(request.approved_days || 0),
+          employeeComment: request.employee_comment,
+          resolvedAt: request.hr_reviewed_at || request.updated_at || null,
+          timingLabel: this.getTimingLabel(request.start_date),
+        };
+      }),
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+      stats: {
+        pending: pendingCount,
+        requestedDays: Number(pendingDaysRaw?.totalDays || 0),
+        approved: approvedCount,
+        rejected: rejectedCount,
+        total: pendingCount + approvedCount + rejectedCount,
+      },
+    };
+  }
+
+  async create(dto: CreateVacationRequestDto, users: any) {
     if (!dto.days || dto.days.length === 0) {
       throw new BadRequestException('Debe seleccionar al menos un día');
     }
@@ -76,6 +274,22 @@ export class VacationRequestService {
         queryRunner.manager,
       );
 
+      const formatted = sortedDays
+        .map((date) => {
+          const [year, month, day] = date.split('-');
+          return `${day}-${month}-${year}`;
+        })
+        .join(', ');
+
+      this.sendMailBoos(
+        dto.area_id,
+        users,
+        formatted,
+        dto.days.length,
+        (dto.employee_comment = ''),
+        savedRequest.id,
+      );
+
       await queryRunner.commitTransaction();
 
       return this.findOne(savedRequest.id);
@@ -84,6 +298,60 @@ export class VacationRequestService {
       throw error;
     } finally {
       await queryRunner.release();
+    }
+  }
+
+  async testEndpoint(dto: CreateVacationRequestDto, users: any) {
+    const sortedDays = [...new Set(dto.days)].sort();
+    const formatted = sortedDays
+      .map((date) => {
+        const [year, month, day] = date.split('-');
+        return `${day}-${month}-${year}`;
+      })
+      .join(', ');
+
+    return this.sendMailBoos(
+      dto.area_id,
+      users,
+      formatted,
+      dto.days.length,
+      dto.employee_comment,
+      'd41547b9-9041-433d-a6cb-91ad89080092',
+    );
+  }
+
+  async sendMailBoos(
+    area_id: string,
+    users: any,
+    formatted: string,
+    requestedDays: number,
+    comment: string = '',
+    id_request: string,
+  ) {
+    const boss = await this.areaManagerService.findTypeEmployee(
+      area_id,
+      AreaManagerRole.BOSS,
+    );
+
+    if (boss) {
+      await sendVacations(
+        boss.employee.email,
+        `Se requiere su aprobación para una solicitud de vacaciones de ${users.employees.firstName} ${users.employees.lastName}`,
+        `${boss.employee.firstName} ${boss.employee.lastName}`,
+        `${users.employees.names} ${users.employees.surname}`,
+        formatted,
+        `${requestedDays}`,
+        comment,
+        `https://sigerh.senasa.gob.hn/private/autorizations/boos/${id_request}/approved`,
+        `https://sigerh.senasa.gob.hn/private/autorizations/boos/${id_request}/rejected`,
+      );
+
+      return {
+        ok: true,
+        message: '',
+      };
+    } else {
+      throw new BadRequestException('no hay jefe para este empleado');
     }
   }
 
@@ -296,5 +564,64 @@ export class VacationRequestService {
 
   private formatDate(date: Date): string {
     return date.toISOString().split('T')[0];
+  }
+
+  private applyHrInboxStatusFilter(
+    query: any,
+    status: string,
+    currentEmployeeId: string,
+  ) {
+    switch (status) {
+      case 'approved':
+        return query
+          .andWhere('request.hr_status = :approvedStatus', {
+            approvedStatus: VacationRequestStatus.APPROVED,
+          })
+          .andWhere('request.stage = :completedStage', {
+            completedStage: VacationRequestStage.COMPLETED,
+          });
+      case 'rejected':
+        return query
+          .andWhere('request.hr_status = :rejectedStatus', {
+            rejectedStatus: VacationRequestStatus.REJECTED,
+          })
+          .andWhere('request.stage = :completedStage', {
+            completedStage: VacationRequestStage.COMPLETED,
+          });
+      case 'all':
+        return query.andWhere('request.hr_status IN (:...hrStatuses)', {
+          hrStatuses: [
+            VacationRequestStatus.PENDING,
+            VacationRequestStatus.APPROVED,
+            VacationRequestStatus.REJECTED,
+          ],
+        });
+      case 'pending':
+      default:
+        return query
+          .andWhere('request.hr_status = :pendingStatus', {
+            pendingStatus: VacationRequestStatus.PENDING,
+          })
+          .andWhere('request.stage = :hrStage', {
+            hrStage: VacationRequestStage.HR_REVIEW,
+          });
+    }
+  }
+
+  private getTimingLabel(startDate: string) {
+    const today = this.formatDate(new Date());
+
+    if (startDate < today) {
+      return 'Pasada';
+    }
+
+    const diffMs = new Date(startDate).getTime() - new Date(today).getTime();
+    const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffDays <= 1) {
+      return 'En 1 día';
+    }
+
+    return `En ${diffDays} días`;
   }
 }

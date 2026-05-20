@@ -16,7 +16,7 @@ export const sendMailTemplate = (
     color: #1f2937;
   "
 >
-  <div style="max-width: 680px; margin: 0 auto; padding: 40px 16px">
+  <div style="max-height: 100%px; margin: 0 auto; padding: 40px 16px">
     <div
       style="
         background: #ffffff;
@@ -30,36 +30,16 @@ export const sendMailTemplate = (
       <div
         style="
           background: #031222;
-          padding: 34px 24px;
+          padding: 20px 0px 0px 0px;
           text-align: center;
         "
       >
         <img
-          src="https://sigerh.senasa.gob.hn/logos/logo.svg"
+          src="https://sigerh.senasa.gob.hn/logos/logo.png"
           alt="SIGERH"
           style="max-width: 180px; margin-bottom: 18px"
         />
-
-        <h1
-          style="
-            color: #ffffff;
-            font-size: 26px;
-            margin: 0;
-            font-weight: 700;
-          "
-        >
-          Solicitud de Vacaciones
-        </h1>
-
-        <p
-          style="
-            color: #cbd5e1;
-            font-size: 15px;
-            margin: 10px 0 0;
-          "
-        >
-          Sistema de Gestión de Recursos Humanos
-        </p>
+ 
       </div>
 
       <!-- Body -->

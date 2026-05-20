@@ -23,10 +23,20 @@ export class AreaManager {
   employee_id: string;
 
   @Column({
+    type: 'varchar',
+    length: 120,
+    nullable: true,
+  })
+  url_document: string | null;
+
+  @Column({
     type: 'enum',
     enum: AreaManagerRole,
   })
   role: AreaManagerRole;
+
+  @Column({ default: false })
+  is_a_delegate: boolean;
 
   @Column({ default: true })
   is_active: boolean;

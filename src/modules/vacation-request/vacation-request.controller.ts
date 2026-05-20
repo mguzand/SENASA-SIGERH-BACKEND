@@ -1,8 +1,20 @@
-import { Body, Controller, Get, Param, Patch, Post, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 
 import { VacationRequestService } from './vacation-request.service';
 import { CreateVacationRequestDto } from './dtos/create-vacation-request.dto';
 import { ReviewVacationRequestDto } from './dtos/review-vacation-request.dto';
+import { ListHrVacationRequestsDto } from './dtos/list-hr-vacation-requests.dto';
+import { AuthGuard } from '@nestjs/passport';
 
 @Controller('vacation-requests')
 export class VacationRequestController {
@@ -11,8 +23,15 @@ export class VacationRequestController {
   ) {}
 
   @Post()
-  create(@Body() dto: CreateVacationRequestDto) {
-    return this.vacationRequestService.create(dto);
+  @UseGuards(AuthGuard('jwt'))
+  create(@Req() request, @Body() dto: CreateVacationRequestDto) {
+    return this.vacationRequestService.create(dto, request.user);
+  }
+
+  @Post('seen/vacations')
+  @UseGuards(AuthGuard('jwt'))
+  tesSeenVacations(@Req() request, @Body() dto: CreateVacationRequestDto) {
+    return this.vacationRequestService.testEndpoint(dto, request.user);
   }
 
   @Patch(':id/boss-review')
@@ -35,6 +54,11 @@ export class VacationRequestController {
     @Req() req: any,
   ) {
     return this.vacationRequestService.hrReview(id, dto, req.user.employee_id);
+  }
+
+  @Get('hr/inbox')
+  hrInbox(@Query() query: ListHrVacationRequestsDto, @Req() req: any) {
+    return this.vacationRequestService.findHrInbox(query, req.user.employee_id);
   }
 
   @Get()

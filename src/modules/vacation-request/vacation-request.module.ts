@@ -8,6 +8,7 @@ import { VacationRequestDaysModule } from '../vacation_request_days/vacation_req
 import { VacationRequestDetailModule } from '../vacation-request-detail/vacation-request-detail.module';
 import { EmployeeVacationPeriodModule } from '../employee-vacation-period/employee-vacation-period.module';
 import { VacationMovementModule } from '../vacation-movement/vacation-movement.module';
+import { AreaManagerModule } from '../area-manager/area-manager.module';
 
 @Module({
   controllers: [VacationRequestController],
@@ -18,6 +19,7 @@ import { VacationMovementModule } from '../vacation-movement/vacation-movement.m
     VacationRequestDetailModule,
     EmployeeVacationPeriodModule,
     VacationMovementModule,
+    AreaManagerModule,
   ],
 })
 export class VacationRequestModule {}
