@@ -15,13 +15,19 @@ import { WellKnownController } from './wellknown.controller';
 @Module({
   imports: [
     ScheduleModule.forRoot(),
-    ServeStaticModule.forRoot({
-      rootPath: join(__dirname, '..', 'public'),
-      serveRoot: '/',
-      serveStaticOptions: {
-        dotfiles: 'allow',
+    ServeStaticModule.forRoot(
+      {
+        rootPath: join(__dirname, '..', 'public'),
+        serveRoot: '/public',
       },
-    }),
+      {
+        rootPath: join(__dirname, '..', 'public', '.well-known'),
+        serveRoot: '/.well-known',
+        serveStaticOptions: {
+          dotfiles: 'allow',
+        },
+      },
+    ),
     CommonModule,
     _ConfigModule,
     ModelsModule,
