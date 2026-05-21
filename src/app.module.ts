@@ -10,12 +10,17 @@ import { AuthModule } from './common/auth/auth.module';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
 import { ScheduleModule } from '@nestjs/schedule';
+import { WellKnownController } from './wellknown.controller';
 
 @Module({
   imports: [
     ScheduleModule.forRoot(),
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', 'public'),
+      serveRoot: '/',
+      serveStaticOptions: {
+        dotfiles: 'allow',
+      },
     }),
     CommonModule,
     _ConfigModule,
