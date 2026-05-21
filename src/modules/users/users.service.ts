@@ -104,7 +104,7 @@ export class UsersService {
   //↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑//
   async updatePassword(data: ChangePasswordDto) {
     const user = await this._userRepo.findOne({
-      where: { id: data.user_id },
+      where: { username: data.username },
     });
 
     if (!user) throw new BadRequestException(['Usuario no encontrado.']);

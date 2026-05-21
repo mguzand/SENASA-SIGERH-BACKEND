@@ -11,6 +11,13 @@ export class AuthService {
     private _jwtService: JwtService,
   ) {}
 
+  async resetPassword(usuario: string, new_password: string) {
+    return await this._userService.updatePassword({
+      password: new_password,
+      username: usuario,
+    });
+  }
+
   async validateUser(username: string, password: string) {
     ///////////////////////////////////////////////////////////////////////////////
     ///                  Validate Username in the users table                   ///

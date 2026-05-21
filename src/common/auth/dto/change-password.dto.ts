@@ -5,5 +5,5 @@ export class ChangePasswordDto {
   password: string;
 
   @IsNotEmpty({ message: 'Se debe especificar el id usuario.' })
-  user_id: string;
+  username: string;
 }

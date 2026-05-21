@@ -9,6 +9,7 @@ import {
 import { AuthService } from './auth.service';
 import { AuthGuard } from '@nestjs/passport';
 import { Public } from '../decorators/public.decorator';
+import { ResetPasswordDto } from './interfaces/resetPassword.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -19,5 +20,14 @@ export class AuthController {
   @UseGuards(AuthGuard('local'))
   async loginEmployee(@Request() req) {
     return this._authService.login(req.user);
+  }
+
+  @UseGuards(AuthGuard('jwt'))
+  @Post('reset-password')
+  async resetPassword(@Body() dto: ResetPasswordDto, @Request() req) {
+    return await this._authService.resetPassword(
+      req.user.username,
+      dto.new_password,
+    );
   }
 }
