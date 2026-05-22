@@ -62,6 +62,26 @@ export class StorageService {
     }
   }
 
+  copyStoredFile(sourceFilePath: string, folder: string, fileName: string): string {
+    const sourceFullPath = this.getAbsolutePath(sourceFilePath);
+
+    if (!fs.existsSync(sourceFullPath)) {
+      throw new Error(`Archivo origen no encontrado: ${sourceFilePath}`);
+    }
+
+    const dirPath = path.join(this.basePath, folder);
+    this.ensureDirectory(dirPath);
+
+    const destinationPath = path.join(dirPath, fileName);
+    fs.copyFileSync(sourceFullPath, destinationPath);
+
+    return path.join('uploads', folder, fileName);
+  }
+
+  getAbsolutePath(filePath: string): string {
+    return path.isAbsolute(filePath) ? filePath : path.join(process.cwd(), filePath);
+  }
+
   private ensureDirectory(dirPath: string) {
     if (!fs.existsSync(dirPath)) {
       fs.mkdirSync(dirPath, { recursive: true });

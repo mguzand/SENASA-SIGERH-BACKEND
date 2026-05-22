@@ -286,7 +286,7 @@ export class VacationRequestService {
         users,
         formatted,
         dto.days.length,
-        (dto.employee_comment = ''),
+        dto.employee_comment,
         savedRequest.id,
       );
 

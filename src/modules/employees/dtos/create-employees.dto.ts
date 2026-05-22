@@ -15,6 +15,10 @@ import { Type } from 'class-transformer';
 import { VacationPeriodStatus } from 'src/common/enums/vacation.enums';
 
 export class CreateEmployeeDto {
+  @IsOptional()
+  @IsString()
+  intake_request_id?: string;
+
   @IsString()
   @IsNotEmpty()
   dni: string;

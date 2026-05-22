@@ -10,6 +10,8 @@ import { AcademicHistoryModule } from '../academic-history/academic-history.modu
 import { EmployeeJobRecordModule } from '../employee-job-record/employee-job-record.module';
 import { EmployeeEmergencyContact } from './entities/emergency_contacts.interface';
 import { EmployeeVacationPeriodModule } from '../employee-vacation-period/employee-vacation-period.module';
+import { UsersModule } from '../users/users.module';
+import { EmployeeIntakeRequest } from '../employee-intake/entities/employee-intake.entity';
 
 @Module({
   controllers: [EmployeesController],
@@ -19,12 +21,14 @@ import { EmployeeVacationPeriodModule } from '../employee-vacation-period/employ
       Employee,
       EmployeeDocument,
       EmployeeEmergencyContact,
+      EmployeeIntakeRequest,
     ]),
     CommonModule,
     RnpModule,
     AcademicHistoryModule,
     EmployeeJobRecordModule,
     EmployeeVacationPeriodModule,
+    UsersModule,
   ],
 })
 export class EmployeesModule {}

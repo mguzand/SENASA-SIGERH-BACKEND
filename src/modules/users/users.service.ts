@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import { User } from './entities/user.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ChangePasswordDto } from 'src/common/auth/dto/change-password.dto';
@@ -11,6 +11,24 @@ export class UsersService {
     @InjectRepository(User)
     private _userRepo: Repository<User>,
   ) {}
+
+  async createUser(
+    dto: {
+      employeeId: string;
+      username: string;
+      email: string;
+      password: string;
+    },
+    manager: EntityManager,
+  ) {
+    const dataQuery = manager.create(User, {
+      employeeId: dto.employeeId,
+      username: dto.username,
+      password: hashPassword(dto.password),
+    });
+
+    return await manager.save(User, dataQuery);
+  }
 
   //↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓//
   //                                 Get the user by user                                 //

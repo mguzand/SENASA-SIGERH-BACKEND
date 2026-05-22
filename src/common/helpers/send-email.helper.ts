@@ -1,7 +1,31 @@
 import * as nodemailer from 'nodemailer';
 import { sendMailTemplate } from '../mails/send-vacations.mail';
+import { sendMailNewEmployee } from '../mails/send-employee-register.mail';
 
 let transporter: nodemailer.Transporter;
+
+export const sendNewEmployee = async (
+  to: string,
+  subject: string,
+
+  username: string,
+  employeeName: string,
+  password: string,
+  playStoreUrl: string,
+) => {
+  refreshTransporter();
+  try {
+    const response = await transporter.sendMail({
+      subject,
+      html: sendMailNewEmployee(username, employeeName, password, playStoreUrl),
+      from: `"EMPLEADOS SENASA" <${process.env.EMAIL_USER}>`,
+      to,
+    });
+    return response;
+  } catch (error) {
+    console.log(error);
+  }
+};
 
 export const sendVacations = async (
   to: string,

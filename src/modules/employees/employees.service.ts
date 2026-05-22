@@ -19,6 +19,9 @@ import { EmployeeJobRecordService } from '../employee-job-record/employee-job-re
 import { EmployeeEmergencyContact } from './entities/emergency_contacts.interface';
 import { Brackets } from 'typeorm';
 import { EmployeeVacationPeriodService } from '../employee-vacation-period/employee-vacation-period.service';
+import { UsersService } from '../users/users.service';
+import { sendNewEmployee } from 'src/common/helpers/send-email.helper';
+import { EmployeeIntakeRequest } from '../employee-intake/entities/employee-intake.entity';
 
 interface FindAllEmployeesParams {
   search?: string;
@@ -40,6 +43,7 @@ export class EmployeesService {
     private readonly storageService: StorageService,
     private readonly employeeJobRecordService: EmployeeJobRecordService,
     private readonly employeeVacationPeriodService: EmployeeVacationPeriodService,
+    private readonly _usersService: UsersService,
   ) {}
 
   async findAll(params: FindAllEmployeesParams) {
@@ -294,8 +298,23 @@ export class EmployeesService {
     await qr.connect();
     await qr.startTransaction();
     const writtenFiles: string[] = [];
+    let intakeRequest: EmployeeIntakeRequest | null = null;
 
     try {
+      if (dto.intake_request_id) {
+        intakeRequest = await qr.manager.findOne(EmployeeIntakeRequest, {
+          where: { id: dto.intake_request_id },
+        });
+
+        if (!intakeRequest) {
+          throw new BadRequestException(['La solicitud temporal no fue encontrada.']);
+        }
+
+        if (intakeRequest.status === 'CONVERTED') {
+          throw new BadRequestException(['Esta solicitud temporal ya fue convertida.']);
+        }
+      }
+
       //! ////////////////////////////////////////////////////////////////////////////
       //!Verificamos que no exista otro empleado con el mismo dni ////////////////////
       const existsDni = await qr.manager.findOne(Employee, {
@@ -360,11 +379,12 @@ export class EmployeesService {
 
       //! ///////////////////////////////////////////////////////////////////////////////////////////////////////////
       //! creamos el insert para el servicio de registro del empleado usando el id del empleado que acabamos de crear
-      const savedJobRecord = await this.employeeJobRecordService.createInitialRecord(
-        savedEmployee.id,
-        dto,
-        qr.manager,
-      );
+      const savedJobRecord =
+        await this.employeeJobRecordService.createInitialRecord(
+          savedEmployee.id,
+          dto,
+          qr.manager,
+        );
 
       if (dto.vacation_periods?.length) {
         await this.employeeVacationPeriodService.bootstrapWithManager(
@@ -408,6 +428,70 @@ export class EmployeesService {
             isPrivate: false,
           });
         }
+      }
+
+      if (
+        intakeRequest?.cv_file_path &&
+        !dto.documents?.some((doc) => doc.documentTypeKey === 'cv')
+      ) {
+        const extension = intakeRequest.cv_extension || 'pdf';
+        const fileName = `${randomUUID()}.${extension}`;
+        const folder = `employees/${savedEmployee.id}`;
+        const filePath = this.storageService.copyStoredFile(
+          intakeRequest.cv_file_path,
+          folder,
+          fileName,
+        );
+
+        writtenFiles.push(filePath);
+
+        await qr.manager.insert(EmployeeDocument, {
+          employeeId: savedEmployee.id,
+          documentType: 'cv',
+          fileName,
+          originalName: intakeRequest.cv_original_name || `CV-${savedEmployee.dni}.${extension}`,
+          extension,
+          mimeType: intakeRequest.cv_mime_type || 'application/octet-stream',
+          fileSize: undefined,
+          filePath,
+          expirationDate: null,
+          notes: 'Documento importado desde solicitud temporal',
+          isActive: true,
+          isPrivate: false,
+        });
+      }
+
+      //! ////////////////////////////////////////////////////////////////////////////
+      //!creamos el insert para crear el usuario asociado al empleado con rol estándar;
+      await this._usersService.createUser(
+        {
+          employeeId: savedEmployee.id,
+          username: `${dto.firstName.toLowerCase()}.${dto.lastName.toLowerCase()}`,
+          email: dto.email,
+          password: 'temporalsenasa2026',
+        },
+        qr.manager,
+      );
+
+      await sendNewEmployee(
+        dto.email,
+        `${dto.firstName} ${dto.lastName} bienvenido al Portal del Empleado`,
+        `${dto.firstName.toLowerCase()}.${dto.lastName.toLowerCase()}`,
+        `${dto.firstName} ${dto.middleName}, ${dto.lastName}`,
+        'temporalsenasa2026',
+        'https://play.google.com/store/apps/details?id=hn.gob.senasa.sigerh',
+      );
+
+      if (intakeRequest) {
+        await qr.manager.update(
+          EmployeeIntakeRequest,
+          { id: intakeRequest.id },
+          {
+            status: 'CONVERTED',
+            converted_employee_id: savedEmployee.id,
+            converted_at: new Date(),
+          },
+        );
       }
 
       await qr.commitTransaction();

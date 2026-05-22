@@ -193,6 +193,36 @@ export class AreaManagerService {
     }
   }
 
+  async checkEmployeeAccess(areaId: string, employeeId: string) {
+    const manager = await this.areaManagerRepository.findOne({
+      where: {
+        area_id: areaId,
+        employee_id: employeeId,
+        role: AreaManagerRole.BOSS,
+        is_active: true,
+      },
+      relations: ['area'],
+    });
+
+    if (!manager) {
+      return {
+        hasAccess: false,
+        isDelegate: false,
+        roleLabel: null,
+        areaId,
+        areaName: null,
+      };
+    }
+
+    return {
+      hasAccess: true,
+      isDelegate: manager.is_a_delegate,
+      roleLabel: manager.is_a_delegate ? 'Delegado' : 'Jefe',
+      areaId: manager.area_id,
+      areaName: manager.area?.name || null,
+    };
+  }
+
   async findActiveManagerByAreaAndRole(
     areaId: string,
     role: AreaManagerRole,
