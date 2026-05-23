@@ -235,6 +235,176 @@ export class VacationRequestService {
     };
   }
 
+  async findBossInbox(
+    params: ListHrVacationRequestsDto,
+    currentEmployeeId: string,
+  ) {
+    const areaIds = await this.areaManagerService.findAreaIdsByEmployeeAndRole(
+      currentEmployeeId,
+      AreaManagerRole.BOSS,
+    );
+    const page = Math.max(Number(params.page) || 1, 1);
+    const limit = Math.min(Math.max(Number(params.limit) || 6, 1), 24);
+    const status = params.status || 'pending';
+
+    if (!areaIds.length) {
+      return {
+        data: [],
+        meta: {
+          page,
+          limit,
+          total: 0,
+          totalPages: 0,
+        },
+        stats: {
+          pending: 0,
+          requestedDays: 0,
+          approved: 0,
+          rejected: 0,
+          total: 0,
+        },
+      };
+    }
+
+    const query = this.vacationRequestRepository
+      .createQueryBuilder('request')
+      .leftJoinAndSelect('request.employee', 'employee')
+      .leftJoinAndSelect('request.area', 'area')
+      .where('request.area_id IN (:...areaIds)', { areaIds });
+
+    if (params.search?.trim()) {
+      const search = `%${params.search.trim().toLowerCase()}%`;
+
+      query.andWhere(
+        new Brackets((qb) => {
+          qb.where(
+            "LOWER(COALESCE(request.employee_comment, '')) LIKE :search",
+            { search },
+          );
+          qb.orWhere('LOWER(employee.firstName) LIKE :search', { search });
+          qb.orWhere("LOWER(COALESCE(employee.middleName, '')) LIKE :search", {
+            search,
+          });
+          qb.orWhere('LOWER(employee.lastName) LIKE :search', { search });
+          qb.orWhere(
+            "LOWER(COALESCE(employee.secondLastName, '')) LIKE :search",
+            { search },
+          );
+          qb.orWhere("LOWER(COALESCE(area.name, '')) LIKE :search", { search });
+          qb.orWhere(
+            `LOWER(
+              CONCAT(
+                employee.firstName, ' ',
+                COALESCE(employee.middleName, ''), ' ',
+                employee.lastName, ' ',
+                COALESCE(employee.secondLastName, '')
+              )
+            ) LIKE :search`,
+            { search },
+          );
+        }),
+      );
+    }
+
+    this.applyBossInboxStatusFilter(query, status);
+
+    query
+      .addSelect(
+        `CASE
+          WHEN request.boss_status = '${VacationRequestStatus.PENDING}' THEN 0
+          WHEN request.boss_status = '${VacationRequestStatus.APPROVED}' THEN 1
+          ELSE 2
+        END`,
+        'boss_status_order',
+      )
+      .orderBy('boss_status_order', 'ASC')
+      .addOrderBy('request.start_date', 'DESC')
+      .addOrderBy('request.created_at', 'DESC');
+
+    const [requests, total] = await query
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+
+    const statsBaseQuery = this.vacationRequestRepository
+      .createQueryBuilder('request')
+      .where('request.area_id IN (:...areaIds)', { areaIds });
+
+    const pendingCount = await this.applyBossInboxStatusFilter(
+      statsBaseQuery.clone(),
+      'pending',
+    ).getCount();
+
+    const approvedCount = await this.applyBossInboxStatusFilter(
+      statsBaseQuery.clone(),
+      'approved',
+    ).getCount();
+
+    const rejectedCount = await this.applyBossInboxStatusFilter(
+      statsBaseQuery.clone(),
+      'rejected',
+    ).getCount();
+
+    const pendingDaysRaw = (await this.applyBossInboxStatusFilter(
+      statsBaseQuery
+        .clone()
+        .select('COALESCE(SUM(request.requested_days), 0)', 'totalDays'),
+      'pending',
+    ).getRawOne()) as { totalDays: string } | null;
+
+    return {
+      data: requests.map((request) => {
+        const employee = request.employee;
+        const fullName = [
+          employee?.firstName,
+          employee?.middleName,
+          employee?.lastName,
+          employee?.secondLastName,
+        ]
+          .filter(Boolean)
+          .join(' ');
+
+        return {
+          id: request.id,
+          employeeId: employee?.id || null,
+          employeeCode: employee?.biometric_id
+            ? `EMP-${String(employee.biometric_id).padStart(4, '0')}`
+            : employee?.id
+              ? `EMP-${employee.id.slice(0, 4).toUpperCase()}`
+              : 'EMP-0000',
+          employeeName: fullName || 'Empleado sin nombre',
+          employeeInitials:
+            `${employee?.firstName?.[0] || ''}${employee?.lastName?.[0] || ''}`
+              .toUpperCase()
+              .trim(),
+          departmentName: request.area?.name || 'Sin área asignada',
+          status: request.boss_status,
+          stage: request.stage,
+          startDate: request.start_date,
+          endDate: request.end_date,
+          requestedDays: Number(request.requested_days || 0),
+          approvedDays: Number(request.approved_days || 0),
+          employeeComment: request.employee_comment,
+          resolvedAt: request.boss_reviewed_at || request.updated_at || null,
+          timingLabel: this.getTimingLabel(request.start_date),
+        };
+      }),
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+      stats: {
+        pending: pendingCount,
+        requestedDays: Number(pendingDaysRaw?.totalDays || 0),
+        approved: approvedCount,
+        rejected: rejectedCount,
+        total: pendingCount + approvedCount + rejectedCount,
+      },
+    };
+  }
+
   async create(dto: CreateVacationRequestDto, users: any) {
     if (!dto.days || dto.days.length === 0) {
       throw new BadRequestException('Debe seleccionar al menos un día');
@@ -604,6 +774,36 @@ export class VacationRequestService {
           })
           .andWhere('request.stage = :hrStage', {
             hrStage: VacationRequestStage.HR_REVIEW,
+          });
+    }
+  }
+
+  private applyBossInboxStatusFilter(query: any, status: string) {
+    switch (status) {
+      case 'approved':
+        return query.andWhere('request.boss_status = :approvedStatus', {
+          approvedStatus: VacationRequestStatus.APPROVED,
+        });
+      case 'rejected':
+        return query.andWhere('request.boss_status = :rejectedStatus', {
+          rejectedStatus: VacationRequestStatus.REJECTED,
+        });
+      case 'all':
+        return query.andWhere('request.boss_status IN (:...bossStatuses)', {
+          bossStatuses: [
+            VacationRequestStatus.PENDING,
+            VacationRequestStatus.APPROVED,
+            VacationRequestStatus.REJECTED,
+          ],
+        });
+      case 'pending':
+      default:
+        return query
+          .andWhere('request.boss_status = :pendingStatus', {
+            pendingStatus: VacationRequestStatus.PENDING,
+          })
+          .andWhere('request.stage = :bossStage', {
+            bossStage: VacationRequestStage.BOSS_REVIEW,
           });
     }
   }

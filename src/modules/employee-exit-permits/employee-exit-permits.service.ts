@@ -166,7 +166,7 @@ export class EmployeeExitPermitsService {
           withoutReturn: permit.without_return,
           description: permit.description,
           resolvedAt: reviewedAt,
-          typeLabel: 'Personal',
+          typeLabel: permit.permit_type || 'Personal',
           durationMinutes: this.getDurationInMinutes(
             permit.exit_time,
             permit.return_time,
@@ -229,6 +229,7 @@ export class EmployeeExitPermitsService {
       employee_id: dto.employee_id,
       area_id: dto.area_id,
       description: dto.description,
+      permit_type: dto.permit_type,
       exit_date: dto.exit_date as any,
       exit_time: dto.exit_time,
       return_time: dto.without_return ? null : dto.return_time,

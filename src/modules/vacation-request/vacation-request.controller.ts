@@ -61,6 +61,14 @@ export class VacationRequestController {
     return this.vacationRequestService.findHrInbox(query, req.user.employee_id);
   }
 
+  @Get('boss/inbox')
+  bossInbox(@Query() query: ListHrVacationRequestsDto, @Req() req: any) {
+    return this.vacationRequestService.findBossInbox(
+      query,
+      req.user.employee_id,
+    );
+  }
+
   @Get()
   findAll() {
     return this.vacationRequestService.findAll();

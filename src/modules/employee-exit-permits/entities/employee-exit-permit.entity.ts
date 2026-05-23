@@ -28,6 +28,13 @@ export class EmployeeExitPermit {
   description: string;
 
   @Column({
+    type: 'varchar',
+    length: 40,
+    default: 'Personal',
+  })
+  permit_type: string;
+
+  @Column({
     type: 'enum',
     enum: ExitPermitStage,
     default: ExitPermitStage.BOSS_REVIEW,

@@ -1,6 +1,7 @@
 import {
   IsBoolean,
   IsDateString,
+  IsIn,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -19,6 +20,17 @@ export class CreateEmployeeExitPermitDto {
   @IsString()
   @IsNotEmpty()
   description: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @IsIn([
+    'Oficial',
+    'Personal',
+    'Médico IHSS',
+    'Médico Privado',
+    'Servicio de Salud Pública',
+  ])
+  permit_type: string;
 
   @IsDateString()
   @IsNotEmpty()
