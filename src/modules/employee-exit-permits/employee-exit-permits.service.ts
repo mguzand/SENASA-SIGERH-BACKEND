@@ -188,6 +188,136 @@ export class EmployeeExitPermitsService {
     };
   }
 
+  async findBossInbox(params: ListHrExitPermitsDto, currentEmployeeId: string) {
+    const areaIds = await this.areaManagersService.findAreaIdsByEmployeeAndRole(
+      currentEmployeeId,
+      AreaManagerRole.BOSS,
+    );
+    const page = Math.max(Number(params.page) || 1, 1);
+    const limit = Math.min(Math.max(Number(params.limit) || 6, 1), 24);
+    const status = params.status || 'pending';
+
+    if (!areaIds.length) {
+      return {
+        data: [],
+        meta: {
+          page,
+          limit,
+          total: 0,
+          totalPages: 0,
+        },
+        stats: {
+          pending: 0,
+          approved: 0,
+          rejected: 0,
+          total: 0,
+        },
+      };
+    }
+
+    const query = this.exitPermitRepository
+      .createQueryBuilder('permit')
+      .leftJoinAndSelect('permit.employee', 'employee')
+      .leftJoinAndSelect('permit.area', 'area')
+      .leftJoinAndSelect(
+        'employee.jobRecords',
+        'jobRecord',
+        'LOWER(jobRecord.status) = :jobRecordStatus',
+        { jobRecordStatus: 'active' },
+      )
+      .leftJoinAndSelect('jobRecord.position', 'jobRecordPosition')
+      .leftJoinAndSelect(
+        'jobRecord.functionalPosition',
+        'jobRecordFunctionalPosition',
+      )
+      .where('permit.area_id IN (:...areaIds)', { areaIds });
+
+    if (params.search?.trim()) {
+      const search = `%${params.search.trim().toLowerCase()}%`;
+
+      query.andWhere(
+        new Brackets((qb) => {
+          qb.where('LOWER(permit.description) LIKE :search', { search });
+          qb.orWhere('LOWER(COALESCE(permit.permit_type, \'\')) LIKE :search', {
+            search,
+          });
+          qb.orWhere('LOWER(employee.firstName) LIKE :search', { search });
+          qb.orWhere('LOWER(COALESCE(employee.middleName, \'\')) LIKE :search', {
+            search,
+          });
+          qb.orWhere('LOWER(employee.lastName) LIKE :search', { search });
+          qb.orWhere(
+            'LOWER(COALESCE(employee.secondLastName, \'\')) LIKE :search',
+            { search },
+          );
+          qb.orWhere(
+            'LOWER(COALESCE(employee.biometric_id, \'\')) LIKE :search',
+            { search },
+          );
+          qb.orWhere('LOWER(COALESCE(area.name, \'\')) LIKE :search', { search });
+          qb.orWhere(
+            `LOWER(
+              CONCAT(
+                employee.firstName, ' ',
+                COALESCE(employee.middleName, ''), ' ',
+                employee.lastName, ' ',
+                COALESCE(employee.secondLastName, '')
+              )
+            ) LIKE :search`,
+            { search },
+          );
+        }),
+      );
+    }
+
+    this.applyBossStatusFilter(query, status);
+
+    query
+      .addSelect(
+        `CASE
+          WHEN permit.boss_status = '${ExitPermitStatus.PENDING}' THEN 0
+          WHEN permit.boss_status = '${ExitPermitStatus.APPROVED}' THEN 1
+          ELSE 2
+        END`,
+        'boss_status_order',
+      )
+      .orderBy('boss_status_order', 'ASC')
+      .addOrderBy('permit.exit_date', 'DESC')
+      .addOrderBy('permit.exit_time', 'DESC')
+      .addOrderBy('permit.created_at', 'DESC');
+
+    const [permits, total] = await query
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+
+    const statsBaseQuery = this.exitPermitRepository
+      .createQueryBuilder('permit')
+      .where('permit.area_id IN (:...areaIds)', { areaIds });
+
+    const [pending, approved, rejected] = await Promise.all([
+      this.applyBossStatusFilter(statsBaseQuery.clone(), 'pending').getCount(),
+      this.applyBossStatusFilter(statsBaseQuery.clone(), 'approved').getCount(),
+      this.applyBossStatusFilter(statsBaseQuery.clone(), 'rejected').getCount(),
+    ]);
+
+    return {
+      data: permits.map((permit) => this.mapExitPermitInboxItem(permit, 'boss')),
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+      stats: {
+        pending,
+        approved,
+        rejected,
+        total: pending + approved + rejected,
+      },
+    };
+  }
+
   async create(dto: CreateEmployeeExitPermitDto) {
     const bossManager =
       await this.areaManagersService.findActiveManagerByAreaAndRole(
@@ -368,6 +498,88 @@ export class EmployeeExitPermitsService {
             hrStage: ExitPermitStage.HR_REVIEW,
           });
     }
+  }
+
+  private applyBossStatusFilter(query: any, status: string) {
+    switch (status) {
+      case 'approved':
+        return query.andWhere('permit.boss_status = :approvedStatus', {
+          approvedStatus: ExitPermitStatus.APPROVED,
+        });
+      case 'rejected':
+        return query.andWhere('permit.boss_status = :rejectedStatus', {
+          rejectedStatus: ExitPermitStatus.REJECTED,
+        });
+      case 'all':
+        return query.andWhere('permit.boss_status IN (:...bossStatuses)', {
+          bossStatuses: [
+            ExitPermitStatus.PENDING,
+            ExitPermitStatus.APPROVED,
+            ExitPermitStatus.REJECTED,
+          ],
+        });
+      case 'pending':
+      default:
+        return query
+          .andWhere('permit.boss_status = :pendingStatus', {
+            pendingStatus: ExitPermitStatus.PENDING,
+          })
+          .andWhere('permit.stage = :bossStage', {
+            bossStage: ExitPermitStage.BOSS_REVIEW,
+          });
+    }
+  }
+
+  private mapExitPermitInboxItem(
+    permit: EmployeeExitPermit,
+    reviewer: 'boss' | 'hr',
+  ) {
+    const employee = permit.employee;
+    const currentRecord = employee?.jobRecords?.find(
+      (record) => String(record.status || '').toLowerCase() === 'active',
+    );
+    const fullName = [
+      employee?.firstName,
+      employee?.middleName,
+      employee?.lastName,
+      employee?.secondLastName,
+    ]
+      .filter(Boolean)
+      .join(' ');
+    const reviewedAt =
+      reviewer === 'boss'
+        ? permit.boss_reviewed_at || permit.updated_at || null
+        : permit.hr_reviewed_at || permit.updated_at || null;
+
+    return {
+      id: permit.id,
+      employeeId: employee?.id || null,
+      employeeCode: employee?.biometric_id
+        ? `EMP-${String(employee.biometric_id).padStart(4, '0')}`
+        : employee?.id
+          ? `EMP-${employee.id.slice(0, 4).toUpperCase()}`
+          : 'EMP-0000',
+      employeeName: fullName || 'Empleado sin nombre',
+      employeeInitials:
+        `${employee?.firstName?.[0] || ''}${employee?.lastName?.[0] || ''}`
+          .toUpperCase()
+          .trim(),
+      departmentName:
+        currentRecord?.area?.name || permit.area?.name || 'Sin área asignada',
+      status: reviewer === 'boss' ? permit.boss_status : permit.hr_status,
+      stage: permit.stage,
+      exitDate: permit.exit_date,
+      exitTime: permit.exit_time,
+      returnTime: permit.return_time,
+      withoutReturn: permit.without_return,
+      description: permit.description,
+      resolvedAt: reviewedAt,
+      typeLabel: permit.permit_type || 'Personal',
+      durationMinutes: this.getDurationInMinutes(
+        permit.exit_time,
+        permit.return_time,
+      ),
+    };
   }
 
   private getDurationInMinutes(exitTime: string, returnTime: string | null) {

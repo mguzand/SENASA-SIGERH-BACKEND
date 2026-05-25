@@ -32,6 +32,14 @@ export class EmployeeExitPermitsController {
     );
   }
 
+  @Get('boss/inbox')
+  findBossInbox(@Query() query: ListHrExitPermitsDto, @Req() req: any) {
+    return this.employeeExitPermitsService.findBossInbox(
+      query,
+      req.user.employee_id,
+    );
+  }
+
   @Patch(':id/review-boss')
   reviewByBoss(
     @Param('id') id: string,

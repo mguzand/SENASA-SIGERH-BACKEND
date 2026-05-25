@@ -1,4 +1,4 @@
-import { IsEmail, IsNotEmpty, IsOptional, IsString, Length, Matches } from 'class-validator';
+import { IsDateString, IsEmail, IsNotEmpty, IsOptional, IsString, Length, Matches } from 'class-validator';
 
 export class CreateEmployeeIntakeDto {
   @IsString()
@@ -52,4 +52,27 @@ export class CreateEmployeeIntakeDto {
   @IsString()
   @Length(1, 120)
   cv_mime_type?: string | null;
+
+  @IsString()
+  @IsNotEmpty()
+  criminal_record_base64?: string | null;
+
+  @IsString()
+  @IsNotEmpty()
+  criminal_record_original_name?: string | null;
+
+  @IsString()
+  @IsNotEmpty()
+  @Length(1, 20)
+  @Matches(/^[a-zA-Z0-9]+$/)
+  criminal_record_extension?: string | null;
+
+  @IsString()
+  @IsNotEmpty()
+  @Length(1, 120)
+  criminal_record_mime_type?: string | null;
+
+  @IsDateString()
+  @IsNotEmpty()
+  criminal_record_expiration_date?: string | null;
 }

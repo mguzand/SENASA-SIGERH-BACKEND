@@ -44,6 +44,21 @@ export class EmployeeIntakeRequest {
   @Column({ length: 120, nullable: true, type: 'varchar' })
   cv_mime_type: string | null;
 
+  @Column({ type: 'text', nullable: true })
+  criminal_record_file_path: string | null;
+
+  @Column({ length: 255, nullable: true, type: 'varchar' })
+  criminal_record_original_name: string | null;
+
+  @Column({ length: 20, nullable: true, type: 'varchar' })
+  criminal_record_extension: string | null;
+
+  @Column({ length: 120, nullable: true, type: 'varchar' })
+  criminal_record_mime_type: string | null;
+
+  @Column({ type: 'date', nullable: true })
+  criminal_record_expiration_date: Date | null;
+
   @Column({ length: 20, default: 'PENDING', type: 'varchar' })
   status: string;
 

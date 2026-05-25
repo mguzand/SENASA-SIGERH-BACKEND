@@ -25,8 +25,16 @@ export class EmployeeIntakeService {
       );
     }
 
+    if (!dto.criminal_record_base64?.trim() || !dto.criminal_record_expiration_date) {
+      throw new BadRequestException(
+        'Antecedentes penales y su fecha de vencimiento son obligatorios',
+      );
+    }
+
     let filePath: string | null = null;
+    let criminalRecordFilePath: string | null = null;
     let previousFilePath: string | null = null;
+    let previousCriminalRecordFilePath: string | null = null;
 
     try {
       const extension = (dto.cv_extension || 'pdf').replace('.', '').toLowerCase();
@@ -38,11 +46,25 @@ export class EmployeeIntakeService {
         fileName,
       );
 
+      if (dto.criminal_record_base64?.trim()) {
+        const criminalExtension = (dto.criminal_record_extension || 'pdf')
+          .replace('.', '')
+          .toLowerCase();
+        const criminalFileName = `${identity}-criminal-record-${randomUUID()}.${criminalExtension}`;
+
+        criminalRecordFilePath = this.storageService.saveBase64File(
+          dto.criminal_record_base64,
+          'employee-intake/criminal-record',
+          criminalFileName,
+        );
+      }
+
       const existing = await this.employeeIntakeRepository.findOne({
         where: { identity },
       });
 
       previousFilePath = existing?.cv_file_path || null;
+      previousCriminalRecordFilePath = existing?.criminal_record_file_path || null;
 
       const entity = this.employeeIntakeRepository.create({
         id: existing?.id,
@@ -57,6 +79,25 @@ export class EmployeeIntakeService {
         cv_original_name: dto.cv_original_name?.trim() || null,
         cv_extension: extension,
         cv_mime_type: dto.cv_mime_type?.trim() || null,
+        criminal_record_file_path:
+          criminalRecordFilePath || existing?.criminal_record_file_path || null,
+        criminal_record_original_name:
+          dto.criminal_record_original_name?.trim() ||
+          existing?.criminal_record_original_name ||
+          null,
+        criminal_record_extension:
+          dto.criminal_record_base64?.trim()
+            ? (dto.criminal_record_extension || 'pdf').replace('.', '').toLowerCase()
+            : existing?.criminal_record_extension || null,
+        criminal_record_mime_type:
+          dto.criminal_record_mime_type?.trim() ||
+          existing?.criminal_record_mime_type ||
+          null,
+        criminal_record_expiration_date: dto.criminal_record_base64?.trim()
+          ? dto.criminal_record_expiration_date
+            ? new Date(dto.criminal_record_expiration_date)
+            : null
+          : existing?.criminal_record_expiration_date || null,
         status: existing?.status === 'CONVERTED' ? 'CONVERTED' : 'PENDING',
         converted_employee_id: existing?.converted_employee_id || null,
         converted_at: existing?.converted_at || null,
@@ -66,6 +107,14 @@ export class EmployeeIntakeService {
 
       if (previousFilePath && previousFilePath !== filePath) {
         this.storageService.deleteFile(previousFilePath);
+      }
+
+      if (
+        previousCriminalRecordFilePath &&
+        criminalRecordFilePath &&
+        previousCriminalRecordFilePath !== criminalRecordFilePath
+      ) {
+        this.storageService.deleteFile(previousCriminalRecordFilePath);
       }
 
       return {
@@ -79,6 +128,10 @@ export class EmployeeIntakeService {
     } catch (error) {
       if (filePath) {
         this.storageService.deleteFile(filePath);
+      }
+
+      if (criminalRecordFilePath) {
+        this.storageService.deleteFile(criminalRecordFilePath);
       }
 
       throw error;
@@ -138,6 +191,8 @@ export class EmployeeIntakeService {
         email: record.email,
         homeAddress: record.home_address,
         cvOriginalName: record.cv_original_name,
+        criminalRecordOriginalName: record.criminal_record_original_name,
+        criminalRecordExpirationDate: record.criminal_record_expiration_date,
         status: String(record.status || 'PENDING').toLowerCase(),
         convertedEmployeeId: record.converted_employee_id,
         createdAt: record.created_at,
@@ -177,6 +232,11 @@ export class EmployeeIntakeService {
       cvExtension: record.cv_extension,
       cvMimeType: record.cv_mime_type,
       cvFilePath: record.cv_file_path,
+      criminalRecordOriginalName: record.criminal_record_original_name,
+      criminalRecordExtension: record.criminal_record_extension,
+      criminalRecordMimeType: record.criminal_record_mime_type,
+      criminalRecordFilePath: record.criminal_record_file_path,
+      criminalRecordExpirationDate: record.criminal_record_expiration_date,
       status: String(record.status || 'PENDING').toLowerCase(),
       convertedEmployeeId: record.converted_employee_id,
       createdAt: record.created_at,

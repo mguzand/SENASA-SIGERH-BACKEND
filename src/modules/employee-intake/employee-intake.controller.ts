@@ -35,4 +35,22 @@ export class EmployeeIntakeController {
 
     return res.download(fullPath, request.cvOriginalName || `cv-${request.identity}`);
   }
+
+  @Get(':id/criminal-record')
+  async downloadCriminalRecord(@Param('id') id: string, @Res() res: any) {
+    const request = await this.employeeIntakeService.findOne(id);
+
+    if (!request.criminalRecordFilePath) {
+      return res.status(404).json({
+        message: 'La solicitud no tiene antecedentes penales adjuntos',
+      });
+    }
+
+    const fullPath = this.storageService.getAbsolutePath(request.criminalRecordFilePath);
+
+    return res.download(
+      fullPath,
+      request.criminalRecordOriginalName || `antecedentes-${request.identity}`,
+    );
+  }
 }

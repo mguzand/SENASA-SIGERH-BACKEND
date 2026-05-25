@@ -461,6 +461,43 @@ export class EmployeesService {
         });
       }
 
+      if (
+        intakeRequest?.criminal_record_file_path &&
+        !dto.documents?.some((doc) => doc.documentTypeKey === 'criminal_record')
+      ) {
+        const extension = intakeRequest.criminal_record_extension || 'pdf';
+        const fileName = `${randomUUID()}.${extension}`;
+        const folder = `employees/${savedEmployee.id}`;
+        const filePath = this.storageService.copyStoredFile(
+          intakeRequest.criminal_record_file_path,
+          folder,
+          fileName,
+        );
+
+        writtenFiles.push(filePath);
+
+        await qr.manager.insert(EmployeeDocument, {
+          employeeId: savedEmployee.id,
+          documentType: 'criminal_record',
+          fileName,
+          originalName:
+            intakeRequest.criminal_record_original_name ||
+            `Antecedentes-${savedEmployee.dni}.${extension}`,
+          extension,
+          mimeType:
+            intakeRequest.criminal_record_mime_type ||
+            'application/octet-stream',
+          fileSize: undefined,
+          filePath,
+          expirationDate: intakeRequest.criminal_record_expiration_date
+            ? new Date(intakeRequest.criminal_record_expiration_date)
+            : null,
+          notes: 'Documento importado desde solicitud temporal',
+          isActive: true,
+          isPrivate: false,
+        });
+      }
+
       //! ////////////////////////////////////////////////////////////////////////////
       //!creamos el insert para crear el usuario asociado al empleado con rol estándar;
       await this._usersService.createUser(
