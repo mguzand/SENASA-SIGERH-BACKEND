@@ -26,6 +26,7 @@ import { GovernmentVacationDayModule } from './government-vacation-day/governmen
 import { EmployeeGovernmentVacationExclusionModule } from './employee-government-vacation-exclusion/employee-government-vacation-exclusion.module';
 import { VacationRequestDaysModule } from './vacation_request_days/vacation_request_days.module';
 import { EmployeeIntakeModule } from './employee-intake/employee-intake.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { EmployeeIntakeModule } from './employee-intake/employee-intake.module';
     EmployeeGovernmentVacationExclusionModule,
     VacationRequestDaysModule,
     EmployeeIntakeModule,
+    DashboardModule,
   ],
   exports: [],
 })
