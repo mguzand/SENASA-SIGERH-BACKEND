@@ -24,6 +24,7 @@ export class UsersService {
     const dataQuery = manager.create(User, {
       employeeId: dto.employeeId,
       username: dto.username,
+      email: dto.email,
       password: hashPassword(dto.password),
     });
 
