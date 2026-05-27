@@ -1,7 +1,8 @@
-import { Body, Controller, Get, Param, Post, Query, Req } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import { EmployeesService } from './employees.service';
 import { Public } from 'src/common/decorators/public.decorator';
 import { CreateEmployeeDto } from './dtos/create-employees.dto';
+import { UpdateEmployeeEditableDto } from './dtos/update-employee-editable.dto';
 
 @Controller('employees')
 export class EmployeesController {
@@ -32,6 +33,11 @@ export class EmployeesController {
   @Post()
   create(@Body() createEmployeeDto: CreateEmployeeDto, @Req() req: any) {
     return this.employeesService.create(createEmployeeDto, req.user);
+  }
+
+  @Patch(':id/editable-data')
+  updateEditableData(@Param('id') id: string, @Body() dto: UpdateEmployeeEditableDto) {
+    return this.employeesService.updateEditableData(id, dto);
   }
 
   @Public()

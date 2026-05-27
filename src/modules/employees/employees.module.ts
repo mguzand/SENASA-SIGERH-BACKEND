@@ -12,6 +12,7 @@ import { EmployeeEmergencyContact } from './entities/emergency_contacts.interfac
 import { EmployeeVacationPeriodModule } from '../employee-vacation-period/employee-vacation-period.module';
 import { UsersModule } from '../users/users.module';
 import { EmployeeIntakeRequest } from '../employee-intake/entities/employee-intake.entity';
+import { EmployeeJobRecord } from '../employee-job-record/entities/employee-job-record.entity';
 
 @Module({
   controllers: [EmployeesController],
@@ -22,6 +23,7 @@ import { EmployeeIntakeRequest } from '../employee-intake/entities/employee-inta
       EmployeeDocument,
       EmployeeEmergencyContact,
       EmployeeIntakeRequest,
+      EmployeeJobRecord,
     ]),
     CommonModule,
     RnpModule,

@@ -22,6 +22,8 @@ import { EmployeeVacationPeriodService } from '../employee-vacation-period/emplo
 import { UsersService } from '../users/users.service';
 import { sendNewEmployee } from 'src/common/helpers/send-email.helper';
 import { EmployeeIntakeRequest } from '../employee-intake/entities/employee-intake.entity';
+import { EmployeeJobRecord } from '../employee-job-record/entities/employee-job-record.entity';
+import { UpdateEmployeeEditableDto } from './dtos/update-employee-editable.dto';
 
 interface FindAllEmployeesParams {
   search?: string;
@@ -37,6 +39,8 @@ export class EmployeesService {
     private readonly dataSource: DataSource,
     @InjectRepository(Employee)
     private _employee: Repository<Employee>,
+    @InjectRepository(EmployeeJobRecord)
+    private readonly employeeJobRecordRepository: Repository<EmployeeJobRecord>,
     private _rnpService: RnpService,
     private _RnpService: RnpServices,
     private readonly academicHistoryService: AcademicHistoryService,
@@ -290,6 +294,83 @@ export class EmployeesService {
           notes: document.notes,
         })) || [],
     };
+  }
+
+  async updateEditableData(id: string, dto: UpdateEmployeeEditableDto) {
+    const qr = this.dataSource.createQueryRunner();
+    await qr.connect();
+    await qr.startTransaction();
+
+    try {
+      const employee = await qr.manager.findOne(Employee, {
+        where: { id },
+      });
+
+      if (!employee) {
+        throw new NotFoundException('Empleado no encontrado.');
+      }
+
+      const activeJobRecord = await qr.manager
+        .createQueryBuilder(EmployeeJobRecord, 'record')
+        .where('record.employeeId = :employeeId', { employeeId: id })
+        .andWhere('LOWER(record.status) = :status', { status: 'active' })
+        .orderBy('record.created_at', 'DESC')
+        .getOne();
+
+      if (!activeJobRecord) {
+        throw new BadRequestException([
+          'El empleado no tiene un registro laboral activo para actualizar.',
+        ]);
+      }
+
+      if (dto.email !== undefined) {
+        (employee as any).email = dto.email?.trim() || null;
+      }
+
+      if (dto.marital_status !== undefined) {
+        (employee as any).marital_status = dto.marital_status?.trim() || null;
+      }
+
+      if (dto.address !== undefined) {
+        (employee as any).address = dto.address?.trim() || null;
+      }
+
+      if (dto.biometric_id !== undefined) {
+        (employee as any).biometric_id = dto.biometric_id?.trim() || null;
+      }
+
+      if (dto.nominal_position !== undefined) {
+        activeJobRecord.nominal_position = dto.nominal_position || null;
+        (employee as any).position_id = dto.nominal_position || null;
+      }
+
+      if (dto.functional_position !== undefined) {
+        activeJobRecord.functional_position = dto.functional_position || null;
+      }
+
+      if (dto.salary !== undefined) {
+        (activeJobRecord as any).salary =
+          dto.salary !== null ? Number(dto.salary) : null;
+      }
+
+      await qr.manager.save(Employee, employee);
+      await qr.manager.save(EmployeeJobRecord, activeJobRecord);
+      await qr.commitTransaction();
+
+      return this.findOne(id);
+    } catch (error) {
+      await qr.rollbackTransaction();
+
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
+
+      throw new InternalServerErrorException([
+        'Error al actualizar la información editable del empleado.',
+      ]);
+    } finally {
+      await qr.release();
+    }
   }
 
   async create(dto: any, user: any) {
