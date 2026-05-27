@@ -307,11 +307,15 @@ export class EmployeesService {
         });
 
         if (!intakeRequest) {
-          throw new BadRequestException(['La solicitud temporal no fue encontrada.']);
+          throw new BadRequestException([
+            'La solicitud temporal no fue encontrada.',
+          ]);
         }
 
         if (intakeRequest.status === 'CONVERTED') {
-          throw new BadRequestException(['Esta solicitud temporal ya fue convertida.']);
+          throw new BadRequestException([
+            'Esta solicitud temporal ya fue convertida.',
+          ]);
         }
       }
 
@@ -356,16 +360,25 @@ export class EmployeesService {
 
       //! ///////////////////////////////////////////////////////////////////////////////////////////
       //!creamos el insert del contacto de emergencia usando el id del empleado que acabamos de crear
-      const employeeEmergencyContact = qr.manager.create(
-        EmployeeEmergencyContact,
-        {
-          employeeId: savedEmployee.id,
-          emergency_contact_name: dto.emergency_contact_name,
-          emergency_contact_relationship: dto.emergency_contact_relationship,
-          emergency_contact_phone: dto.emergency_contact_phone,
-        },
-      );
-      await qr.manager.save(EmployeeEmergencyContact, employeeEmergencyContact);
+      if (
+        dto.emergency_contact_name &&
+        dto.emergency_contact_relationship &&
+        dto.emergency_contact_phone
+      ) {
+        const employeeEmergencyContact = qr.manager.create(
+          EmployeeEmergencyContact,
+          {
+            employeeId: savedEmployee.id,
+            emergency_contact_name: dto.emergency_contact_name,
+            emergency_contact_relationship: dto.emergency_contact_relationship,
+            emergency_contact_phone: dto.emergency_contact_phone,
+          },
+        );
+        await qr.manager.save(
+          EmployeeEmergencyContact,
+          employeeEmergencyContact,
+        );
+      }
 
       //! //////////////////////////////////////////////////////////////////////////////////////////
       //! creamos el insert de la historia academica usando el id del empleado que acabamos de crear
@@ -449,7 +462,9 @@ export class EmployeesService {
           employeeId: savedEmployee.id,
           documentType: 'cv',
           fileName,
-          originalName: intakeRequest.cv_original_name || `CV-${savedEmployee.dni}.${extension}`,
+          originalName:
+            intakeRequest.cv_original_name ||
+            `CV-${savedEmployee.dni}.${extension}`,
           extension,
           mimeType: intakeRequest.cv_mime_type || 'application/octet-stream',
           fileSize: undefined,
