@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class StorageService {
@@ -77,60 +78,59 @@ export class StorageService {
     const dirPath = path.join(this.basePath, folder);
     this.ensureDirectory(dirPath);
 
-    const extension = path.extname(sourceFullPath).toLowerCase();
-
-    // Convertir Word a PDF
-    if (extension === '.doc2' || extension === '.docx2') {
-      try {
-        execFileSync('libreoffice', [
-          '--headless',
-          '--convert-to',
-          'pdf',
-          '--outdir',
-          dirPath,
-          sourceFullPath,
-        ]);
-
-        const generatedPdf = path.join(
-          dirPath,
-          `${path.parse(sourceFullPath).name}.pdf`,
-        );
-
-        if (fs.existsSync(generatedPdf)) {
-          const destinationPdf = path.join(
-            dirPath,
-            `${path.parse(fileName).name}.pdf`,
-          );
-
-          fs.renameSync(generatedPdf, destinationPdf);
-
-          return path.join(
-            'uploads',
-            folder,
-            `${path.parse(fileName).name}.pdf`,
-          );
-        }
-      } catch (error) {
-        console.error(
-          `Error convirtiendo Word a PDF (${sourceFilePath}):`,
-          error,
-        );
-
-        // Si falla la conversión, guardar el Word original
-        const destinationPath = path.join(dirPath, fileName);
-
-        fs.copyFileSync(sourceFullPath, destinationPath);
-
-        return path.join('uploads', folder, fileName);
-      }
-    }
-
-    // PDF, imágenes u otros archivos
     const destinationPath = path.join(dirPath, fileName);
 
     fs.copyFileSync(sourceFullPath, destinationPath);
 
     return path.join('uploads', folder, fileName);
+  }
+
+  convertStoredWordToPdf(
+    sourceFilePath: string,
+    folder: string,
+    fileName: string,
+  ): string {
+    const sourceFullPath = this.getAbsolutePath(sourceFilePath);
+
+    if (!fs.existsSync(sourceFullPath)) {
+      throw new Error(`Archivo Word no encontrado: ${sourceFilePath}`);
+    }
+
+    const dirPath = path.join(this.basePath, folder);
+    this.ensureDirectory(dirPath);
+
+    execFileSync(
+      'libreoffice',
+      [
+        '--headless',
+        '--nologo',
+        '--nofirststartwizard',
+        '--convert-to',
+        'pdf',
+        '--outdir',
+        dirPath,
+        sourceFullPath,
+      ],
+      {
+        timeout: 30000,
+        stdio: 'pipe',
+      },
+    );
+
+    const generatedPdf = path.join(
+      dirPath,
+      `${path.parse(sourceFullPath).name}.pdf`,
+    );
+
+    if (!fs.existsSync(generatedPdf)) {
+      throw new Error('LibreOffice no generó el PDF.');
+    }
+
+    return path.join(
+      'uploads',
+      folder,
+      `${path.parse(sourceFullPath).name}.pdf`,
+    );
   }
 
   getAbsolutePath(filePath: string): string {

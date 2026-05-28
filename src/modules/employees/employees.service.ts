@@ -24,7 +24,7 @@ import { sendNewEmployee } from 'src/common/helpers/send-email.helper';
 import { EmployeeIntakeRequest } from '../employee-intake/entities/employee-intake.entity';
 import { EmployeeJobRecord } from '../employee-job-record/entities/employee-job-record.entity';
 import { UpdateEmployeeEditableDto } from './dtos/update-employee-editable.dto';
-
+import * as path from 'path';
 interface FindAllEmployeesParams {
   search?: string;
   departmentId?: string;
@@ -41,6 +41,9 @@ export class EmployeesService {
     private _employee: Repository<Employee>,
     @InjectRepository(EmployeeJobRecord)
     private readonly employeeJobRecordRepository: Repository<EmployeeJobRecord>,
+    @InjectRepository(EmployeeDocument)
+    private _EmployeeDocument: Repository<EmployeeDocument>,
+
     private _rnpService: RnpService,
     private _RnpService: RnpServices,
     private readonly academicHistoryService: AcademicHistoryService,
@@ -362,7 +365,10 @@ export class EmployeesService {
     } catch (error) {
       await qr.rollbackTransaction();
 
-      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
         throw error;
       }
 
@@ -375,6 +381,14 @@ export class EmployeesService {
   }
 
   async create(dto: any, user: any) {
+    const filesToConvertAfterCommit: {
+      documentId: string;
+      filePath: string;
+      folder: string;
+      fileName: string;
+    }[] = [];
+    let savedEmployee: Employee | null = null;
+
     const qr = this.dataSource.createQueryRunner();
 
     await qr.connect();
@@ -438,7 +452,7 @@ export class EmployeesService {
         biometric_id: dto.biometric_id,
       });
 
-      const savedEmployee = await qr.manager.save(Employee, employee);
+      savedEmployee = await qr.manager.save(Employee, employee);
 
       //! ///////////////////////////////////////////////////////////////////////////////////////////
       //!creamos el insert del contacto de emergencia usando el id del empleado que acabamos de crear
@@ -529,9 +543,13 @@ export class EmployeesService {
         intakeRequest?.cv_file_path &&
         !dto.documents?.some((doc) => doc.documentTypeKey === 'cv')
       ) {
-        const extension = intakeRequest.cv_extension || 'pdf';
+        const extension = (intakeRequest.cv_extension || 'pdf').replace(
+          '.',
+          '',
+        );
         const fileName = `${randomUUID()}.${extension}`;
         const folder = `employees/${savedEmployee.id}`;
+
         const filePath = this.storageService.copyStoredFile(
           intakeRequest.cv_file_path,
           folder,
@@ -540,7 +558,7 @@ export class EmployeesService {
 
         writtenFiles.push(filePath);
 
-        await qr.manager.insert(EmployeeDocument, {
+        const document = qr.manager.create(EmployeeDocument, {
           employeeId: savedEmployee.id,
           documentType: 'cv',
           fileName,
@@ -556,6 +574,17 @@ export class EmployeesService {
           isActive: true,
           isPrivate: false,
         });
+
+        const savedDocument = await qr.manager.save(EmployeeDocument, document);
+
+        if (extension === 'doc' || extension === 'docx') {
+          filesToConvertAfterCommit.push({
+            documentId: savedDocument.id,
+            filePath,
+            folder,
+            fileName,
+          });
+        }
       }
 
       if (
@@ -629,10 +658,6 @@ export class EmployeesService {
       }
 
       await qr.commitTransaction();
-      return {
-        message: 'Empleado creado correctamente.',
-        employee: savedEmployee,
-      };
     } catch (error) {
       await qr.rollbackTransaction();
 
@@ -650,6 +675,33 @@ export class EmployeesService {
     } finally {
       await qr.release();
     }
+
+    for (const file of filesToConvertAfterCommit) {
+      try {
+        const pdfPath = this.storageService.convertStoredWordToPdf(
+          file.filePath,
+          file.folder,
+          file.fileName,
+        );
+
+        await this._EmployeeDocument.update(file.documentId, {
+          filePath: pdfPath,
+          extension: 'pdf',
+          mimeType: 'application/pdf',
+          fileName: `${path.parse(file.fileName).name}.pdf`,
+        });
+      } catch (error) {
+        console.error(
+          'Empleado creado, pero falló conversión de Word a PDF:',
+          error,
+        );
+      }
+    }
+
+    return {
+      message: 'Empleado creado correctamente.',
+      employee: savedEmployee,
+    };
   }
 
   async createMany(
