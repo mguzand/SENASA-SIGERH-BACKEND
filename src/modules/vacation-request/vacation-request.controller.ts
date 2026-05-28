@@ -15,6 +15,7 @@ import { CreateVacationRequestDto } from './dtos/create-vacation-request.dto';
 import { ReviewVacationRequestDto } from './dtos/review-vacation-request.dto';
 import { ListHrVacationRequestsDto } from './dtos/list-hr-vacation-requests.dto';
 import { AuthGuard } from '@nestjs/passport';
+import { CreateManualVacationRequestDto } from './dtos/create-manual-vacation-request.dto';
 
 @Controller('vacation-requests')
 export class VacationRequestController {
@@ -32,6 +33,11 @@ export class VacationRequestController {
   @UseGuards(AuthGuard('jwt'))
   tesSeenVacations(@Req() request, @Body() dto: CreateVacationRequestDto) {
     return this.vacationRequestService.testEndpoint(dto, request.user);
+  }
+
+  @Post('manual')
+  createManual(@Body() dto: CreateManualVacationRequestDto, @Req() req: any) {
+    return this.vacationRequestService.createManual(dto, req.user.employee_id);
   }
 
   @Patch(':id/boss-review')

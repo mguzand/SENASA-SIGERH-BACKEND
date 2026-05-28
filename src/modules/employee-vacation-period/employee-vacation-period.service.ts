@@ -1,6 +1,11 @@
 // src/modules/employee-vacation-period/employee-vacation-period.service.ts
 
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, MoreThan, Repository } from 'typeorm';
 
@@ -11,6 +16,7 @@ import { VacationContractRuleService } from '../vacation-contract-rule/vacation-
 import {
   VacationMovementType,
   VacationPeriodStatus,
+  VacationRequestStatus,
 } from 'src/common/enums/vacation.enums';
 import { BootstrapVacationPeriodsDto } from './dto/bootstrap-vacation-periods.dto';
 
@@ -433,6 +439,167 @@ export class EmployeeVacationPeriodService {
         available_days: Number(period.availableDays),
         status: period.status,
       })),
+    };
+  }
+
+  async getEmployeeHistory(employeeId: string) {
+    const periods = await this.periodRepository.find({
+      where: { employeeId },
+      relations: ['requestDetails', 'requestDetails.vacationRequest', 'movements'],
+      order: {
+        periodNumber: 'DESC',
+      },
+    });
+
+    const normalizedPeriods = periods.map((period) => {
+      const requestCount = (period.requestDetails || []).filter(
+        (detail) => detail.vacationRequest,
+      ).length;
+      const approvedRequests = (period.requestDetails || []).filter(
+        (detail) =>
+          detail.vacationRequest?.status === VacationRequestStatus.APPROVED,
+      ).length;
+      const expiredDays = Number(
+        (period.movements || [])
+          .filter((movement) => movement.type === VacationMovementType.EXPIRED)
+          .reduce((total, movement) => total + Number(movement.days || 0), 0),
+      );
+      const governmentMovementCount = (period.movements || []).filter(
+        (movement) => movement.type === VacationMovementType.GOVERNMENT,
+      ).length;
+
+      return {
+        id: period.id,
+        period_number: period.periodNumber,
+        start_date: period.startDate,
+        end_date: period.endDate,
+        accreditation_date: period.accreditationDate,
+        earned_days: Number(period.earnedDays),
+        used_days: Number(period.usedDays),
+        government_days: Number(period.governmentDays),
+        adjustment_days: Number(period.adjustmentDays),
+        available_days: Number(period.availableDays),
+        expired_days: expiredDays,
+        status: period.status,
+        request_count: requestCount,
+        approved_request_count: approvedRequests,
+        government_movement_count: governmentMovementCount,
+      };
+    });
+
+    return {
+      employee_id: employeeId,
+      total_periods: normalizedPeriods.length,
+      summary: {
+        earned_days: normalizedPeriods.reduce(
+          (total, period) => total + period.earned_days,
+          0,
+        ),
+        used_days: normalizedPeriods.reduce(
+          (total, period) => total + period.used_days,
+          0,
+        ),
+        government_days: normalizedPeriods.reduce(
+          (total, period) => total + period.government_days,
+          0,
+        ),
+        adjustment_days: normalizedPeriods.reduce(
+          (total, period) => total + period.adjustment_days,
+          0,
+        ),
+        available_days: normalizedPeriods.reduce(
+          (total, period) => total + period.available_days,
+          0,
+        ),
+        expired_days: normalizedPeriods.reduce(
+          (total, period) => total + period.expired_days,
+          0,
+        ),
+      },
+      periods: normalizedPeriods,
+    };
+  }
+
+  async getPeriodDetail(periodId: string) {
+    const period = await this.periodRepository.findOne({
+      where: { id: periodId },
+      relations: [
+        'requestDetails',
+        'requestDetails.vacationRequest',
+        'requestDetails.vacationRequest.days',
+        'movements',
+      ],
+    });
+
+    if (!period) {
+      throw new NotFoundException('Período vacacional no encontrado');
+    }
+
+    const requests = [...(period.requestDetails || [])]
+      .filter((detail) => detail.vacationRequest)
+      .sort((a, b) => {
+        const first = a.vacationRequest?.created_at
+          ? new Date(a.vacationRequest.created_at).getTime()
+          : 0;
+        const second = b.vacationRequest?.created_at
+          ? new Date(b.vacationRequest.created_at).getTime()
+          : 0;
+        return second - first;
+      })
+      .map((detail) => ({
+        request_id: detail.vacationRequest.id,
+        request_code: detail.vacationRequest.id.slice(0, 8).toUpperCase(),
+        start_date: detail.vacationRequest.start_date,
+        end_date: detail.vacationRequest.end_date,
+        requested_days: Number(detail.vacationRequest.requested_days),
+        approved_days: Number(detail.vacationRequest.approved_days),
+        days_used: Number(detail.daysUsed),
+        status: detail.vacationRequest.status,
+        stage: detail.vacationRequest.stage,
+        employee_comment: detail.vacationRequest.employee_comment,
+        boss_status: detail.vacationRequest.boss_status,
+        hr_status: detail.vacationRequest.hr_status,
+        created_at: detail.vacationRequest.created_at,
+        day_count: detail.vacationRequest.days?.length || 0,
+      }));
+
+    const governmentMovements = [...(period.movements || [])]
+      .filter((movement) => movement.type === VacationMovementType.GOVERNMENT)
+      .sort((a, b) => {
+        const first = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const second = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return second - first;
+      })
+      .map((movement) => ({
+        id: movement.id,
+        days: Number(movement.days),
+        movement_date: movement.movementDate,
+        description: movement.description,
+        created_at: movement.created_at,
+      }));
+
+    const expiredDays = Number(
+      (period.movements || [])
+        .filter((movement) => movement.type === VacationMovementType.EXPIRED)
+        .reduce((total, movement) => total + Number(movement.days || 0), 0),
+    );
+
+    return {
+      id: period.id,
+      employee_id: period.employeeId,
+      period_number: period.periodNumber,
+      start_date: period.startDate,
+      end_date: period.endDate,
+      accreditation_date: period.accreditationDate,
+      earned_days: Number(period.earnedDays),
+      used_days: Number(period.usedDays),
+      government_days: Number(period.governmentDays),
+      adjustment_days: Number(period.adjustmentDays),
+      available_days: Number(period.availableDays),
+      expired_days: expiredDays,
+      status: period.status,
+      requests,
+      government_movements: governmentMovements,
     };
   }
 }

@@ -24,4 +24,16 @@ export class EmployeeVacationPeriodController {
   getAvailableDays(@Param('employeeId') employeeId: string) {
     return this.employeeVacationPeriodService.getAvailableDays(employeeId);
   }
+
+  @Public()
+  @Get('employee/:employeeId/history')
+  getEmployeeHistory(@Param('employeeId') employeeId: string) {
+    return this.employeeVacationPeriodService.getEmployeeHistory(employeeId);
+  }
+
+  @Public()
+  @Get(':periodId/detail')
+  getPeriodDetail(@Param('periodId') periodId: string) {
+    return this.employeeVacationPeriodService.getPeriodDetail(periodId);
+  }
 }

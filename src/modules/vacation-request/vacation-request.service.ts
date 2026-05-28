@@ -26,6 +26,7 @@ import { ReviewVacationRequestDto } from './dtos/review-vacation-request.dto';
 import { sendVacations } from 'src/common/helpers/send-email.helper';
 import { AreaManagerService } from '../area-manager/area-manager.service';
 import { AreaManagerRole } from '../area-manager/interfaces/area-manager-role.enum';
+import { CreateManualVacationRequestDto } from './dtos/create-manual-vacation-request.dto';
 
 @Injectable()
 export class VacationRequestService {
@@ -41,6 +42,111 @@ export class VacationRequestService {
     private readonly vacationMovementService: VacationMovementService,
     private readonly areaManagerService: AreaManagerService,
   ) {}
+
+  async createManual(
+    dto: CreateManualVacationRequestDto,
+    hrEmployeeId: string,
+  ) {
+    if (!dto.days || dto.days.length === 0) {
+      throw new BadRequestException('Debe seleccionar al menos un día');
+    }
+
+    const sortedDays = [...new Set(dto.days)].sort();
+    const validDays = sortedDays.length;
+
+    const queryRunner = this.dataSource.createQueryRunner();
+
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      const request = queryRunner.manager.create(VacationRequest, {
+        employee_id: dto.employee_id,
+        area_id: dto.area_id,
+
+        start_date: sortedDays[0],
+        end_date: sortedDays[sortedDays.length - 1],
+
+        requested_days: validDays,
+        approved_days: validDays,
+
+        employee_comment: dto.employee_comment ?? null,
+
+        stage: VacationRequestStage.COMPLETED,
+        status: VacationRequestStatus.APPROVED,
+
+        boss_employee_id: null,
+        boss_status: VacationRequestStatus.APPROVED,
+        boss_observation: 'Solicitud ingresada manualmente por RRHH',
+        boss_reviewed_at: new Date(),
+
+        hr_employee_id: hrEmployeeId,
+        hr_status: VacationRequestStatus.APPROVED,
+        hr_observation:
+          dto.hr_observation ?? 'Solicitud manual aprobada por RRHH',
+        hr_reviewed_at: new Date(),
+
+        is_processed: true,
+        processed_at: new Date(),
+
+        is_manual: true,
+      });
+
+      const savedRequest = await queryRunner.manager.save(
+        VacationRequest,
+        request,
+      );
+
+      await this.vacationRequestDayService.createManyWithManager(
+        savedRequest.id,
+        sortedDays,
+        queryRunner.manager,
+      );
+
+      const periodsConsumed =
+        await this.employeeVacationPeriodService.consumeVacationDaysWithManager(
+          {
+            employee_id: dto.employee_id,
+            requested_days: validDays,
+          },
+          queryRunner.manager,
+        );
+
+      for (const item of periodsConsumed) {
+        await this.vacationRequestDetailService.createWithManager(
+          {
+            vacation_request_id: savedRequest.id,
+            vacation_period_id: item.vacation_period_id,
+            daysUsed: item.days_used,
+          },
+          queryRunner.manager,
+        );
+
+        await this.vacationMovementService.createWithManager(
+          {
+            employeeId: dto.employee_id,
+            vacationPeriodId: item.vacation_period_id,
+            vacationRequestId: savedRequest.id,
+            type: VacationMovementType.REQUEST,
+            days: item.days_used,
+            movementDate: this.formatDate(new Date()),
+            description: 'Solicitud manual de vacaciones registrada por RRHH',
+            createdByUserId: hrEmployeeId,
+          },
+          queryRunner.manager,
+        );
+      }
+
+      await queryRunner.commitTransaction();
+
+      return this.findOne(savedRequest.id);
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
+  }
 
   async findHrInbox(
     params: ListHrVacationRequestsDto,

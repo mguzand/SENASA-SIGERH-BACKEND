@@ -183,6 +183,9 @@ export class VacationRequest {
     this.updated_at = date;
   }
 
+  @Column({ default: false })
+  is_manual: boolean;
+
   @BeforeUpdate()
   setDefaultDate() {
     this.updated_at = new Date();

@@ -268,6 +268,7 @@ export class EmployeesService {
       functionalPositionName: currentRecord?.functionalPosition?.name || null,
       nominalPositionName: currentRecord?.position?.name || null,
       departmentName: currentRecord?.area?.name || null,
+      departmentId: currentRecord?.area?.id || null,
       salary:
         currentRecord?.salary !== null && currentRecord?.salary !== undefined
           ? Number(currentRecord.salary)
