@@ -80,7 +80,7 @@ export class StorageService {
     const extension = path.extname(sourceFullPath).toLowerCase();
 
     // Convertir Word a PDF
-    if (extension === '.doc' || extension === '.docx') {
+    if (extension === '.doc2' || extension === '.docx2') {
       try {
         execFileSync('libreoffice', [
           '--headless',
