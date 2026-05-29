@@ -57,6 +57,7 @@ export class UsersService {
         username,
         email: username,
       })
+      .andWhere('user.is_active = :isActive', { isActive: false })
       .getOne();
 
     const data = values ? this.formatData(values) : null;

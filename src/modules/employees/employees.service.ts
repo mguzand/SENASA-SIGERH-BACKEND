@@ -339,6 +339,10 @@ export class EmployeesService {
         (employee as any).address = dto.address?.trim() || null;
       }
 
+      if (dto.phone !== undefined) {
+        (employee as any).phone = dto.phone?.trim() || null;
+      }
+
       if (dto.biometric_id !== undefined) {
         (employee as any).biometric_id = dto.biometric_id?.trim() || null;
       }

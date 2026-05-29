@@ -15,6 +15,10 @@ export class UpdateEmployeeEditableDto {
 
   @IsOptional()
   @IsString()
+  phone?: string | null;
+
+  @IsOptional()
+  @IsString()
   biometric_id?: string | null;
 
   @IsOptional()
