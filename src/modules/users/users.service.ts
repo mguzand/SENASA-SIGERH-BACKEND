@@ -4,12 +4,15 @@ import { User } from './entities/user.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ChangePasswordDto } from 'src/common/auth/dto/change-password.dto';
 import { hashPassword } from 'src/common/helpers/password.helper';
+import { RolUserService } from '../rol-user/rol-user.service';
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectRepository(User)
     private _userRepo: Repository<User>,
+
+    private readonly _rolUserService: RolUserService,
   ) {}
 
   async createUser(
@@ -34,7 +37,10 @@ export class UsersService {
   //↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓//
   //                                 Get the user by user                                 //
   //↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑//
-  async findByUserQuery(username: string) {
+  async findByUserQuery(
+    username: string,
+    system: string = '95e272a3-5113-4663-9a04-213f2f8f391a',
+  ) {
     const values = await this._userRepo
       .createQueryBuilder('user')
       .innerJoinAndSelect('user.employee', 'employee')
@@ -60,8 +66,20 @@ export class UsersService {
       .andWhere('user.is_active = :isActive', { isActive: false })
       .getOne();
 
-    const data = values ? this.formatData(values) : null;
-    return data;
+    if (values) {
+      const dataPermissions = await this._rolUserService.getCountPermissions(
+        values.id,
+        system,
+      );
+      if (dataPermissions > 0) {
+        values['hasPermissions'] = true;
+      } else {
+        values['hasPermissions'] = false;
+      }
+      return this.formatData(values);
+    } else {
+      return null;
+    }
   }
 
   async formatData(items: any) {

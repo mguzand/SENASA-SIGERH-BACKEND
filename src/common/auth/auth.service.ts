@@ -18,11 +18,11 @@ export class AuthService {
     });
   }
 
-  async validateUser(username: string, password: string) {
+  async validateUser(username: string, password: string, system: string) {
     ///////////////////////////////////////////////////////////////////////////////
     ///                  Validate Username in the users table                   ///
     ///////////////////////////////////////////////////////////////////////////////
-    let user: any = await this._userService.findByUserQuery(username);
+    let user: any = await this._userService.findByUserQuery(username, system);
 
     if (user) {
       if (comparePassword(password, user.password)) {
@@ -64,6 +64,7 @@ export class AuthService {
         schedule_startTime: items.scheduleStartTime,
         schedule_endTime: items.scheduleEndTime,
         department_id: items.department_id,
+        hasPermissions: items.permissions,
       };
     });
     const token = this._jwtService.sign(payload[0]);
