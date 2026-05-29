@@ -21,17 +21,6 @@ export class LocalStrategy extends PassportStrategy(Strategy, 'local') {
   ): Promise<any> {
     const system = req.body?.system;
 
-    console.log('LOCAL STRATEGY:', {
-      username,
-      password,
-      system,
-      body: req.body,
-    });
-
-    if (!system) {
-      throw new UnauthorizedException(['Debe enviar el sistema.']);
-    }
-
     const user = await this._authService.validateUser(
       username,
       password,
