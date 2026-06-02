@@ -101,8 +101,8 @@ export class EmployeeVacationPeriodService {
   }
 
   async processVacationPeriods(): Promise<void> {
-    //const today = this.formatDate(new Date());
-    const today = this.formatDate(new Date('2026-06-01'));
+    const today = this.formatDate(new Date());
+    //const today = this.formatDate(new Date('2026-06-01'));
 
     const periods = await this.periodRepository.find({
       where: {
