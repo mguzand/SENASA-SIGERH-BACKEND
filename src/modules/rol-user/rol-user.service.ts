@@ -16,11 +16,13 @@ export class RolUserService {
     private readonly dataSource: DataSource,
   ) {}
 
-  async getAllByUser(id_user: number) {
-    const rol_user = await this._rolUser.find({
-      where: { user_id: id_user },
-      relations: { components: true },
-    });
+  async getAllByUser(id_user: string, system: string) {
+    const rol_user = await this._rolUser
+      .createQueryBuilder('rol_user')
+      .innerJoinAndSelect('rol_user.components', 'components')
+      .where('rol_user.user_id = :id_user', { id_user })
+      .andWhere('components.system_id = :system', { system })
+      .getMany();
     return rol_user;
   }
 

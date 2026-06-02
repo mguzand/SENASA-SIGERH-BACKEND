@@ -46,6 +46,7 @@ export class AuthService {
 
     const payload = data.map((items) => {
       return {
+        id: items.id,
         username: items.username,
         email: items.email,
         surname: items.surname,
