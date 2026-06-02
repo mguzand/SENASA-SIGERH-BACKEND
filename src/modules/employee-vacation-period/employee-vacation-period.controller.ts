@@ -14,6 +14,7 @@ export class EmployeeVacationPeriodController {
     return this.employeeVacationPeriodService.bootstrap(dto);
   }
 
+  @Public()
   @Post('process')
   process() {
     return this.employeeVacationPeriodService.processVacationPeriods();

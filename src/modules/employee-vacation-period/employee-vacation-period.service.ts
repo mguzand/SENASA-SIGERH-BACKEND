@@ -101,18 +101,15 @@ export class EmployeeVacationPeriodService {
   }
 
   async processVacationPeriods(): Promise<void> {
-    const today = this.formatDate(new Date());
+    //const today = this.formatDate(new Date());
+    const today = this.formatDate(new Date('2026-06-01'));
 
     const periods = await this.periodRepository.find({
       where: {
         accreditationDate: today,
         status: VacationPeriodStatus.PENDING,
       },
-      relations: [
-        'employee',
-        'employeeJobRecord',
-        'employeeJobRecord.employmentModality',
-      ],
+      relations: ['employee', 'employeeJobRecord'],
     });
 
     for (const period of periods) {
@@ -261,6 +258,13 @@ export class EmployeeVacationPeriodService {
     manager: EntityManager,
   ): Promise<void> {
     const nextPeriodNumber = currentPeriod.periodNumber + 1;
+
+    const modalityId = currentPeriod.employeeJobRecord.modalityId;
+    if (!modalityId) {
+      throw new BadRequestException(
+        'El registro laboral no tiene modalidad asociada',
+      );
+    }
 
     const earnedDays =
       await this.vacationContractRuleService.getDaysByModalityAndYear(
@@ -445,7 +449,11 @@ export class EmployeeVacationPeriodService {
   async getEmployeeHistory(employeeId: string) {
     const periods = await this.periodRepository.find({
       where: { employeeId },
-      relations: ['requestDetails', 'requestDetails.vacationRequest', 'movements'],
+      relations: [
+        'requestDetails',
+        'requestDetails.vacationRequest',
+        'movements',
+      ],
       order: {
         periodNumber: 'DESC',
       },
