@@ -32,6 +32,12 @@ export class EmployeeIntakeRequest {
   @Column({ type: 'text', nullable: true })
   home_address: string | null;
 
+  @Column({ length: 180, nullable: true, type: 'varchar' })
+  birth_place: string | null;
+
+  @Column({ length: 30, nullable: true, type: 'varchar' })
+  phone: string | null;
+
   @Column({ type: 'text' })
   cv_file_path: string;
 

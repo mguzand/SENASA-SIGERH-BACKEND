@@ -10,6 +10,26 @@ import {
 } from 'class-validator';
 
 export class ReviewEmployeeIntakeDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(20)
+  identity: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(30)
+  rtn: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(180)
+  birth_place: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(30)
+  phone: string;
+
   @IsOptional()
   @IsString()
   @MaxLength(50)

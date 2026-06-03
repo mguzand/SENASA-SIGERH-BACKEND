@@ -76,6 +76,8 @@ export class EmployeeIntakeService {
         blood_type: dto.blood_type?.trim() || null,
         email: dto.email?.trim() || null,
         home_address: dto.home_address?.trim() || null,
+        birth_place: existing?.birth_place || null,
+        phone: existing?.phone || null,
         cv_file_path: filePath,
         cv_original_name: dto.cv_original_name?.trim() || null,
         cv_extension: extension,
@@ -250,6 +252,8 @@ export class EmployeeIntakeService {
       bloodType: record.blood_type,
       email: record.email,
       homeAddress: record.home_address,
+      birthPlace: record.birth_place,
+      phone: record.phone,
       cvOriginalName: record.cv_original_name,
       cvExtension: record.cv_extension,
       cvMimeType: record.cv_mime_type,
@@ -298,6 +302,10 @@ export class EmployeeIntakeService {
   async review(id: string, dto: ReviewEmployeeIntakeDto) {
     const record = await this.findPendingEntity(id);
 
+    record.identity = dto.identity.trim();
+    record.rtn = dto.rtn.trim();
+    record.birth_place = dto.birth_place.trim();
+    record.phone = dto.phone.trim();
     record.no_organizational_type = dto.no_organizational_type?.trim() || null;
     record.area_id = dto.area_id;
     record.nominal_position = dto.nominal_position;
