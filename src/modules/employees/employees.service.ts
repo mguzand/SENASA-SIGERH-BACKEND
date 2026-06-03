@@ -417,6 +417,12 @@ export class EmployeesService {
             'Esta solicitud temporal ya fue convertida.',
           ]);
         }
+
+        if (intakeRequest.status !== 'REVIEWED') {
+          throw new BadRequestException([
+            'La solicitud temporal debe estar revisada antes de convertirla en empleado.',
+          ]);
+        }
       }
 
       //! ////////////////////////////////////////////////////////////////////////////

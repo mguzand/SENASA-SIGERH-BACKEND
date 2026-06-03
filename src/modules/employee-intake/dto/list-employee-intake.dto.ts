@@ -7,8 +7,8 @@ export class ListEmployeeIntakeDto {
 
   @IsOptional()
   @IsString()
-  @IsIn(['pending', 'converted', 'all'])
-  status?: 'pending' | 'converted' | 'all';
+  @IsIn(['pending', 'reviewed', 'converted', 'all'])
+  status?: 'pending' | 'reviewed' | 'converted' | 'all';
 
   @IsOptional()
   page?: string;

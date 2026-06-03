@@ -6,6 +6,7 @@ import { StorageService } from 'src/common/services/storage.service';
 import { CreateEmployeeIntakeDto } from './dto/create-employee-intake.dto';
 import { EmployeeIntakeRequest } from './entities/employee-intake.entity';
 import { ListEmployeeIntakeDto } from './dto/list-employee-intake.dto';
+import { ReviewEmployeeIntakeDto } from './dto/review-employee-intake.dto';
 
 @Injectable()
 export class EmployeeIntakeService {
@@ -98,9 +99,23 @@ export class EmployeeIntakeService {
             ? new Date(dto.criminal_record_expiration_date)
             : null
           : existing?.criminal_record_expiration_date || null,
-        status: existing?.status === 'CONVERTED' ? 'CONVERTED' : 'PENDING',
+        status: existing?.status === 'CONVERTED' ? 'CONVERTED' : existing?.status === 'REVIEWED' ? 'REVIEWED' : 'PENDING',
         converted_employee_id: existing?.converted_employee_id || null,
         converted_at: existing?.converted_at || null,
+        no_organizational_type: existing?.no_organizational_type || null,
+        area_id: existing?.area_id || null,
+        nominal_position: existing?.nominal_position || null,
+        functional_position: existing?.functional_position || null,
+        start_date: existing?.start_date || null,
+        salary: existing?.salary || null,
+        modality_id: existing?.modality_id || null,
+        schedule_id: existing?.schedule_id || null,
+        regional_id: existing?.regional_id || null,
+        employee_status: existing?.employee_status || null,
+        biometric_id: existing?.biometric_id || null,
+        emergency_contact_name: existing?.emergency_contact_name || null,
+        emergency_contact_relationship: existing?.emergency_contact_relationship || null,
+        emergency_contact_phone: existing?.emergency_contact_phone || null,
       });
 
       const saved = await this.employeeIntakeRepository.save(entity);
@@ -153,6 +168,10 @@ export class EmployeeIntakeService {
       query.andWhere('request.status = :status', { status: 'CONVERTED' });
     }
 
+    if (status === 'reviewed') {
+      query.andWhere('request.status = :status', { status: 'REVIEWED' });
+    }
+
     if (params.search?.trim()) {
       const search = `%${params.search.trim().toLowerCase()}%`;
 
@@ -174,8 +193,9 @@ export class EmployeeIntakeService {
       .getManyAndCount();
 
     const statsBase = this.employeeIntakeRepository.createQueryBuilder('request');
-    const [pending, converted, totalAll] = await Promise.all([
+    const [pending, reviewed, converted, totalAll] = await Promise.all([
       statsBase.clone().where('request.status = :status', { status: 'PENDING' }).getCount(),
+      statsBase.clone().where('request.status = :status', { status: 'REVIEWED' }).getCount(),
       statsBase.clone().where('request.status = :status', { status: 'CONVERTED' }).getCount(),
       statsBase.clone().getCount(),
     ]);
@@ -197,6 +217,7 @@ export class EmployeeIntakeService {
         convertedEmployeeId: record.converted_employee_id,
         createdAt: record.created_at,
         convertedAt: record.converted_at,
+        reviewedAt: record.updated_at,
       })),
       meta: {
         page,
@@ -206,6 +227,7 @@ export class EmployeeIntakeService {
       },
       stats: {
         pending,
+        reviewed,
         converted,
         total: totalAll,
       },
@@ -241,6 +263,21 @@ export class EmployeeIntakeService {
       convertedEmployeeId: record.converted_employee_id,
       createdAt: record.created_at,
       convertedAt: record.converted_at,
+      reviewedAt: record.updated_at,
+      noOrganizationalType: record.no_organizational_type,
+      areaId: record.area_id,
+      nominalPosition: record.nominal_position,
+      functionalPosition: record.functional_position,
+      startDate: record.start_date,
+      salary: record.salary !== null && record.salary !== undefined ? Number(record.salary) : null,
+      modalityId: record.modality_id,
+      scheduleId: record.schedule_id,
+      regionalId: record.regional_id,
+      employeeStatus: record.employee_status,
+      biometricId: record.biometric_id,
+      emergencyContactName: record.emergency_contact_name,
+      emergencyContactRelationship: record.emergency_contact_relationship,
+      emergencyContactPhone: record.emergency_contact_phone,
     };
   }
 
@@ -256,6 +293,36 @@ export class EmployeeIntakeService {
     }
 
     return record;
+  }
+
+  async review(id: string, dto: ReviewEmployeeIntakeDto) {
+    const record = await this.findPendingEntity(id);
+
+    record.no_organizational_type = dto.no_organizational_type?.trim() || null;
+    record.area_id = dto.area_id;
+    record.nominal_position = dto.nominal_position;
+    record.functional_position = dto.functional_position;
+    record.start_date = new Date(dto.start_date);
+    record.salary = dto.salary;
+    record.modality_id = dto.modality_id;
+    record.schedule_id = dto.schedule_id;
+    record.regional_id = dto.regional_id;
+    record.employee_status = dto.employee_status?.trim() || null;
+    record.biometric_id = dto.biometric_id?.trim() || null;
+    record.emergency_contact_name = dto.emergency_contact_name?.trim() || null;
+    record.emergency_contact_relationship =
+      dto.emergency_contact_relationship?.trim() || null;
+    record.emergency_contact_phone = dto.emergency_contact_phone?.trim() || null;
+    record.status = 'REVIEWED';
+
+    await this.employeeIntakeRepository.save(record);
+
+    return {
+      message: 'Solicitud revisada correctamente',
+      id: record.id,
+      status: 'reviewed',
+      reviewedAt: record.updated_at,
+    };
   }
 
   async markAsConverted(id: string, employeeId: string) {

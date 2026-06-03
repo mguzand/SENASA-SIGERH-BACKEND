@@ -59,6 +59,48 @@ export class EmployeeIntakeRequest {
   @Column({ type: 'date', nullable: true })
   criminal_record_expiration_date: Date | null;
 
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  no_organizational_type: string | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  area_id: string | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  nominal_position: string | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  functional_position: string | null;
+
+  @Column({ type: 'date', nullable: true })
+  start_date: Date | null;
+
+  @Column({ type: 'numeric', precision: 12, scale: 2, nullable: true })
+  salary: number | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  modality_id: string | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  schedule_id: string | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  regional_id: string | null;
+
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  employee_status: string | null;
+
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  biometric_id: string | null;
+
+  @Column({ type: 'varchar', length: 150, nullable: true })
+  emergency_contact_name: string | null;
+
+  @Column({ type: 'varchar', length: 150, nullable: true })
+  emergency_contact_relationship: string | null;
+
+  @Column({ type: 'varchar', length: 30, nullable: true })
+  emergency_contact_phone: string | null;
+
   @Column({ length: 20, default: 'PENDING', type: 'varchar' })
   status: string;
 
