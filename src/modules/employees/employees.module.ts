@@ -32,5 +32,6 @@ import { EmployeeJobRecord } from '../employee-job-record/entities/employee-job-
     EmployeeVacationPeriodModule,
     UsersModule,
   ],
+  exports: [EmployeesService],
 })
 export class EmployeesModule {}

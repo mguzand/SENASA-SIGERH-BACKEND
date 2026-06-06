@@ -1,0 +1,6 @@
+export enum PayrollItemType {
+  VARIABLE_SALARY = 'VARIABLE_SALARY',
+  BONUS = 'BONUS',
+  DEDUCTION = 'DEDUCTION',
+  WITHHOLDING = 'WITHHOLDING',
+}

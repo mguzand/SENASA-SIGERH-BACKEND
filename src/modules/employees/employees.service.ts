@@ -818,4 +818,10 @@ export class EmployeesService {
     const [year, month, day] = normalized.split('-').map(Number);
     return new Date(year, month - 1, day, 12, 0, 0, 0);
   }
+
+  async findByDni(dni: string) {
+    return this._employee.findOne({
+      where: { dni },
+    });
+  }
 }
