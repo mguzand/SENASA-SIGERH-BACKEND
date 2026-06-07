@@ -33,13 +33,25 @@ export class PayrollImportService {
   ) {}
 
   async generateVoucherPdf(receiptId: string) {
-    const receipt = await this.employeePaymentReceiptRepository.findOne({
-      where: { id: receiptId },
-      relations: {
-        employee: true,
-        items: true,
-      },
-    });
+    const receipt = await this.employeePaymentReceiptRepository
+      .createQueryBuilder('receipt')
+      .leftJoinAndSelect('receipt.employee', 'employee')
+      .leftJoinAndSelect('employee.regional', 'regional')
+      .leftJoinAndSelect(
+        'employee.jobRecords',
+        'jobRecord',
+        'LOWER(jobRecord.status) = :status',
+        { status: 'active' },
+      )
+      .leftJoinAndSelect('jobRecord.area', 'area')
+      .leftJoinAndSelect('jobRecord.position', 'nominalPosition')
+      .leftJoinAndSelect(
+        'jobRecord.functionalPosition',
+        'functionalPosition',
+      )
+      .leftJoinAndSelect('receipt.items', 'items')
+      .where('receipt.id = :receiptId', { receiptId })
+      .getOne();
 
     if (!receipt) {
       throw new NotFoundException('Comprobante de pago no encontrado');
@@ -53,36 +65,123 @@ export class PayrollImportService {
       (item) => item.itemType === PayrollItemType.WITHHOLDING,
     );
 
+    const currentJobRecord = [...(receipt.employee?.jobRecords || [])].sort(
+      (first, second) => {
+        const firstTime = first.created_at
+          ? new Date(first.created_at).getTime()
+          : 0;
+        const secondTime = second.created_at
+          ? new Date(second.created_at).getTime()
+          : 0;
+
+        if (Number(second.isCurrent) !== Number(first.isCurrent)) {
+          return Number(second.isCurrent) - Number(first.isCurrent);
+        }
+
+        return secondTime - firstTime;
+      },
+    )[0];
+
+    const ordinarySalary = Number(receipt.ordinarySalary || 0);
+    const increments = Number(receipt.increments || 0);
+    const seniority = Number(receipt.seniority || 0);
+    const variableSalariesTotal = Number(receipt.variableSalariesTotal || 0);
+    const bonusesTotal = Number(receipt.bonusesTotal || 0);
+    const parsedIntegralSalary = Number(receipt.integralSalary || 0);
+    const computedIntegralSalary =
+      ordinarySalary +
+      increments +
+      seniority +
+      variableSalariesTotal +
+      bonusesTotal;
+    const integralSalary =
+      parsedIntegralSalary > 0 ? parsedIntegralSalary : computedIntegralSalary;
+
+    const deductionsTotalFromItems = deductions.reduce(
+      (sum, item) => sum + Number(item.amount || 0),
+      0,
+    );
+    const withholdingsTotalFromItems = withholdings.reduce(
+      (sum, item) => sum + Number(item.amount || 0),
+      0,
+    );
+
+    const deductionsTotal =
+      deductionsTotalFromItems > 0
+        ? deductionsTotalFromItems
+        : Number(receipt.deductionsTotal || 0);
+    const withholdingsTotal =
+      withholdingsTotalFromItems > 0
+        ? withholdingsTotalFromItems
+        : Number(receipt.withholdingsTotal || 0);
+    const totalDeductionsWithholdings =
+      deductionsTotal + withholdingsTotal;
+
+    const parsedNetSalary = Number(receipt.netSalary || 0);
+    const computedNetSalary = Math.max(
+      integralSalary - totalDeductionsWithholdings,
+      0,
+    );
+    const netSalary =
+      parsedNetSalary > 0 &&
+      Math.abs(parsedNetSalary - computedNetSalary) < 0.01
+        ? parsedNetSalary
+        : computedNetSalary;
+
+    const employeeName =
+      this.buildEmployeeFullName(receipt.employee) ||
+      receipt.employeeNameFromFile ||
+      '-';
+    const position =
+      currentJobRecord?.functionalPosition?.name ||
+      currentJobRecord?.position?.name ||
+      null;
+    const organizationalUnit = currentJobRecord?.area?.name || null;
+    const regionalName = receipt.employee?.regional?.name || null;
+    const amountInWords =
+      this.numberToSpanishCurrency(netSalary) || receipt.amountInWords || '-';
+    const voucherYear =
+      receipt.createdAt?.getFullYear?.() ||
+      Number(receipt.year) ||
+      new Date().getFullYear();
+    const displayDocumentNumber = this.formatVoucherNumber(
+      receipt.documentNumber,
+      voucherYear,
+      receipt.id,
+    );
+
     const docDefinition = await PayrollVoucherReport({
       id: receipt.id,
-      documentNumber: receipt.documentNumber,
+      documentNumber: displayDocumentNumber,
 
-      year: receipt.year,
+      year: voucherYear,
       month: receipt.month,
 
-      employeeName: receipt.employeeNameFromFile,
+      employeeName,
       identity: `HN - TID ${receipt.identityNumber}`,
+      position,
+      organizationalUnit,
+      regionalName,
 
       payrollType:
         `${receipt.payrollClass ?? ''} ${receipt.payrollType ?? ''}`.trim(),
 
-      ordinarySalary: Number(receipt.ordinarySalary),
-      increments: Number(receipt.increments),
-      seniority: Number(receipt.seniority),
-      integralSalary: Number(receipt.integralSalary),
-      netSalary: Number(receipt.netSalary),
+      ordinarySalary,
+      increments,
+      seniority,
+      integralSalary,
+      netSalary,
 
-      amountInWords: receipt.amountInWords,
+      amountInWords,
       bankName: receipt.bankName,
       bankAccount: receipt.bankAccount,
 
       deductions,
       withholdings,
 
-      deductionsTotal: Number(receipt.deductionsTotal),
-      withholdingsTotal: Number(receipt.withholdingsTotal),
-      totalDeductionsWithholdings:
-        Number(receipt.deductionsTotal) + Number(receipt.withholdingsTotal),
+      deductionsTotal,
+      withholdingsTotal,
+      totalDeductionsWithholdings,
 
       validationUrl: `https://sigerh.senasa.gob.hn/validar-comprobante/${receipt.id}`,
 
@@ -628,5 +727,154 @@ export class PayrollImportService {
     if (!value) return 0;
 
     return Number(value.replace(/,/g, '').trim());
+  }
+
+  private buildEmployeeFullName(employee?: any) {
+    if (!employee) return null;
+
+    const fullName = [
+      employee.firstName,
+      employee.middleName,
+      employee.lastName,
+      employee.secondLastName,
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+
+    return fullName || null;
+  }
+
+  private formatVoucherNumber(
+    documentNumber: string | null,
+    year: number,
+    receiptId: string,
+  ) {
+    const numericPart =
+      String(documentNumber || '')
+        .match(/\d+/g)
+        ?.join('') || receiptId.replace(/-/g, '').slice(0, 5);
+
+    return `VO-${year}-${numericPart.padStart(5, '0')}`;
+  }
+
+  private numberToSpanishCurrency(value: number) {
+    const amount = Number(value || 0);
+
+    if (amount < 0) return null;
+
+    const integerPart = Math.floor(amount);
+    const decimalPart = Math.round((amount - integerPart) * 100);
+    const words = this.numberToSpanishWords(integerPart);
+
+    return `${words} ${String(decimalPart).padStart(2, '0')}/100`;
+  }
+
+  private numberToSpanishWords(value: number): string {
+    if (value === 0) return 'CERO';
+
+    const units = [
+      '',
+      'UNO',
+      'DOS',
+      'TRES',
+      'CUATRO',
+      'CINCO',
+      'SEIS',
+      'SIETE',
+      'OCHO',
+      'NUEVE',
+    ];
+
+    const teens = [
+      'DIEZ',
+      'ONCE',
+      'DOCE',
+      'TRECE',
+      'CATORCE',
+      'QUINCE',
+      'DIECISEIS',
+      'DIECISIETE',
+      'DIECIOCHO',
+      'DIECINUEVE',
+    ];
+
+    const tens = [
+      '',
+      '',
+      'VEINTE',
+      'TREINTA',
+      'CUARENTA',
+      'CINCUENTA',
+      'SESENTA',
+      'SETENTA',
+      'OCHENTA',
+      'NOVENTA',
+    ];
+
+    const hundreds = [
+      '',
+      'CIENTO',
+      'DOSCIENTOS',
+      'TRESCIENTOS',
+      'CUATROCIENTOS',
+      'QUINIENTOS',
+      'SEISCIENTOS',
+      'SETECIENTOS',
+      'OCHOCIENTOS',
+      'NOVECIENTOS',
+    ];
+
+    const convertUnderHundred = (number: number): string => {
+      if (number < 10) return units[number];
+      if (number < 20) return teens[number - 10];
+      if (number < 30) {
+        if (number === 20) return 'VEINTE';
+        return `VEINTI${units[number - 20]}`;
+      }
+
+      const ten = Math.floor(number / 10);
+      const unit = number % 10;
+
+      return unit > 0 ? `${tens[ten]} Y ${units[unit]}` : tens[ten];
+    };
+
+    const convertUnderThousand = (number: number): string => {
+      if (number === 100) return 'CIEN';
+      if (number < 100) return convertUnderHundred(number);
+
+      const hundred = Math.floor(number / 100);
+      const remainder = number % 100;
+
+      return remainder > 0
+        ? `${hundreds[hundred]} ${convertUnderHundred(remainder)}`.trim()
+        : hundreds[hundred];
+    };
+
+    const convert = (number: number): string => {
+      if (number < 1000) return convertUnderThousand(number);
+
+      if (number < 1000000) {
+        const thousands = Math.floor(number / 1000);
+        const remainder = number % 1000;
+        const thousandsText =
+          thousands === 1 ? 'MIL' : `${convertUnderThousand(thousands)} MIL`;
+
+        return remainder > 0
+          ? `${thousandsText} ${convertUnderThousand(remainder)}`.trim()
+          : thousandsText;
+      }
+
+      const millions = Math.floor(number / 1000000);
+      const remainder = number % 1000000;
+      const millionsText =
+        millions === 1 ? 'UN MILLON' : `${convert(millions)} MILLONES`;
+
+      return remainder > 0
+        ? `${millionsText} ${convert(remainder)}`.trim()
+        : millionsText;
+    };
+
+    return convert(value).replace(/\s+/g, ' ').trim();
   }
 }

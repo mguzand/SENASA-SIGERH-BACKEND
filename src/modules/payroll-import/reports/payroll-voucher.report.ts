@@ -186,13 +186,13 @@ function signature(data: any): Content {
         margin: [0, 8, 0, 0],
       },
       {
-        text: 'RECIBÍ CONFORME',
+        text: 'ING. KEVIN ERNESTO MENDOZA LIRA',
         alignment: 'center',
         bold: true,
         fontSize: 7,
       },
       {
-        text: data.employeeName ?? '',
+        text: 'JEFE DEL DEPARTAMENTO DE PERSONAL',
         alignment: 'center',
         fontSize: 7,
       },
@@ -224,11 +224,6 @@ function header(data: any): Content {
             text: `No. ${data.documentNumber ?? '-'}`,
             alignment: 'right',
             bold: true,
-            fontSize: 8,
-          },
-          {
-            text: `Gestión: ${data.year ?? '-'}`,
-            alignment: 'right',
             fontSize: 8,
           },
           {
