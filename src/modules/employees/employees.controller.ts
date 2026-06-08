@@ -1,8 +1,9 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, Req, Res } from '@nestjs/common';
 import { EmployeesService } from './employees.service';
 import { Public } from 'src/common/decorators/public.decorator';
 import { CreateEmployeeDto } from './dtos/create-employees.dto';
 import { UpdateEmployeeEditableDto } from './dtos/update-employee-editable.dto';
+import type { Response } from 'express';
 
 @Controller('employees')
 export class EmployeesController {
@@ -28,6 +29,14 @@ export class EmployeesController {
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.employeesService.findOne(id);
+  }
+
+  @Get('documents/:documentId/download')
+  async downloadDocument(@Param('documentId') documentId: string, @Res() res: Response) {
+    const { absolutePath, originalName } =
+      await this.employeesService.getEmployeeDocumentDownload(documentId);
+
+    return res.download(absolutePath, originalName || 'documento');
   }
 
   @Post()

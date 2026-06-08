@@ -89,8 +89,14 @@ export class PayrollImportService {
     }
 
     if (query.year?.trim()) {
-      qb.andWhere('CAST(receipt.year AS TEXT) = :year', {
+      qb.andWhere("TO_CHAR(receipt.created_at, 'YYYY') = :year", {
         year: query.year.trim(),
+      });
+    }
+
+    if (query.employeeId?.trim()) {
+      qb.andWhere('receipt.employeeId = :employeeId', {
+        employeeId: query.employeeId.trim(),
       });
     }
 
@@ -98,6 +104,8 @@ export class PayrollImportService {
       .skip((page - 1) * limit)
       .take(limit)
       .getManyAndCount();
+
+    console.log(rows);
 
     const statsBase =
       this.employeePaymentReceiptRepository.createQueryBuilder('receipt');

@@ -778,6 +778,21 @@ export class EmployeesService {
     return { person: resultPerson, rnp, InternalRNP };
   }
 
+  async getEmployeeDocumentDownload(documentId: string) {
+    const document = await this._EmployeeDocument.findOne({
+      where: { id: documentId },
+    });
+
+    if (!document) {
+      throw new NotFoundException('Documento no encontrado.');
+    }
+
+    return {
+      absolutePath: this.storageService.getAbsolutePath(document.filePath),
+      originalName: document.originalName || document.fileName || 'documento',
+    };
+  }
+
   private normalizeDateOnlyString(value: unknown): string | null {
     if (!value) return null;
 

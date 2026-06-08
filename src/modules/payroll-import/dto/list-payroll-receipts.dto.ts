@@ -14,6 +14,10 @@ export class ListPayrollReceiptsDto {
   year?: string;
 
   @IsOptional()
+  @IsString()
+  employeeId?: string;
+
+  @IsOptional()
   page?: string;
 
   @IsOptional()
