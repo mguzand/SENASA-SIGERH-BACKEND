@@ -27,6 +27,21 @@ export class ReviewEmployeeIntakeDto {
 
   @IsString()
   @IsNotEmpty()
+  @MaxLength(50)
+  marital_status: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(10)
+  blood_type: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(150)
+  email: string;
+
+  @IsString()
+  @IsNotEmpty()
   @MaxLength(30)
   phone: string;
 

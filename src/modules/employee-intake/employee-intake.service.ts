@@ -307,6 +307,9 @@ export class EmployeeIntakeService {
     record.identity = dto.identity.trim();
     record.rtn = dto.rtn.trim();
     record.birth_place = dto.birth_place.trim();
+    record.marital_status = dto.marital_status.trim();
+    record.blood_type = dto.blood_type.trim();
+    record.email = dto.email.trim();
     record.phone = dto.phone.trim();
     record.no_organizational_type = dto.no_organizational_type?.trim() || null;
     record.area_id = dto.area_id;
