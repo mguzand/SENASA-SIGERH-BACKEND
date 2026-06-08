@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { Brackets, DataSource, Repository } from 'typeorm';
 import pdfParse from 'pdf-parse';
 
 import { PayrollImport } from './entities/payroll-import.entity';
@@ -16,6 +16,7 @@ import { DeepPartial } from 'typeorm';
 import { PayrollItemType } from './enum/payroll-item-type.enum';
 import { PrinterService } from 'src/common/printer/printer.service';
 import { PayrollVoucherReport } from './reports/payroll-voucher.report';
+import { ListPayrollReceiptsDto } from './dto/list-payroll-receipts.dto';
 
 @Injectable()
 export class PayrollImportService {
@@ -32,6 +33,141 @@ export class PayrollImportService {
     private readonly employeePaymentReceiptRepository: Repository<EmployeePaymentReceipt>,
   ) {}
 
+  async listReceipts(query: ListPayrollReceiptsDto) {
+    const page = Math.max(Number(query.page) || 1, 1);
+    const limit = Math.min(Math.max(Number(query.limit) || 10, 1), 50);
+
+    const qb = this.employeePaymentReceiptRepository
+      .createQueryBuilder('receipt')
+      .leftJoinAndSelect('receipt.employee', 'employee')
+      .leftJoinAndSelect('employee.regional', 'regional')
+      .leftJoinAndSelect(
+        'employee.jobRecords',
+        'jobRecord',
+        'LOWER(jobRecord.status) = :jobRecordStatus',
+        { jobRecordStatus: 'active' },
+      )
+      .leftJoinAndSelect('jobRecord.area', 'area')
+      .leftJoinAndSelect('jobRecord.position', 'nominalPosition')
+      .leftJoinAndSelect('jobRecord.functionalPosition', 'functionalPosition')
+      .orderBy('receipt.createdAt', 'DESC');
+
+    if (query.search?.trim()) {
+      const search = `%${query.search.trim().toLowerCase()}%`;
+
+      qb.andWhere(
+        new Brackets((subQuery) => {
+          subQuery.where('LOWER(receipt.identityNumber) LIKE :search', {
+            search,
+          });
+          subQuery.orWhere(
+            "LOWER(COALESCE(receipt.employeeNameFromFile, '')) LIKE :search",
+            {
+              search,
+            },
+          );
+          subQuery.orWhere(
+            "LOWER(COALESCE(employee.firstName, '')) LIKE :search",
+            { search },
+          );
+          subQuery.orWhere(
+            "LOWER(COALESCE(employee.lastName, '')) LIKE :search",
+            { search },
+          );
+          subQuery.orWhere(
+            `LOWER(CONCAT(COALESCE(employee.firstName, ''), ' ', COALESCE(employee.middleName, ''), ' ', COALESCE(employee.lastName, ''), ' ', COALESCE(employee.secondLastName, ''))) LIKE :search`,
+            { search },
+          );
+        }),
+      );
+    }
+
+    if (query.month?.trim()) {
+      qb.andWhere("LOWER(COALESCE(receipt.month, '')) = :month", {
+        month: query.month.trim().toLowerCase(),
+      });
+    }
+
+    if (query.year?.trim()) {
+      qb.andWhere('CAST(receipt.year AS TEXT) = :year', {
+        year: query.year.trim(),
+      });
+    }
+
+    const [rows, total] = await qb
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+
+    const statsBase =
+      this.employeePaymentReceiptRepository.createQueryBuilder('receipt');
+    const [totalReceipts, totalNet, totalImports] = await Promise.all([
+      statsBase.clone().getCount(),
+      statsBase
+        .clone()
+        .select('COALESCE(SUM(receipt.netSalary), 0)', 'total')
+        .getRawOne()
+        .then((result) => Number(result?.total || 0)),
+      this.payrollImportRepository.count(),
+    ]);
+
+    return {
+      data: rows.map((receipt) => {
+        const currentJobRecord = [...(receipt.employee?.jobRecords || [])].sort(
+          (a, b) => {
+            const first = a.created_at ? new Date(a.created_at).getTime() : 0;
+            const second = b.created_at ? new Date(b.created_at).getTime() : 0;
+            if (Number(b.isCurrent) !== Number(a.isCurrent)) {
+              return Number(b.isCurrent) - Number(a.isCurrent);
+            }
+            return second - first;
+          },
+        )[0];
+
+        const voucherYear =
+          receipt.createdAt?.getFullYear?.() ||
+          Number(receipt.year) ||
+          new Date().getFullYear();
+
+        return {
+          id: receipt.id,
+          employeeId: receipt.employeeId,
+          employeeName:
+            this.buildEmployeeFullName(receipt.employee) ||
+            receipt.employeeNameFromFile ||
+            '-',
+          identityNumber: receipt.identityNumber,
+          month: receipt.month,
+          year: voucherYear,
+          documentNumber: this.formatVoucherNumber(
+            receipt.documentNumber,
+            voucherYear,
+            receipt.id,
+          ),
+          netSalary: Number(receipt.netSalary || 0),
+          createdAt: receipt.createdAt,
+          position:
+            currentJobRecord?.functionalPosition?.name ||
+            currentJobRecord?.position?.name ||
+            null,
+          organizationalUnit: currentJobRecord?.area?.name || null,
+          regionalName: receipt.employee?.regional?.name || null,
+        };
+      }),
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+      stats: {
+        totalReceipts,
+        totalNet,
+        totalImports,
+      },
+    };
+  }
+
   async generateVoucherPdf(receiptId: string) {
     const receipt = await this.employeePaymentReceiptRepository
       .createQueryBuilder('receipt')
@@ -45,10 +181,7 @@ export class PayrollImportService {
       )
       .leftJoinAndSelect('jobRecord.area', 'area')
       .leftJoinAndSelect('jobRecord.position', 'nominalPosition')
-      .leftJoinAndSelect(
-        'jobRecord.functionalPosition',
-        'functionalPosition',
-      )
+      .leftJoinAndSelect('jobRecord.functionalPosition', 'functionalPosition')
       .leftJoinAndSelect('receipt.items', 'items')
       .where('receipt.id = :receiptId', { receiptId })
       .getOne();
@@ -114,8 +247,7 @@ export class PayrollImportService {
       withholdingsTotalFromItems > 0
         ? withholdingsTotalFromItems
         : Number(receipt.withholdingsTotal || 0);
-    const totalDeductionsWithholdings =
-      deductionsTotal + withholdingsTotal;
+    const totalDeductionsWithholdings = deductionsTotal + withholdingsTotal;
 
     const parsedNetSalary = Number(receipt.netSalary || 0);
     const computedNetSalary = Math.max(
@@ -526,15 +658,30 @@ export class PayrollImportService {
       ? this.toNumber(resumeMatch[6])
       : this.extractAmountBeforeLabel(text, 'Salario Integral');
 
-    const deductionsTotalMatch = text.match(
-      /Deducciones\(-\)[\s\S]*?([\d,]+\.\d{2})\s*Salario Neto:/i,
+    /**
+     * Este bloque viene así en el PDF:
+     *
+     * Deducciones(-)
+     * Retenciones(-)
+     * 4,762.10
+     * Salario Neto: 31,924.60
+     * 2,350.30
+     */
+    const resumeTotalsMatch = text.match(
+      /Deducciones\(-\)\s*Retenciones\(-\)\s*([\d,]+\.\d{2})\s*Salario Neto:\s*([\d,]+\.\d{2})\s*([\d,]+\.\d{2})/i,
     );
 
-    const netSalaryMatch = text.match(/Salario Neto:\s*([\d,]+\.\d{2})/i);
+    const deductionsTotal = resumeTotalsMatch
+      ? this.toNumber(resumeTotalsMatch[1])
+      : 0;
 
-    const withholdingsTotalMatch = text.match(
-      /Salario Neto:\s*[\d,]+\.\d{2}\s+([\d,]+\.\d{2})/i,
-    );
+    const netSalary = resumeTotalsMatch
+      ? this.toNumber(resumeTotalsMatch[2])
+      : this.extractAmountBeforeLabel(text, 'Salario Neto');
+
+    const withholdingsTotal = resumeTotalsMatch
+      ? this.toNumber(resumeTotalsMatch[3])
+      : 0;
 
     const amountWordsMatch = text.match(/SON:\s*([A-ZÁÉÍÓÚÑ\s]+?\d{2}\/100)/i);
 
@@ -551,21 +698,11 @@ export class PayrollImportService {
       bonusesTotal,
       integralSalary,
 
-      deductionsTotal: deductionsTotalMatch
-        ? this.toNumber(deductionsTotalMatch[1])
-        : 0,
+      deductionsTotal,
+      withholdingsTotal,
+      netSalary,
 
-      withholdingsTotal: withholdingsTotalMatch
-        ? this.toNumber(withholdingsTotalMatch[1])
-        : 0,
-
-      netSalary: netSalaryMatch
-        ? this.toNumber(netSalaryMatch[1])
-        : this.extractAmountBeforeLabel(text, 'Salario Neto'),
-
-      amountInWords:
-        amountWordsMatch?.[1]?.replace(/\s+/g, ' ').replace(/-/g, '').trim() ??
-        null,
+      amountInWords: amountWordsMatch?.[1]?.replace(/\s+/g, ' ').trim() ?? null,
 
       bankName: bankMatch?.[1]?.trim() ?? null,
       bankAccount: bankMatch?.[2]?.trim() ?? null,
@@ -588,32 +725,20 @@ export class PayrollImportService {
 
     const block = blockMatch[1];
 
-    const codes = [...block.matchAll(/^\s*(\d{3,5})\s*$/gm)].map((m) => m[1]);
+    const previousCodeMatch = text.match(/^\s*(\d{3,5})\s*\n\s*RETENCIONES/im);
 
-    const amounts = [...block.matchAll(/^\s*([\d,]+\.\d{2})\s*$/gm)]
-      .map((m) => this.toNumber(m[1]))
-      .filter((amount) => amount > 0);
+    const inlineMatch = block.match(/([A-ZÁÉÍÓÚÑ\s]+?)\s+([\d,]+\.\d{2})/i);
 
-    let descriptions = block
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .filter((line) => !/^\d{3,5}$/.test(line))
-      .filter((line) => !/^[\d,]+\.\d{2}$/.test(line))
-      .filter((line) => !/^Total:/i.test(line))
-      .filter((line) => !/^-$/.test(line));
+    if (!inlineMatch) return [];
 
-    descriptions = this.mergeDescriptionsByAmountCount(
-      descriptions,
-      amounts.length,
-    );
-
-    return amounts.map((amount, index) => ({
-      itemType: PayrollItemType.WITHHOLDING,
-      code: codes[index] ?? null,
-      description: descriptions[index] ?? 'SIN DESCRIPCIÓN',
-      amount,
-    }));
+    return [
+      {
+        itemType: PayrollItemType.WITHHOLDING,
+        code: previousCodeMatch?.[1] ?? null,
+        description: inlineMatch[1].replace(/\s+/g, ' ').trim(),
+        amount: this.toNumber(inlineMatch[2]),
+      },
+    ];
   }
 
   private mergeDescriptionsByAmountCount(
