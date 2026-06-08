@@ -3,6 +3,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
 import { Brackets, Repository } from 'typeorm';
 import { StorageService } from 'src/common/services/storage.service';
+import {
+  parseDateOnly,
+  serializeDateOnly,
+} from 'src/common/utils/date-only.util';
 import { CreateEmployeeIntakeDto } from './dto/create-employee-intake.dto';
 import { EmployeeIntakeRequest } from './entities/employee-intake.entity';
 import { ListEmployeeIntakeDto } from './dto/list-employee-intake.dto';
@@ -97,7 +101,7 @@ export class EmployeeIntakeService {
           existing?.criminal_record_mime_type ||
           null,
         criminal_record_expiration_date: dto.criminal_record_base64?.trim()
-          ? this.parseDateOnly(dto.criminal_record_expiration_date)
+          ? parseDateOnly(dto.criminal_record_expiration_date)
           : existing?.criminal_record_expiration_date || null,
         status: existing?.status === 'CONVERTED' ? 'CONVERTED' : existing?.status === 'REVIEWED' ? 'REVIEWED' : 'PENDING',
         converted_employee_id: existing?.converted_employee_id || null,
@@ -212,7 +216,7 @@ export class EmployeeIntakeService {
         homeAddress: record.home_address,
         cvOriginalName: record.cv_original_name,
         criminalRecordOriginalName: record.criminal_record_original_name,
-        criminalRecordExpirationDate: this.serializeDateOnly(
+        criminalRecordExpirationDate: serializeDateOnly(
           record.criminal_record_expiration_date,
         ),
         status: String(record.status || 'PENDING').toLowerCase(),
@@ -262,7 +266,7 @@ export class EmployeeIntakeService {
       criminalRecordExtension: record.criminal_record_extension,
       criminalRecordMimeType: record.criminal_record_mime_type,
       criminalRecordFilePath: record.criminal_record_file_path,
-      criminalRecordExpirationDate: this.serializeDateOnly(
+      criminalRecordExpirationDate: serializeDateOnly(
         record.criminal_record_expiration_date,
       ),
       status: String(record.status || 'PENDING').toLowerCase(),
@@ -274,7 +278,7 @@ export class EmployeeIntakeService {
       areaId: record.area_id,
       nominalPosition: record.nominal_position,
       functionalPosition: record.functional_position,
-      startDate: this.serializeDateOnly(record.start_date),
+      startDate: serializeDateOnly(record.start_date),
       salary: record.salary !== null && record.salary !== undefined ? Number(record.salary) : null,
       modalityId: record.modality_id,
       scheduleId: record.schedule_id,
@@ -315,7 +319,7 @@ export class EmployeeIntakeService {
     record.area_id = dto.area_id;
     record.nominal_position = dto.nominal_position;
     record.functional_position = dto.functional_position;
-    record.start_date = this.parseDateOnly(dto.start_date);
+    record.start_date = parseDateOnly(dto.start_date);
     record.salary = dto.salary;
     record.modality_id = dto.modality_id;
     record.schedule_id = dto.schedule_id;
@@ -349,44 +353,4 @@ export class EmployeeIntakeService {
     );
   }
 
-  private normalizeDateOnlyString(value: unknown): string | null {
-    if (!value) return null;
-
-    if (value instanceof Date) {
-      if (Number.isNaN(value.getTime())) return null;
-      return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(
-        value.getDate(),
-      ).padStart(2, '0')}`;
-    }
-
-    if (typeof value === 'string') {
-      const trimmed = value.trim();
-      if (!trimmed) return null;
-
-      const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
-      if (match) {
-        return `${match[1]}-${match[2]}-${match[3]}`;
-      }
-
-      const parsed = new Date(trimmed);
-      return Number.isNaN(parsed.getTime())
-        ? null
-        : this.normalizeDateOnlyString(parsed);
-    }
-
-    return null;
-  }
-
-  private serializeDateOnly(value: unknown): string | null {
-    const normalized = this.normalizeDateOnlyString(value);
-    return normalized ? `${normalized}T12:00:00.000Z` : null;
-  }
-
-  private parseDateOnly(value: unknown): Date | null {
-    const normalized = this.normalizeDateOnlyString(value);
-    if (!normalized) return null;
-
-    const [year, month, day] = normalized.split('-').map(Number);
-    return new Date(year, month - 1, day, 12, 0, 0, 0);
-  }
 }

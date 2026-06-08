@@ -25,6 +25,10 @@ import { EmployeeIntakeRequest } from '../employee-intake/entities/employee-inta
 import { EmployeeJobRecord } from '../employee-job-record/entities/employee-job-record.entity';
 import { UpdateEmployeeEditableDto } from './dtos/update-employee-editable.dto';
 import * as path from 'path';
+import {
+  parseDateOnly,
+  serializeDateOnly,
+} from 'src/common/utils/date-only.util';
 interface FindAllEmployeesParams {
   search?: string;
   departmentId?: string;
@@ -179,7 +183,7 @@ export class EmployeesService {
           departmentName: currentRecord?.area?.name || null,
           departmentId: currentRecord?.area?.id || null,
           status: String(employee.status || '').toUpperCase(),
-          entryDate: this.serializeDateOnly(employee.entryDate),
+          entryDate: serializeDateOnly(employee.entryDate),
           salary:
             currentRecord?.salary !== null &&
             currentRecord?.salary !== undefined
@@ -254,10 +258,10 @@ export class EmployeesService {
       email: employee.email,
       phone: employee.phone,
       status: String(employee.status || '').toUpperCase(),
-      birthDate: this.serializeDateOnly(employee.birth_date),
+      birthDate: serializeDateOnly(employee.birth_date),
       birthPlace: employee.birth_place,
       address: employee.address,
-      entryDate: this.serializeDateOnly(employee.entryDate),
+      entryDate: serializeDateOnly(employee.entryDate),
       gender: employee.gender,
       maritalStatus: employee.marital_status,
       bloodType: employee.type_blood,
@@ -294,7 +298,7 @@ export class EmployeesService {
           fileSize: document.fileSize,
           filePath: document.filePath,
           isActive: document.isActive,
-          expirationDate: this.serializeDateOnly(document.expirationDate),
+          expirationDate: serializeDateOnly(document.expirationDate),
           notes: document.notes,
         })) || [],
     };
@@ -449,10 +453,10 @@ export class EmployeesService {
         gender: dto.gender,
         marital_status: dto.marital_status,
         type_blood: dto.type_blood,
-        birth_date: this.parseDateOnly(dto.birth_date),
+        birth_date: parseDateOnly(dto.birth_date),
         birth_place: dto.birth_place,
         address: dto.address,
-        entryDate: this.parseDateOnly(dto.start_date) || new Date(),
+        entryDate: parseDateOnly(dto.start_date) || new Date(),
         schedule_id: dto.schedule_id,
         regional_id: dto.regional_id,
         status: dto.status ? String(dto.status).toUpperCase() : 'ACTIVE',
@@ -539,7 +543,7 @@ export class EmployeesService {
             mimeType: doc.mimeType,
             fileSize: doc.size,
             filePath,
-            expirationDate: this.parseDateOnly(doc.expirationDate),
+            expirationDate: parseDateOnly(doc.expirationDate),
             notes: doc.notes,
             isActive: true,
             isPrivate: false,
@@ -623,7 +627,7 @@ export class EmployeesService {
             'application/octet-stream',
           fileSize: undefined,
           filePath,
-          expirationDate: this.parseDateOnly(
+          expirationDate: parseDateOnly(
             intakeRequest.criminal_record_expiration_date,
           ),
           notes: 'Documento importado desde solicitud temporal',
@@ -743,7 +747,7 @@ export class EmployeesService {
         mimeType: doc.mimeType,
         fileSize: doc.size,
         filePath,
-        expirationDate: this.parseDateOnly(doc.expirationDate),
+        expirationDate: parseDateOnly(doc.expirationDate),
         notes: doc.notes,
         isActive: true,
         isPrivate: false,
@@ -791,47 +795,6 @@ export class EmployeesService {
       absolutePath: this.storageService.getAbsolutePath(document.filePath),
       originalName: document.originalName || document.fileName || 'documento',
     };
-  }
-
-  private normalizeDateOnlyString(value: unknown): string | null {
-    if (!value) return null;
-
-    if (value instanceof Date) {
-      if (Number.isNaN(value.getTime())) return null;
-      return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(
-        value.getDate(),
-      ).padStart(2, '0')}`;
-    }
-
-    if (typeof value === 'string') {
-      const trimmed = value.trim();
-      if (!trimmed) return null;
-
-      const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
-      if (match) {
-        return `${match[1]}-${match[2]}-${match[3]}`;
-      }
-
-      const parsed = new Date(trimmed);
-      return Number.isNaN(parsed.getTime())
-        ? null
-        : this.normalizeDateOnlyString(parsed);
-    }
-
-    return null;
-  }
-
-  private serializeDateOnly(value: unknown): string | null {
-    const normalized = this.normalizeDateOnlyString(value);
-    return normalized ? `${normalized}T12:00:00.000Z` : null;
-  }
-
-  private parseDateOnly(value: unknown): Date | null {
-    const normalized = this.normalizeDateOnlyString(value);
-    if (!normalized) return null;
-
-    const [year, month, day] = normalized.split('-').map(Number);
-    return new Date(year, month - 1, day, 12, 0, 0, 0);
   }
 
   async findByDni(dni: string) {
