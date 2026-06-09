@@ -23,7 +23,10 @@ export async function PayrollVoucherReport(
   const content: Content[] = [
     header(data),
 
-    sectionTitle('SEDE REGIONAL', data.regionalName ?? '-'),
+    sectionTitle(
+      data.regionalName === 'TEGUCIGALPA' ? `SENASA` : 'OFICINA REGIONAL',
+      data.regionalName ?? '-',
+    ),
 
     sectionTitle('A. INFORMACIÓN DEL EMPLEADO'),
 
@@ -33,9 +36,9 @@ export async function PayrollVoucherReport(
         body: [
           [
             { text: 'EMPLEADO', style: 'label' },
-            { text: data.employeeName ?? '-', style: 'text', colSpan: 3 },
-            {},
-            {},
+            { text: data.employeeName ?? '-', style: 'text' },
+            { text: 'FECHA DE INGRESO', style: 'label' },
+            { text: data.entryDate ?? '-', style: 'text' },
           ],
           [
             { text: 'PUESTO', style: 'label' },
@@ -228,6 +231,11 @@ function header(data: any): Content {
           },
           {
             text: `Mes: ${data.month ?? '-'}`,
+            alignment: 'right',
+            fontSize: 8,
+          },
+          {
+            text: `Gestión ${data.year ?? '-'}`,
             alignment: 'right',
             fontSize: 8,
           },

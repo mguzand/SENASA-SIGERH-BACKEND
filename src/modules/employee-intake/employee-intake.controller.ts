@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Res,
+} from '@nestjs/common';
 import { Public } from 'src/common/decorators/public.decorator';
 import { CreateEmployeeIntakeDto } from './dto/create-employee-intake.dto';
 import { ListEmployeeIntakeDto } from './dto/list-employee-intake.dto';
@@ -32,6 +42,11 @@ export class EmployeeIntakeController {
   @Patch(':id/review')
   review(@Param('id') id: string, @Body() dto: ReviewEmployeeIntakeDto) {
     return this.employeeIntakeService.review(id, dto);
+  }
+
+  @Delete(':id')
+  remove(@Param('id') id: string) {
+    return this.employeeIntakeService.remove(id);
   }
 
   @Get(':id/cv')

@@ -105,8 +105,6 @@ export class PayrollImportService {
       .take(limit)
       .getManyAndCount();
 
-    console.log(rows);
-
     const statsBase =
       this.employeePaymentReceiptRepository.createQueryBuilder('receipt');
     const [totalReceipts, totalNet, totalImports] = await Promise.all([
@@ -272,8 +270,9 @@ export class PayrollImportService {
       this.buildEmployeeFullName(receipt.employee) ||
       receipt.employeeNameFromFile ||
       '-';
+    const entryDate = this.formatDateOnly(receipt.employee?.entryDate);
     const position =
-      currentJobRecord?.functionalPosition?.name ||
+      currentJobRecord?.position?.name ||
       currentJobRecord?.position?.name ||
       null;
     const organizationalUnit = currentJobRecord?.area?.name || null;
@@ -298,6 +297,7 @@ export class PayrollImportService {
       month: receipt.month,
 
       employeeName,
+      entryDate,
       identity: `HN - TID ${receipt.identityNumber}`,
       position,
       organizationalUnit,
@@ -315,6 +315,7 @@ export class PayrollImportService {
       amountInWords,
       bankName: receipt.bankName,
       bankAccount: receipt.bankAccount,
+      groupLevel: receipt.groupLevel,
 
       deductions,
       withholdings,
@@ -371,6 +372,14 @@ export class PayrollImportService {
       for (let index = 0; index < pages.length; index++) {
         const pageText = pages[index];
 
+        const groupIndex = pageText.indexOf('Grupo Nivel');
+
+        // if (groupIndex !== -1) {
+        //   console.log('============= GRUPO NIVEL =================');
+        //   console.log(pageText.substring(groupIndex, groupIndex + 1200));
+        //   console.log('===========================================');
+        // }
+
         try {
           const basicData = this.extractBasicPageData(pageText);
           const summary = this.extractSalarySummary(pageText);
@@ -379,8 +388,6 @@ export class PayrollImportService {
           const employee = await this.employeeRepository.findByDni(
             basicData.identityNumber,
           );
-
-          console.log(basicData.identityNumber, employee);
 
           if (!employee) {
             errors++;
@@ -428,6 +435,7 @@ export class PayrollImportService {
             bankAccount: summary.bankAccount ?? null,
 
             rawPageText: pageText ?? null,
+            groupLevel: summary.groupLevel ?? null,
           };
 
           const receipt = queryRunner.manager.create(
@@ -494,6 +502,21 @@ export class PayrollImportService {
       .map((page) => page.trim())
       .filter((page) => page.includes('Funcionario:'))
       .filter((page) => page.includes('Identidad:'));
+  }
+
+  private extractGroupLevel(text: string): string | null {
+    const normalized = text
+      .replace(/\r/g, '\n')
+      .replace(/[ \t]+/g, ' ')
+      .replace(/\n+/g, '\n');
+
+    const match = normalized.match(
+      /(\d{2})\s*\n\s*Grupo Nivel\s*\n\s*(\d{3})\s*\n\s*\d{6,}\s*\n\s*Puesto/i,
+    );
+
+    if (!match) return null;
+
+    return `${match[1]}-${match[2]}`;
   }
 
   private extractBasicPageData(text: string) {
@@ -695,6 +718,8 @@ export class PayrollImportService {
 
     const bankMatch = text.match(/Banco:\s*(.+?)\s+Cuenta:\s*([^\n]+)/i);
 
+    const groupLevel = this.extractGroupLevel(text);
+
     return {
       year: yearMatch ? Number(yearMatch[1]) : null,
       documentNumber: documentMatch?.[1] ?? null,
@@ -714,6 +739,7 @@ export class PayrollImportService {
 
       bankName: bankMatch?.[1]?.trim() ?? null,
       bankAccount: bankMatch?.[2]?.trim() ?? null,
+      groupLevel,
     };
   }
 
@@ -876,6 +902,20 @@ export class PayrollImportService {
       .trim();
 
     return fullName || null;
+  }
+
+  private formatDateOnly(value?: Date | string | null) {
+    if (!value) return null;
+
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+
+    return date.toLocaleDateString('es-HN', {
+      timeZone: 'America/Tegucigalpa',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
   }
 
   private formatVoucherNumber(

@@ -152,6 +152,9 @@ export class EmployeePaymentReceipt {
   })
   rawPageText: string | null;
 
+  @Column({ name: 'group_level', nullable: true, type: 'varchar', length: 10 })
+  groupLevel: string | null;
+
   @Column({
     name: 'created_at',
     type: 'timestamp',

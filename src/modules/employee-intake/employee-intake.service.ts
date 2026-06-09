@@ -353,4 +353,33 @@ export class EmployeeIntakeService {
     );
   }
 
+  async remove(id: string) {
+    const record = await this.employeeIntakeRepository.findOne({ where: { id } });
+
+    if (!record) {
+      throw new NotFoundException('Solicitud temporal no encontrada');
+    }
+
+    if (!['PENDING', 'REVIEWED'].includes(String(record.status || '').toUpperCase())) {
+      throw new BadRequestException(
+        'Solo se pueden eliminar solicitudes temporales en estado pendiente o revisada',
+      );
+    }
+
+    await this.employeeIntakeRepository.remove(record);
+
+    if (record.cv_file_path) {
+      this.storageService.deleteFile(record.cv_file_path);
+    }
+
+    if (record.criminal_record_file_path) {
+      this.storageService.deleteFile(record.criminal_record_file_path);
+    }
+
+    return {
+      message: 'Solicitud temporal eliminada correctamente',
+      id,
+    };
+  }
+
 }
