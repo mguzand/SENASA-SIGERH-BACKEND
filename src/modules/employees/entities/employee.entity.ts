@@ -17,6 +17,7 @@ import {
 } from 'typeorm';
 import { EmployeeDocument } from './employee-document.entity';
 import { EmployeeEmergencyContact } from './emergency_contacts.interface';
+import { EmployeeUnpaidLeave } from './employee-unpaid-leave.entity';
 
 @Entity('employees')
 export class Employee {
@@ -98,6 +99,9 @@ export class Employee {
 
   @OneToMany(() => EmployeeDocument, (record) => record.employee)
   documents: EmployeeDocument[];
+
+  @OneToMany(() => EmployeeUnpaidLeave, (record) => record.employee)
+  unpaidLeaves: EmployeeUnpaidLeave[];
 
   @OneToOne(() => EmployeeEmergencyContact, (contact) => contact.employee, {
     cascade: true,

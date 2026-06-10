@@ -29,6 +29,7 @@ import {
   parseDateOnly,
   serializeDateOnly,
 } from 'src/common/utils/date-only.util';
+import { EmployeeUnpaidLeave } from './entities/employee-unpaid-leave.entity';
 interface FindAllEmployeesParams {
   search?: string;
   departmentId?: string;
@@ -222,6 +223,7 @@ export class EmployeesService {
         'jobRecordFunctionalPosition',
       )
       .leftJoinAndSelect('employee.documents', 'document')
+      .leftJoinAndSelect('employee.unpaidLeaves', 'unpaidLeave')
       .where('employee.id = :id', { id })
       .orderBy('document.created_at', 'DESC')
       .getOne();
@@ -300,6 +302,14 @@ export class EmployeesService {
           isActive: document.isActive,
           expirationDate: serializeDateOnly(document.expirationDate),
           notes: document.notes,
+        })) || [],
+      unpaidLeaves:
+        employee.unpaidLeaves?.map((leave) => ({
+          id: leave.id,
+          startDate: serializeDateOnly(leave.startDate),
+          endDate: serializeDateOnly(leave.endDate),
+          days: leave.days,
+          observation: leave.observation,
         })) || [],
     };
   }
@@ -518,6 +528,27 @@ export class EmployeesService {
           },
           qr.manager,
         );
+      }
+
+      if (dto.unpaid_leaves?.length) {
+        for (const leave of dto.unpaid_leaves) {
+          const startDate = parseDateOnly(leave.start_date);
+          const endDate = parseDateOnly(leave.end_date);
+
+          if (!startDate || !endDate) {
+            throw new BadRequestException(
+              'Las fechas de permiso sin goce no tienen un formato válido.',
+            );
+          }
+
+          await qr.manager.insert(EmployeeUnpaidLeave, {
+            employeeId: savedEmployee.id,
+            startDate,
+            endDate,
+            days: Number(leave.days || 0),
+            observation: leave.observation?.trim() || null,
+          });
+        }
       }
 
       //! //////////////////////////////////////////////////////////////////////////////////////////

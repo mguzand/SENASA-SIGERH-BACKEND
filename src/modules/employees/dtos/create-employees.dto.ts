@@ -10,6 +10,7 @@ import {
   IsInt,
   IsDateString,
   IsEnum,
+  Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { VacationPeriodStatus } from 'src/common/enums/vacation.enums';
@@ -141,6 +142,12 @@ export class CreateEmployeeDto {
   @ValidateNested({ each: true })
   @Type(() => VacationPeriodDto)
   vacation_periods: VacationPeriodDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => UnpaidLeaveDto)
+  unpaid_leaves?: UnpaidLeaveDto[];
 }
 
 export class DocumentDto {
@@ -240,4 +247,20 @@ export class VacationPeriodDto {
 
   @IsEnum(VacationPeriodStatus)
   status: VacationPeriodStatus;
+}
+
+export class UnpaidLeaveDto {
+  @IsDateString()
+  start_date: string;
+
+  @IsDateString()
+  end_date: string;
+
+  @IsNumber()
+  @Min(1)
+  days: number;
+
+  @IsOptional()
+  @IsString()
+  observation?: string | null;
 }

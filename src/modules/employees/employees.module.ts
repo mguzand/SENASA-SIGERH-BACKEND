@@ -13,6 +13,7 @@ import { EmployeeVacationPeriodModule } from '../employee-vacation-period/employ
 import { UsersModule } from '../users/users.module';
 import { EmployeeIntakeRequest } from '../employee-intake/entities/employee-intake.entity';
 import { EmployeeJobRecord } from '../employee-job-record/entities/employee-job-record.entity';
+import { EmployeeUnpaidLeave } from './entities/employee-unpaid-leave.entity';
 
 @Module({
   controllers: [EmployeesController],
@@ -24,6 +25,7 @@ import { EmployeeJobRecord } from '../employee-job-record/entities/employee-job-
       EmployeeEmergencyContact,
       EmployeeIntakeRequest,
       EmployeeJobRecord,
+      EmployeeUnpaidLeave,
     ]),
     CommonModule,
     RnpModule,
