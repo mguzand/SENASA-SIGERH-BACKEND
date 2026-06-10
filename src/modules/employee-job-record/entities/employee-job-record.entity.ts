@@ -66,7 +66,7 @@ export class EmployeeJobRecord {
   startDate: Date;
 
   @Column({ type: 'date', name: 'end_date', nullable: true })
-  endDate: Date | null;
+  endDate: Date | any;
 
   @Column({ type: 'text', nullable: true })
   functions: string;

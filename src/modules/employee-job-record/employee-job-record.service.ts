@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { EntityManager } from 'typeorm';
 import { EmployeeJobRecord } from './entities/employee-job-record.entity';
 
@@ -26,6 +26,65 @@ export class EmployeeJobRecordService {
     });
 
     return manager.save(EmployeeJobRecord, record);
+  }
+
+  async changeModalityWithManager(
+    dto: {
+      employee_id: string;
+      new_modality_id: string;
+      modification_date: string;
+      observation: string | null;
+    },
+    manager: EntityManager,
+  ): Promise<EmployeeJobRecord> {
+    const currentRecord = await manager.findOne(EmployeeJobRecord, {
+      where: {
+        employeeId: dto.employee_id,
+        status: 'ACTIVE',
+      },
+      order: {
+        startDate: 'DESC',
+      },
+    });
+
+    if (!currentRecord) {
+      throw new BadRequestException(
+        'El empleado no tiene un registro laboral activo',
+      );
+    }
+
+    if (currentRecord.modalityId === dto.new_modality_id) {
+      throw new BadRequestException(
+        'El empleado ya tiene esta modalidad activa',
+      );
+    }
+
+    currentRecord.status = 'INACTIVE';
+    currentRecord.endDate = this.getPreviousDay(dto.modification_date);
+
+    await manager.save(EmployeeJobRecord, currentRecord);
+
+    const newRecord = manager.create(EmployeeJobRecord, {
+      employeeId: dto.employee_id,
+      modalityId: dto.new_modality_id,
+      nominalPositionId: currentRecord.nominal_position,
+      functionalPositionId: currentRecord.functional_position,
+      area_id: currentRecord.area_id,
+      startDate: dto.modification_date,
+      status: 'ACTIVE',
+      notes: `Cambio de modalidad. Observación: ${dto.observation ?? 'N/A'}`,
+      previousRecordId: currentRecord.id,
+      salary: currentRecord.salary,
+      endDate: null,
+    });
+
+    return await manager.save(EmployeeJobRecord, newRecord);
+  }
+
+  private getPreviousDay(dateString: string): string | null {
+    const date = new Date(dateString);
+    date.setDate(date.getDate() - 1);
+    return date.toISOString().split('T')[0];
   }
 
   private parseDateOnly(value: unknown): Date | null {

@@ -34,6 +34,107 @@ export class EmployeeVacationPeriodService {
     private readonly vacationContractRuleService: VacationContractRuleService,
   ) {}
 
+  async recalculatePeriodsByModalityChangeWithManager(
+    dto: {
+      employee_id: string;
+      new_employee_job_record_id: string;
+      new_modality_id: string;
+      modification_date: string;
+      observation: string | null;
+      created_by_user_id: string | null;
+    },
+    manager: EntityManager,
+  ) {
+    const periods = await manager.find(EmployeeVacationPeriod, {
+      where: [
+        {
+          employeeId: dto.employee_id,
+          status: VacationPeriodStatus.AVAILABLE,
+        },
+        {
+          employeeId: dto.employee_id,
+          status: VacationPeriodStatus.PENDING,
+        },
+      ],
+      order: {
+        periodNumber: 'ASC',
+      },
+    });
+
+    if (!periods.length) {
+      return [];
+    }
+
+    const recalculated: any[] = [];
+
+    for (const period of periods) {
+      //! ///////////////////////////////////////
+      //!Dias ya ganados de mis periodos actuales
+      const oldEarnedDays = Number(period.earnedDays);
+
+      //! ////////////////////////////////////////////
+      //!Dias que debería ganar con la nueva modalidad
+      const newEarnedDays =
+        await this.vacationContractRuleService.getDaysByModalityAndYear(
+          dto.new_modality_id,
+          period.periodNumber,
+        );
+      //! ////////////////////////////////////////
+      //!Dias disponibles actuales de mis periodos
+      const oldAvailableDays = Number(period.availableDays);
+
+      //! ////////////////////////////////////////////////////////
+      //!Dias disponibles que debería tener con la nueva modalidad
+      const newAvailableDays =
+        Number(newEarnedDays) -
+        Number(period.usedDays) -
+        Number(period.governmentDays) +
+        Number(period.adjustmentDays);
+
+      const difference = newAvailableDays - oldAvailableDays;
+
+      period.employeeJobRecordId = dto.new_employee_job_record_id;
+      period.earnedDays = newEarnedDays;
+      period.availableDays = newAvailableDays;
+
+      //! /////////////////////////////////////////////////////
+      //!Registrar movimiento de ajuste por cambio de modalidad
+      await manager.save(EmployeeVacationPeriod, period);
+
+      if (difference !== 0) {
+        await this.vacationMovementService.createWithManager(
+          {
+            employeeId: dto.employee_id,
+            vacationPeriodId: period.id,
+            vacationRequestId: null,
+            type: VacationMovementType.ADJUSTMENT,
+            days: difference,
+            movementDate: dto.modification_date,
+            description:
+              dto.observation ??
+              `Ajuste por cambio de modalidad. Días anteriores: ${oldEarnedDays}, nuevos días: ${newEarnedDays}`,
+            createdByUserId: dto.created_by_user_id,
+          },
+          manager,
+        );
+      }
+
+      //! Agregar al resultado del proceso para mostrarle al
+      //! usuario un resumen de lo que pasó con cada período
+      recalculated.push({
+        period_id: period.id,
+        period_number: period.periodNumber,
+        old_earned_days: oldEarnedDays,
+        new_earned_days: newEarnedDays,
+        old_available_days: oldAvailableDays,
+        new_available_days: newAvailableDays,
+        difference,
+      });
+    }
+
+    return recalculated;
+  }
+
   async bootstrap(dto: BootstrapVacationPeriodsDto) {
     this.validateBootstrapInput(dto);
 
