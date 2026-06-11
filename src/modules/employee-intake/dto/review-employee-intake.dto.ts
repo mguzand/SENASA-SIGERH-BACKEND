@@ -15,10 +15,10 @@ export class ReviewEmployeeIntakeDto {
   @MaxLength(20)
   identity: string;
 
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(30)
-  rtn: string;
+  rtn?: string | null;
 
   @IsString()
   @IsNotEmpty()

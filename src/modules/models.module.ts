@@ -29,6 +29,7 @@ import { EmployeeIntakeModule } from './employee-intake/employee-intake.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { SystemModule } from './system/system.module';
 import { PayrollImportModule } from './payroll-import/payroll-import.module';
+import { EmployeeJobActionsModule } from './employee-job-actions/employee-job-actions.module';
 
 @Module({
   imports: [
@@ -62,6 +63,7 @@ import { PayrollImportModule } from './payroll-import/payroll-import.module';
     DashboardModule,
     SystemModule,
     PayrollImportModule,
+    EmployeeJobActionsModule,
   ],
   exports: [],
 })

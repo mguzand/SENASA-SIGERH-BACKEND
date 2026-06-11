@@ -309,7 +309,7 @@ export class EmployeeIntakeService {
     const record = await this.findPendingEntity(id);
 
     record.identity = dto.identity.trim();
-    record.rtn = dto.rtn.trim();
+    record.rtn = dto.rtn?.trim() || null;
     record.birth_place = dto.birth_place.trim();
     record.marital_status = dto.marital_status.trim();
     record.blood_type = dto.blood_type.trim();

@@ -24,8 +24,8 @@ export class Employee {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ unique: true, name: 'rtn', type: 'varchar', length: 14 })
-  rtn: string;
+  @Column({ unique: true, nullable: true, name: 'rtn', type: 'varchar', length: 14 })
+  rtn: string | null;
 
   @Column({ unique: true, name: 'dni', type: 'varchar', length: 13 })
   dni: string;

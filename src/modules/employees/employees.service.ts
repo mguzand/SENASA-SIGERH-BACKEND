@@ -455,7 +455,7 @@ export class EmployeesService {
       //!creamos el insert del empleado y lo guardamos en una variable para usar su id;
       const employee = qr.manager.create(Employee, {
         dni: dto.dni,
-        rtn: dto.rtn,
+        rtn: this.normalizeOptionalString(dto.rtn),
         firstName: dto.firstName,
         middleName: dto.middleName,
         lastName: dto.lastName,
@@ -832,5 +832,10 @@ export class EmployeesService {
     return this._employee.findOne({
       where: { dni },
     });
+  }
+
+  private normalizeOptionalString(value: unknown): string | null {
+    const normalized = String(value ?? '').trim();
+    return normalized ? normalized : null;
   }
 }

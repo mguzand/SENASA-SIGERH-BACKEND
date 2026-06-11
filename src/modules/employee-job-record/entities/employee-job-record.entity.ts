@@ -77,7 +77,7 @@ export class EmployeeJobRecord {
   @Column({ length: 30, default: 'ACTIVE' })
   status: string;
 
-  @Column({ default: false })
+  @Column({ default: true })
   isCurrent: boolean;
 
   @Column({ nullable: true, type: 'text' })

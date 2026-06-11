@@ -24,9 +24,9 @@ export class CreateEmployeeDto {
   @IsNotEmpty()
   dni: string;
 
-  @IsString()
   @IsOptional()
-  rtn: string;
+  @IsString()
+  rtn?: string | null;
 
   @IsString()
   @IsNotEmpty()

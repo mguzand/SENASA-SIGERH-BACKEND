@@ -17,8 +17,8 @@ export class EmployeeIntakeRequest {
   @Column({ length: 200, nullable: true, type: 'varchar' })
   full_name: string | null;
 
-  @Column({ length: 30, type: 'varchar' })
-  rtn: string;
+  @Column({ length: 30, type: 'varchar', nullable: true })
+  rtn: string | null;
 
   @Column({ length: 50, nullable: true, type: 'varchar' })
   marital_status: string | null;
