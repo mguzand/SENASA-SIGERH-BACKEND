@@ -40,20 +40,105 @@ export class UsersService {
   async createUser(
     dto: {
       employeeId: string;
-      username: string;
+      username?: string;
       email: string;
       password: string;
+      firstName?: string | null;
+      lastName?: string | null;
+      secondLastName?: string | null;
     },
     manager: EntityManager,
   ) {
+    const username = await this.resolveAvailableUsername(dto, manager);
+
     const dataQuery = manager.create(User, {
       employeeId: dto.employeeId,
-      username: dto.username,
+      username,
       email: dto.email,
       password: hashPassword(dto.password),
     });
 
     return await manager.save(User, dataQuery);
+  }
+
+  private async resolveAvailableUsername(
+    dto: {
+      username?: string;
+      firstName?: string | null;
+      lastName?: string | null;
+      secondLastName?: string | null;
+    },
+    manager: EntityManager,
+  ) {
+    const preferred =
+      this.normalizeUsername(dto.username) ||
+      this.buildBaseUsername(
+        dto.firstName ?? null,
+        dto.lastName ?? null,
+      ) ||
+      `user${Date.now()}`;
+
+    const secondLastInitial = this.getInitial(dto.secondLastName);
+    const candidates = [preferred];
+
+    if (secondLastInitial) {
+      candidates.push(`${preferred}${secondLastInitial}`);
+    }
+
+    for (const candidate of candidates) {
+      if (!(await this.usernameExists(candidate, manager))) {
+        return candidate;
+      }
+    }
+
+    let suffix = 2;
+    while (suffix < 1000) {
+      const candidate = `${preferred}${suffix}`;
+      if (!(await this.usernameExists(candidate, manager))) {
+        return candidate;
+      }
+      suffix += 1;
+    }
+
+    throw new BadRequestException([
+      'No fue posible generar un nombre de usuario disponible.',
+    ]);
+  }
+
+  private async usernameExists(username: string, manager: EntityManager) {
+    const existing = await manager.findOne(User, {
+      where: { username },
+      select: { id: true },
+    });
+
+    return !!existing;
+  }
+
+  private buildBaseUsername(
+    firstName: string | null,
+    lastName: string | null,
+  ) {
+    const firstInitial = this.getInitial(firstName);
+    const normalizedLastName = this.normalizeUsername(lastName);
+
+    if (!firstInitial && !normalizedLastName) {
+      return '';
+    }
+
+    return `${firstInitial}${normalizedLastName}`;
+  }
+
+  private getInitial(value: string | null | undefined) {
+    const normalized = this.normalizeUsername(value);
+    return normalized ? normalized.charAt(0) : '';
+  }
+
+  private normalizeUsername(value: string | null | undefined) {
+    return String(value ?? '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
   }
 
   //↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓//

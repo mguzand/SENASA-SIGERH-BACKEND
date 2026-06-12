@@ -669,12 +669,14 @@ export class EmployeesService {
 
       //! ////////////////////////////////////////////////////////////////////////////
       //!creamos el insert para crear el usuario asociado al empleado con rol estándar;
-      await this._usersService.createUser(
+      const createdUser = await this._usersService.createUser(
         {
           employeeId: savedEmployee.id,
-          username: `${dto.firstName.toLowerCase()}.${dto.lastName.toLowerCase()}`,
           email: dto.email,
           password: 'temporalsenasa2026',
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          secondLastName: dto.secondLastName,
         },
         qr.manager,
       );
@@ -682,7 +684,7 @@ export class EmployeesService {
       await sendNewEmployee(
         dto.email,
         `${dto.firstName} ${dto.lastName} bienvenido al Portal del Empleado`,
-        `${dto.firstName.toLowerCase()}.${dto.lastName.toLowerCase()}`,
+        createdUser.username,
         `${dto.firstName} ${dto.middleName}, ${dto.lastName}`,
         'temporalsenasa2026',
         'https://play.google.com/store/apps/details?id=hn.gob.senasa.sigerh',
