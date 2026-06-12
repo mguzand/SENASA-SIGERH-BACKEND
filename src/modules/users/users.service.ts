@@ -70,19 +70,30 @@ export class UsersService {
     },
     manager: EntityManager,
   ) {
+    const usernameParts = this.buildUsernameParts(
+      dto.firstName ?? null,
+      dto.lastName ?? null,
+    );
+
     const preferred =
-      this.normalizeUsername(dto.username) ||
-      this.buildBaseUsername(
-        dto.firstName ?? null,
-        dto.lastName ?? null,
-      ) ||
+      this.normalizeUsername(dto.username, true) ||
+      this.joinUsernameParts(usernameParts.firstName, usernameParts.lastName) ||
       `user${Date.now()}`;
 
     const secondLastInitial = this.getInitial(dto.secondLastName);
     const candidates = [preferred];
 
-    if (secondLastInitial) {
-      candidates.push(`${preferred}${secondLastInitial}`);
+    if (
+      secondLastInitial &&
+      usernameParts.firstName &&
+      usernameParts.lastName
+    ) {
+      candidates.push(
+        this.joinUsernameParts(
+          usernameParts.firstName,
+          `${usernameParts.lastName}${secondLastInitial}`,
+        ),
+      );
     }
 
     for (const candidate of candidates) {
@@ -114,18 +125,25 @@ export class UsersService {
     return !!existing;
   }
 
-  private buildBaseUsername(
+  private buildUsernameParts(
     firstName: string | null,
     lastName: string | null,
   ) {
-    const firstInitial = this.getInitial(firstName);
-    const normalizedLastName = this.normalizeUsername(lastName);
+    return {
+      firstName: this.getFirstToken(firstName),
+      lastName: this.getFirstToken(lastName),
+    };
+  }
 
-    if (!firstInitial && !normalizedLastName) {
+  private joinUsernameParts(firstName: string, lastName: string) {
+    if (!firstName && !lastName) {
       return '';
     }
 
-    return `${firstInitial}${normalizedLastName}`;
+    if (!firstName) return lastName;
+    if (!lastName) return firstName;
+
+    return `${firstName}.${lastName}`;
   }
 
   private getInitial(value: string | null | undefined) {
@@ -133,12 +151,24 @@ export class UsersService {
     return normalized ? normalized.charAt(0) : '';
   }
 
-  private normalizeUsername(value: string | null | undefined) {
+  private getFirstToken(value: string | null | undefined) {
+    const normalized = this.normalizeUsername(value);
+    if (!normalized) return '';
+
+    return normalized.split('.').filter(Boolean)[0] || '';
+  }
+
+  private normalizeUsername(
+    value: string | null | undefined,
+    keepDots = false,
+  ) {
     return String(value ?? '')
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
       .toLowerCase()
-      .replace(/[^a-z0-9]/g, '');
+      .replace(keepDots ? /[^a-z0-9.]/g : /[^a-z0-9]/g, '')
+      .replace(/\.{2,}/g, '.')
+      .replace(/^\.+|\.+$/g, '');
   }
 
   //↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓//
