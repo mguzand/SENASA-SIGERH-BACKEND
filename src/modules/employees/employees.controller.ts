@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Req, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+  Res,
+} from '@nestjs/common';
 import { EmployeesService } from './employees.service';
 import { Public } from 'src/common/decorators/public.decorator';
 import { CreateEmployeeDto } from './dtos/create-employees.dto';
@@ -31,8 +41,22 @@ export class EmployeesController {
     return this.employeesService.findOne(id);
   }
 
+  @Public()
+  @Get('test/mails')
+  async testMails() {
+    return this.employeesService.test({
+      email: 'mguzand@gmail.com',
+      firstName: 'Test',
+      middleName: 'Middle',
+      lastName: 'Last',
+    });
+  }
+
   @Get('documents/:documentId/download')
-  async downloadDocument(@Param('documentId') documentId: string, @Res() res: Response) {
+  async downloadDocument(
+    @Param('documentId') documentId: string,
+    @Res() res: Response,
+  ) {
     const { absolutePath, originalName } =
       await this.employeesService.getEmployeeDocumentDownload(documentId);
 
@@ -45,7 +69,10 @@ export class EmployeesController {
   }
 
   @Patch(':id/editable-data')
-  updateEditableData(@Param('id') id: string, @Body() dto: UpdateEmployeeEditableDto) {
+  updateEditableData(
+    @Param('id') id: string,
+    @Body() dto: UpdateEmployeeEditableDto,
+  ) {
     return this.employeesService.updateEditableData(id, dto);
   }
 

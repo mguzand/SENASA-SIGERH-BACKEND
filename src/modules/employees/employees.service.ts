@@ -815,6 +815,22 @@ export class EmployeesService {
     return { person: resultPerson, rnp, InternalRNP };
   }
 
+  async test(dto: {
+    email: string;
+    firstName: string;
+    middleName: string;
+    lastName: string;
+  }) {
+    await sendNewEmployee(
+      dto.email,
+      `${dto.firstName} ${dto.lastName} bienvenido al Portal del Empleado`,
+      'testtest',
+      `${dto.firstName} ${dto.middleName}, ${dto.lastName}`,
+      'temporalsenasa2026',
+      'https://play.google.com/store/apps/details?id=hn.gob.senasa.sigerh',
+    );
+  }
+
   async getEmployeeDocumentDownload(documentId: string) {
     const document = await this._EmployeeDocument.findOne({
       where: { id: documentId },

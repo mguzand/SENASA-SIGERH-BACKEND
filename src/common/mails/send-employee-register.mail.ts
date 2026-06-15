@@ -6,7 +6,7 @@ export const sendMailNewEmployee = (
 ) => {
   return `
   
-  <div style="margin:0;padding:0;background-color:#f4f6f8;font-family:Arial,Helvetica,sans-serif;">
+   <div style="margin:0;padding:0;background-color:#f4f6f8;font-family:Arial,Helvetica,sans-serif;">
 
   <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f6f8;padding:40px 0;">
     <tr>
@@ -151,13 +151,6 @@ export const sendMailNewEmployee = (
 
             </div>
 
-            <p style="
-              margin:0;
-              color:#6b7280;
-              font-size:13px;
-            ">
-              Disponible actualmente para dispositivos Android.
-            </p>
 
             <!-- APPLE -->
             <div style="
@@ -166,16 +159,20 @@ export const sendMailNewEmployee = (
               border-top:1px solid #e5e7eb;
             ">
 
-              <div style="
+              <a
+                href="https://apps.apple.com/app/portal-del-empleado-hn/id6773544312"
+                target="_blank" style="
                 display:inline-block;
                 background:#f3f4f6;
                 color:#6b7280;
                 padding:12px 20px;
                 border-radius:10px;
+                text-decoration:none;
+                border: solid 1px #000;
                 font-weight:600;
               ">
-               Próximamente en App Store
-              </div>
+               ▶ Descargar desde App Store
+              </a>
 
             </div>
 
