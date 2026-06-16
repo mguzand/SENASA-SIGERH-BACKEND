@@ -1,12 +1,16 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { AreaManagerRole } from './interfaces/area-manager-role.enum';
 import { AreaManager } from './entities/area-manager.entity';
-import { Brackets, Repository } from 'typeorm';
+import { Brackets, LessThanOrEqual, Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { StorageService } from 'src/common/services/storage.service';
 import { randomUUID } from 'crypto';
 import { CreateAreaManagerDto } from './dto/create-area-manager.dto';
 import { ListAreaManagersDto } from './dto/list-area-managers.dto';
+import {
+  parseDateOnly,
+  serializeDateOnly,
+} from 'src/common/utils/date-only.util';
 
 @Injectable()
 export class AreaManagerService {
@@ -33,15 +37,21 @@ export class AreaManagerService {
       });
 
     if (params.areaId?.trim()) {
-      query.andWhere('manager.area_id = :areaId', { areaId: params.areaId.trim() });
+      query.andWhere('manager.area_id = :areaId', {
+        areaId: params.areaId.trim(),
+      });
     }
 
     if (type === 'boss') {
-      query.andWhere('manager.is_a_delegate = :isDelegate', { isDelegate: false });
+      query.andWhere('manager.is_a_delegate = :isDelegate', {
+        isDelegate: false,
+      });
     }
 
     if (type === 'delegate') {
-      query.andWhere('manager.is_a_delegate = :isDelegate', { isDelegate: true });
+      query.andWhere('manager.is_a_delegate = :isDelegate', {
+        isDelegate: true,
+      });
     }
 
     if (params.search?.trim()) {
@@ -50,14 +60,23 @@ export class AreaManagerService {
       query.andWhere(
         new Brackets((qb) => {
           qb.where('LOWER(employee.firstName) LIKE :search', { search });
-          qb.orWhere('LOWER(COALESCE(employee.middleName, \'\')) LIKE :search', { search });
+          qb.orWhere("LOWER(COALESCE(employee.middleName, '')) LIKE :search", {
+            search,
+          });
           qb.orWhere('LOWER(employee.lastName) LIKE :search', { search });
           qb.orWhere(
-            'LOWER(COALESCE(employee.secondLastName, \'\')) LIKE :search',
+            "LOWER(COALESCE(employee.secondLastName, '')) LIKE :search",
+            {
+              search,
+            },
+          );
+          qb.orWhere(
+            "LOWER(COALESCE(employee.biometric_id, '')) LIKE :search",
             { search },
           );
-          qb.orWhere('LOWER(COALESCE(employee.biometric_id, \'\')) LIKE :search', { search });
-          qb.orWhere('LOWER(COALESCE(area.name, \'\')) LIKE :search', { search });
+          qb.orWhere("LOWER(COALESCE(area.name, '')) LIKE :search", {
+            search,
+          });
           qb.orWhere(
             `LOWER(
               CONCAT(
@@ -86,9 +105,18 @@ export class AreaManagerService {
       .andWhere('manager.is_active = :isActive', { isActive: true });
 
     const [bossesActive, delegatesActive, areasRaw] = await Promise.all([
-      statsBaseQuery.clone().andWhere('manager.is_a_delegate = :isDelegate', { isDelegate: false }).getCount(),
-      statsBaseQuery.clone().andWhere('manager.is_a_delegate = :isDelegate', { isDelegate: true }).getCount(),
-      statsBaseQuery.clone().select('COUNT(DISTINCT manager.area_id)', 'total').getRawOne(),
+      statsBaseQuery
+        .clone()
+        .andWhere('manager.is_a_delegate = :isDelegate', { isDelegate: false })
+        .getCount(),
+      statsBaseQuery
+        .clone()
+        .andWhere('manager.is_a_delegate = :isDelegate', { isDelegate: true })
+        .getCount(),
+      statsBaseQuery
+        .clone()
+        .select('COUNT(DISTINCT manager.area_id)', 'total')
+        .getRawOne(),
     ]);
 
     return {
@@ -112,7 +140,9 @@ export class AreaManagerService {
               ? `EMP-${employee.id.slice(0, 4).toUpperCase()}`
               : 'EMP-0000',
           employeeName: fullName || 'Empleado sin nombre',
-          employeeInitials: `${employee?.firstName?.[0] || ''}${employee?.lastName?.[0] || ''}`
+          employeeInitials: `${employee?.firstName?.[0] || ''}${
+            employee?.lastName?.[0] || ''
+          }`
             .toUpperCase()
             .trim(),
           employeeEmail: employee?.email || null,
@@ -121,6 +151,7 @@ export class AreaManagerService {
           isDelegate: record.is_a_delegate,
           documentUrl: record.url_document,
           createdAt: record.created_at,
+          delegationEndDate: serializeDateOnly(record.delegation_end_date),
         };
       }),
       meta: {
@@ -145,11 +176,39 @@ export class AreaManagerService {
       );
     }
 
+    if (dto.is_a_delegate && !dto.delegation_end_date) {
+      throw new BadRequestException(
+        'Debe indicar hasta cuándo finaliza la delegación',
+      );
+    }
+
+    const delegationEndDate = dto.is_a_delegate
+      ? parseDateOnly(dto.delegation_end_date) || null
+      : null;
+
+    if (dto.is_a_delegate && !delegationEndDate) {
+      throw new BadRequestException(
+        'La fecha de finalización de la delegación no es válida',
+      );
+    }
+
+    if (
+      delegationEndDate &&
+      delegationEndDate.getTime() <
+        (parseDateOnly(new Date()) || new Date()).getTime()
+    ) {
+      throw new BadRequestException(
+        'La fecha de finalización de la delegación no puede ser anterior a hoy',
+      );
+    }
+
     let filePath: string | null = null;
 
     try {
       if (dto.is_a_delegate && dto.support_document_base64) {
-        const extension = (dto.extension || 'pdf').replace('.', '').toLowerCase();
+        const extension = (dto.extension || 'pdf')
+          .replace('.', '')
+          .toLowerCase();
         const fileName = `${randomUUID()}.${extension}`;
         filePath = this.storageService.saveBase64File(
           dto.support_document_base64,
@@ -158,16 +217,40 @@ export class AreaManagerService {
         );
       }
 
-      await this.areaManagerRepository.update(
-        {
+      const activeRecords = await this.areaManagerRepository.find({
+        where: {
           area_id: dto.area_id,
           role: AreaManagerRole.BOSS,
           is_active: true,
         },
-        {
-          is_active: false,
+        order: {
+          created_at: 'DESC',
         },
-      );
+      });
+
+      const activeBoss = activeRecords.find((item) => !item.is_a_delegate) || null;
+      const activeDelegate =
+        activeRecords.find((item) => item.is_a_delegate) || null;
+
+      let suspendedBossId: string | null = null;
+
+      if (dto.is_a_delegate) {
+        suspendedBossId =
+          activeBoss?.id || activeDelegate?.suspended_boss_id || null;
+      }
+
+      if (activeRecords.length) {
+        await this.areaManagerRepository.update(
+          {
+            area_id: dto.area_id,
+            role: AreaManagerRole.BOSS,
+            is_active: true,
+          },
+          {
+            is_active: false,
+          },
+        );
+      }
 
       const manager = this.areaManagerRepository.create({
         area_id: dto.area_id,
@@ -176,6 +259,8 @@ export class AreaManagerService {
         is_a_delegate: dto.is_a_delegate,
         is_active: true,
         url_document: filePath,
+        delegation_end_date: delegationEndDate,
+        suspended_boss_id: dto.is_a_delegate ? suspendedBossId : null,
       });
 
       const saved = await this.areaManagerRepository.save(manager);
@@ -191,6 +276,60 @@ export class AreaManagerService {
 
       throw error;
     }
+  }
+
+  async processExpiredDelegations() {
+    const today = parseDateOnly(new Date()) || new Date();
+
+    const expiredDelegates = await this.areaManagerRepository.find({
+      where: {
+        role: AreaManagerRole.BOSS,
+        is_active: true,
+        is_a_delegate: true,
+        delegation_end_date: LessThanOrEqual(today),
+      },
+      order: {
+        delegation_end_date: 'ASC',
+        created_at: 'ASC',
+      },
+    });
+
+    for (const delegate of expiredDelegates) {
+      delegate.is_active = false;
+      await this.areaManagerRepository.save(delegate);
+
+      const suspendedBoss = delegate.suspended_boss_id
+        ? await this.areaManagerRepository.findOne({
+            where: {
+              id: delegate.suspended_boss_id,
+              area_id: delegate.area_id,
+              is_a_delegate: false,
+              role: AreaManagerRole.BOSS,
+            },
+          })
+        : null;
+
+      const bossToRestore =
+        suspendedBoss ||
+        (await this.areaManagerRepository.findOne({
+          where: {
+            area_id: delegate.area_id,
+            role: AreaManagerRole.BOSS,
+            is_a_delegate: false,
+          },
+          order: {
+            updated_at: 'DESC',
+            created_at: 'DESC',
+          },
+        }));
+
+      if (bossToRestore) {
+        bossToRestore.is_active = true;
+        await this.areaManagerRepository.save(bossToRestore);
+      }
+    }
+
+    return expiredDelegates.length;
   }
 
   async checkEmployeeAccess(areaId: string, employeeId: string) {
@@ -261,9 +400,7 @@ export class AreaManagerService {
         role,
         is_active: true,
       },
-      select: {
-        area_id: true,
-      },
+      select: ['area_id'],
     });
 
     return results.map((item) => item.area_id);

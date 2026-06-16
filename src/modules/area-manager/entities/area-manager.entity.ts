@@ -41,6 +41,12 @@ export class AreaManager {
   @Column({ default: true })
   is_active: boolean;
 
+  @Column({ type: 'date', nullable: true })
+  delegation_end_date: Date | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  suspended_boss_id: string | null;
+
   @ManyToOne(() => OrganizationalUnit)
   @JoinColumn({ name: 'area_id' })
   area: OrganizationalUnit;
@@ -48,6 +54,10 @@ export class AreaManager {
   @ManyToOne(() => Employee)
   @JoinColumn({ name: 'employee_id' })
   employee: Employee;
+
+  @ManyToOne(() => AreaManager, { nullable: true })
+  @JoinColumn({ name: 'suspended_boss_id' })
+  suspendedBoss: AreaManager | null;
 
   @Column({
     type: 'timestamp',

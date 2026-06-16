@@ -4,10 +4,11 @@ import { AreaManagerController } from './area-manager.controller';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AreaManager } from './entities/area-manager.entity';
 import { CommonModule } from 'src/common/common.module';
+import { AreaManagerCron } from './cron/area-manager.cron';
 
 @Module({
   controllers: [AreaManagerController],
-  providers: [AreaManagerService],
+  providers: [AreaManagerService, AreaManagerCron],
   imports: [TypeOrmModule.forFeature([AreaManager]), CommonModule],
   exports: [AreaManagerService],
 })

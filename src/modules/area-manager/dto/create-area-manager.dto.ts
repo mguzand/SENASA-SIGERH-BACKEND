@@ -1,4 +1,11 @@
-import { IsBoolean, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
+import {
+  IsBoolean,
+  IsDateString,
+  IsOptional,
+  IsString,
+  IsUUID,
+  ValidateIf,
+} from 'class-validator';
 
 export class CreateAreaManagerDto {
   @IsUUID()
@@ -9,6 +16,10 @@ export class CreateAreaManagerDto {
 
   @IsBoolean()
   is_a_delegate: boolean;
+
+  @ValidateIf((o) => o.is_a_delegate === true)
+  @IsDateString()
+  delegation_end_date?: string | null;
 
   @IsOptional()
   @IsString()
