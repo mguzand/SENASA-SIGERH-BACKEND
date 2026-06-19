@@ -2,7 +2,10 @@ import { Body, Controller, Get, Param, Patch, Post, Req } from '@nestjs/common';
 import { EmployeeVacationPeriodService } from './employee-vacation-period.service';
 import { BootstrapVacationPeriodsDto } from './dto/bootstrap-vacation-periods.dto';
 import { Public } from 'src/common/decorators/public.decorator';
-import { ManualAdjustVacationPeriodsDto } from './dto/manual-adjust-vacation-periods.dto';
+import {
+  ManualAdjustVacationPeriodsDto,
+  PreviewAdjustVacationPeriodsDto,
+} from './dto/manual-adjust-vacation-periods.dto';
 
 @Controller('employee-vacation-period')
 export class EmployeeVacationPeriodController {
@@ -49,6 +52,17 @@ export class EmployeeVacationPeriodController {
       employeeId,
       dto,
       req.user?.id ?? null,
+    );
+  }
+
+  @Post('employee/:employeeId/manual-adjustment-preview')
+  previewManualAdjustPeriods(
+    @Param('employeeId') employeeId: string,
+    @Body() dto: PreviewAdjustVacationPeriodsDto,
+  ) {
+    return this.employeeVacationPeriodService.previewManualAdjustPeriods(
+      employeeId,
+      dto,
     );
   }
 }

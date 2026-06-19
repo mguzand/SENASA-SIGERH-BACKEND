@@ -1,9 +1,15 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { EntityManager } from 'typeorm';
+import { InjectRepository } from '@nestjs/typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import { EmployeeJobRecord } from './entities/employee-job-record.entity';
 
 @Injectable()
 export class EmployeeJobRecordService {
+  constructor(
+    @InjectRepository(EmployeeJobRecord)
+    private readonly employeeJobRecordRepository: Repository<EmployeeJobRecord>,
+  ) {}
+
   async createInitialRecord(
     employeeId: string,
     dto: any,
@@ -27,6 +33,54 @@ export class EmployeeJobRecordService {
     });
 
     return manager.save(EmployeeJobRecord, record);
+  }
+
+  async findApplicableRecordByDateWithManager(
+    employeeId: string,
+    targetDate: string,
+    manager: EntityManager,
+  ): Promise<EmployeeJobRecord> {
+    const normalizedDate = this.formatDateOnly(targetDate);
+
+    if (!normalizedDate) {
+      throw new BadRequestException('La fecha de acreditación no es válida.');
+    }
+
+    const record = await manager
+      .createQueryBuilder(EmployeeJobRecord, 'record')
+      .leftJoinAndSelect('record.modality', 'modality')
+      .leftJoinAndSelect('record.position', 'position')
+      .leftJoinAndSelect('record.functionalPosition', 'functionalPosition')
+      .where('record.employee_id = :employeeId', { employeeId })
+      .andWhere('record.start_date <= :targetDate', {
+        targetDate: normalizedDate,
+      })
+      .andWhere(
+        '(record.end_date IS NULL OR record.end_date >= :targetDate)',
+        {
+          targetDate: normalizedDate,
+        },
+      )
+      .orderBy('record.start_date', 'DESC')
+      .getOne();
+
+    if (!record) {
+      throw new BadRequestException(
+        `No existe un registro laboral que cubra la fecha ${normalizedDate}.`,
+      );
+    }
+
+    return record;
+  }
+
+  async getEmployeeTimeline(employeeId: string) {
+    return this.employeeJobRecordRepository.find({
+      where: { employeeId },
+      relations: ['modality', 'area', 'position', 'functionalPosition'],
+      order: {
+        startDate: 'ASC',
+      },
+    });
   }
 
   async getCurrentRecordWithManager(
@@ -271,5 +325,15 @@ export class EmployeeJobRecordService {
     }
 
     return null;
+  }
+
+  private formatDateOnly(value: unknown): string | null {
+    const parsed = this.parseDateOnly(value);
+
+    if (!parsed) {
+      return null;
+    }
+
+    return parsed.toISOString().split('T')[0];
   }
 }

@@ -19,7 +19,11 @@ import {
   VacationRequestStatus,
 } from 'src/common/enums/vacation.enums';
 import { BootstrapVacationPeriodsDto } from './dto/bootstrap-vacation-periods.dto';
-import { ManualAdjustVacationPeriodsDto } from './dto/manual-adjust-vacation-periods.dto';
+import {
+  ManualAdjustVacationPeriodsDto,
+  PreviewAdjustVacationPeriodsDto,
+} from './dto/manual-adjust-vacation-periods.dto';
+import { EmployeeJobRecordService } from '../employee-job-record/employee-job-record.service';
 
 @Injectable()
 export class EmployeeVacationPeriodService {
@@ -33,6 +37,7 @@ export class EmployeeVacationPeriodService {
 
     private readonly vacationMovementService: VacationMovementService,
     private readonly vacationContractRuleService: VacationContractRuleService,
+    private readonly employeeJobRecordService: EmployeeJobRecordService,
   ) {}
 
   async recalculatePeriodsByModalityChangeWithManager(
@@ -231,45 +236,31 @@ export class EmployeeVacationPeriodService {
 
     try {
       const targetIds = dto.periods.map((period) => period.id);
-      const periods = await queryRunner.manager.find(EmployeeVacationPeriod, {
-        where: targetIds.map((id) => ({ id, employeeId })),
-        order: { periodNumber: 'ASC' },
-      });
-
-      if (periods.length !== targetIds.length) {
-        throw new NotFoundException(
-          'Uno o más períodos vacacionales no pertenecen al empleado.',
-        );
-      }
-
+      const periods = await this.findPeriodsForAdjustment(
+        employeeId,
+        targetIds,
+        queryRunner.manager,
+      );
+      const preview = await this.buildManualAdjustmentPreview(
+        employeeId,
+        dto.periods,
+        queryRunner.manager,
+      );
       const adjustmentDate = dto.adjustment_date || this.formatDate(new Date());
-      const allowedStatuses = [
-        VacationPeriodStatus.AVAILABLE,
-        VacationPeriodStatus.PENDING,
-      ];
 
       const results: any[] = [];
 
-      for (const incoming of dto.periods) {
+      for (const incoming of preview.periods) {
         const period = periods.find((item) => item.id === incoming.id);
 
         if (!period) {
           throw new NotFoundException('Período vacacional no encontrado.');
         }
 
-        if (!allowedStatuses.includes(period.status)) {
-          throw new BadRequestException(
-            `Solo se pueden reajustar períodos activos o pendientes. Período ${period.periodNumber} inválido.`,
-          );
-        }
-
-        if (!allowedStatuses.includes(incoming.status)) {
-          throw new BadRequestException(
-            `El período ${period.periodNumber} solo puede quedar como activo o pendiente.`,
-          );
-        }
-
         const oldData = {
+          start_date: period.startDate,
+          end_date: period.endDate,
+          accreditation_date: period.accreditationDate,
           earned_days: Number(period.earnedDays),
           used_days: Number(period.usedDays),
           government_days: Number(period.governmentDays),
@@ -278,28 +269,19 @@ export class EmployeeVacationPeriodService {
           status: period.status,
         };
 
-        const nextAvailableDays =
-          Number(incoming.earned_days) -
-          Number(incoming.used_days) -
-          Number(incoming.government_days) +
-          Number(incoming.adjustment_days);
-
-        if (nextAvailableDays < 0) {
-          throw new BadRequestException(
-            `El período ${period.periodNumber} no puede quedar con saldo negativo.`,
-          );
-        }
-
+        period.startDate = incoming.start_date;
+        period.endDate = incoming.end_date;
+        period.accreditationDate = incoming.accreditation_date;
+        period.employeeJobRecordId = incoming.employee_job_record_id;
         period.earnedDays = Number(incoming.earned_days);
         period.usedDays = Number(incoming.used_days);
         period.governmentDays = Number(incoming.government_days);
         period.adjustmentDays = Number(incoming.adjustment_days);
-        period.availableDays = nextAvailableDays;
-        period.status = incoming.status;
+        period.availableDays = Number(incoming.available_days);
 
         await queryRunner.manager.save(EmployeeVacationPeriod, period);
 
-        const difference = nextAvailableDays - oldData.available_days;
+        const difference = Number(incoming.available_days) - oldData.available_days;
 
         await this.vacationMovementService.createWithManager(
           {
@@ -309,7 +291,7 @@ export class EmployeeVacationPeriodService {
             type: VacationMovementType.ADJUSTMENT,
             days: difference,
             movementDate: adjustmentDate,
-            description: `${dto.observation}. Período ${period.periodNumber}: saldo ${oldData.available_days} -> ${nextAvailableDays}, ganados ${oldData.earned_days} -> ${incoming.earned_days}, tomados ${oldData.used_days} -> ${incoming.used_days}, gobierno ${oldData.government_days} -> ${incoming.government_days}, ajuste ${oldData.adjustment_days} -> ${incoming.adjustment_days}.`,
+            description: `${dto.observation}. Período ${period.periodNumber}: fechas ${oldData.start_date} - ${oldData.end_date} -> ${incoming.start_date} - ${incoming.end_date}, acredita ${oldData.accreditation_date} -> ${incoming.accreditation_date}, saldo ${oldData.available_days} -> ${incoming.available_days}, ganados ${oldData.earned_days} -> ${incoming.earned_days}, tomados ${oldData.used_days} -> ${incoming.used_days}, gobierno ${oldData.government_days} -> ${incoming.government_days}, ajuste ${oldData.adjustment_days} -> ${incoming.adjustment_days}.`,
             createdByUserId,
           },
           queryRunner.manager,
@@ -320,6 +302,9 @@ export class EmployeeVacationPeriodService {
           period_number: period.periodNumber,
           old: oldData,
           current: {
+            start_date: period.startDate,
+            end_date: period.endDate,
+            accreditation_date: period.accreditationDate,
             earned_days: Number(period.earnedDays),
             used_days: Number(period.usedDays),
             government_days: Number(period.governmentDays),
@@ -328,6 +313,9 @@ export class EmployeeVacationPeriodService {
             status: period.status,
           },
           difference,
+          employee_job_record_id: incoming.employee_job_record_id,
+          applied_modality_id: incoming.modality_id,
+          applied_modality_name: incoming.modality_name,
         });
       }
 
@@ -341,6 +329,25 @@ export class EmployeeVacationPeriodService {
     } catch (error) {
       await queryRunner.rollbackTransaction();
       throw error;
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  async previewManualAdjustPeriods(
+    employeeId: string,
+    dto: PreviewAdjustVacationPeriodsDto,
+  ) {
+    const queryRunner = this.dataSource.createQueryRunner();
+
+    await queryRunner.connect();
+
+    try {
+      return await this.buildManualAdjustmentPreview(
+        employeeId,
+        dto.periods,
+        queryRunner.manager,
+      );
     } finally {
       await queryRunner.release();
     }
@@ -396,6 +403,153 @@ export class EmployeeVacationPeriodService {
       );
     } finally {
       await queryRunner.release();
+    }
+  }
+
+  private async buildManualAdjustmentPreview(
+    employeeId: string,
+    periodsPayload: PreviewAdjustVacationPeriodsDto['periods'],
+    manager: EntityManager,
+  ) {
+    const targetIds = periodsPayload.map((period) => period.id);
+    const periods = await this.findPeriodsForAdjustment(
+      employeeId,
+      targetIds,
+      manager,
+    );
+
+    const previewPeriods: any[] = [];
+
+    for (const incoming of periodsPayload) {
+      const currentPeriod = periods.find((item) => item.id === incoming.id);
+
+      if (!currentPeriod) {
+        throw new NotFoundException('Período vacacional no encontrado.');
+      }
+
+      this.validateAdjustmentDates(incoming);
+
+      const jobRecord =
+        await this.employeeJobRecordService.findApplicableRecordByDateWithManager(
+          employeeId,
+          incoming.accreditation_date,
+          manager,
+        );
+
+      const earnedDays =
+        await this.vacationContractRuleService.getDaysByModalityAndYear(
+          jobRecord.modalityId,
+          currentPeriod.periodNumber,
+        );
+
+      const availableDays =
+        Number(earnedDays) -
+        Number(incoming.used_days) -
+        Number(incoming.government_days) +
+        Number(incoming.adjustment_days);
+
+      if (availableDays < 0) {
+        throw new BadRequestException(
+          `El período ${currentPeriod.periodNumber} no puede quedar con saldo negativo.`,
+        );
+      }
+
+      previewPeriods.push({
+        id: currentPeriod.id,
+        period_number: currentPeriod.periodNumber,
+        start_date: incoming.start_date,
+        end_date: incoming.end_date,
+        accreditation_date: incoming.accreditation_date,
+        earned_days: Number(earnedDays),
+        used_days: Number(incoming.used_days),
+        government_days: Number(incoming.government_days),
+        adjustment_days: Number(incoming.adjustment_days),
+        available_days: Number(availableDays),
+        status: currentPeriod.status,
+        employee_job_record_id: jobRecord.id,
+        modality_id: jobRecord.modalityId,
+        modality_name: jobRecord.modality?.name ?? null,
+        job_record_position_name:
+          jobRecord.functionalPosition?.name ?? jobRecord.position?.name ?? null,
+        job_record_start_date: this.formatDate(jobRecord.startDate),
+        job_record_end_date: jobRecord.endDate
+          ? this.formatDate(jobRecord.endDate)
+          : null,
+      });
+    }
+
+    return {
+      employee_id: employeeId,
+      periods: previewPeriods,
+      summary: {
+        total_periods: previewPeriods.length,
+        total_available_days: previewPeriods.reduce(
+          (total, period) => total + Number(period.available_days),
+          0,
+        ),
+      },
+    };
+  }
+
+  private async findPeriodsForAdjustment(
+    employeeId: string,
+    targetIds: string[],
+    manager: EntityManager,
+  ) {
+    const periods = await manager.find(EmployeeVacationPeriod, {
+      where: targetIds.map((id) => ({ id, employeeId })),
+      order: { periodNumber: 'ASC' },
+    });
+
+    if (periods.length !== targetIds.length) {
+      throw new NotFoundException(
+        'Uno o más períodos vacacionales no pertenecen al empleado.',
+      );
+    }
+
+    const allowedStatuses = [
+      VacationPeriodStatus.AVAILABLE,
+      VacationPeriodStatus.PENDING,
+    ];
+
+    for (const period of periods) {
+      if (!allowedStatuses.includes(period.status)) {
+        throw new BadRequestException(
+          `Solo se pueden reajustar períodos activos o pendientes. Período ${period.periodNumber} inválido.`,
+        );
+      }
+    }
+
+    return periods;
+  }
+
+  private validateAdjustmentDates(period: {
+    start_date: string;
+    end_date: string;
+    accreditation_date: string;
+  }) {
+    const startDate = new Date(`${period.start_date}T12:00:00`);
+    const endDate = new Date(`${period.end_date}T12:00:00`);
+    const accreditationDate = new Date(`${period.accreditation_date}T12:00:00`);
+
+    if (
+      Number.isNaN(startDate.getTime()) ||
+      Number.isNaN(endDate.getTime()) ||
+      Number.isNaN(accreditationDate.getTime())
+    ) {
+      throw new BadRequestException('Una o más fechas del período son inválidas.');
+    }
+
+    if (startDate.getTime() > endDate.getTime()) {
+      throw new BadRequestException(
+        'La fecha de inicio no puede ser mayor que la fecha final.',
+      );
+    }
+
+    if (accreditationDate.getTime() < endDate.getTime()) {
+      throw new BadRequestException(
+        'La fecha de acreditación no puede ser menor que la fecha final del período.',
+      );
     }
   }
 
@@ -568,8 +722,22 @@ export class EmployeeVacationPeriodService {
     }
   }
 
-  private formatDate(date: Date): string {
-    return date.toISOString().split('T')[0];
+  private formatDate(date: Date | string): string {
+    if (typeof date === 'string') {
+      const trimmed = date.trim();
+      const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
+
+      if (match) {
+        return `${match[1]}-${match[2]}-${match[3]}`;
+      }
+
+      const parsed = new Date(trimmed);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed.toISOString().split('T')[0];
+      }
+    }
+
+    return new Date(date).toISOString().split('T')[0];
   }
 
   async consumeVacationDaysWithManager(

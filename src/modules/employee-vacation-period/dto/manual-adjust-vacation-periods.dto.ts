@@ -1,7 +1,7 @@
 import {
   ArrayMinSize,
   IsArray,
-  IsEnum,
+  IsDateString,
   IsNotEmpty,
   IsNumber,
   IsOptional,
@@ -11,15 +11,19 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { VacationPeriodStatus } from 'src/common/enums/vacation.enums';
 
 export class ManualAdjustVacationPeriodItemDto {
   @IsUUID()
   id: string;
 
-  @IsNumber()
-  @Min(0)
-  earned_days: number;
+  @IsDateString()
+  start_date: string;
+
+  @IsDateString()
+  end_date: string;
+
+  @IsDateString()
+  accreditation_date: string;
 
   @IsNumber()
   @Min(0)
@@ -31,9 +35,6 @@ export class ManualAdjustVacationPeriodItemDto {
 
   @IsNumber()
   adjustment_days: number;
-
-  @IsEnum(VacationPeriodStatus)
-  status: VacationPeriodStatus;
 }
 
 export class ManualAdjustVacationPeriodsDto {
@@ -45,6 +46,14 @@ export class ManualAdjustVacationPeriodsDto {
   @IsString()
   adjustment_date?: string | null;
 
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => ManualAdjustVacationPeriodItemDto)
+  periods: ManualAdjustVacationPeriodItemDto[];
+}
+
+export class PreviewAdjustVacationPeriodsDto {
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })

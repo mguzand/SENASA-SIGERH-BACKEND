@@ -6,6 +6,7 @@ import { EmployeeVacationPeriod } from './entities/employee-vacation-period.enti
 import { VacationPeriodCron } from './cron/vacation-period.cron';
 import { VacationMovementModule } from '../vacation-movement/vacation-movement.module';
 import { VacationContractRuleModule } from '../vacation-contract-rule/vacation-contract-rule.module';
+import { EmployeeJobRecordModule } from '../employee-job-record/employee-job-record.module';
 
 @Module({
   controllers: [EmployeeVacationPeriodController],
@@ -14,6 +15,7 @@ import { VacationContractRuleModule } from '../vacation-contract-rule/vacation-c
     TypeOrmModule.forFeature([EmployeeVacationPeriod]),
     VacationMovementModule,
     VacationContractRuleModule,
+    EmployeeJobRecordModule,
   ],
   exports: [EmployeeVacationPeriodService],
 })
