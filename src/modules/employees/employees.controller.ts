@@ -1,4 +1,5 @@
 import {
+  Delete,
   Body,
   Controller,
   Get,
@@ -80,5 +81,10 @@ export class EmployeesController {
   @Get('status/:id')
   getPersonByIdentity(@Param('id') id: string) {
     return this.employeesService.getPersonByIdentity(id);
+  }
+
+  @Delete(':id')
+  remove(@Param('id') id: string) {
+    return this.employeesService.remove(id);
   }
 }

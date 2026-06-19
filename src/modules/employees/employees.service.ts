@@ -30,6 +30,8 @@ import {
   serializeDateOnly,
 } from 'src/common/utils/date-only.util';
 import { EmployeeUnpaidLeave } from './entities/employee-unpaid-leave.entity';
+import { User } from '../users/entities/user.entity';
+import { AcademicHistory } from '../academic-history/entities/academic-history.entity';
 interface FindAllEmployeesParams {
   search?: string;
   departmentId?: string;
@@ -746,6 +748,152 @@ export class EmployeesService {
     return {
       message: 'Empleado creado correctamente.',
       employee: savedEmployee,
+    };
+  }
+
+  async remove(id: string) {
+    const qr = this.dataSource.createQueryRunner();
+
+    await qr.connect();
+    await qr.startTransaction();
+
+    const documentPathsToDelete: string[] = [];
+    let restoredIntakeRequestId: string | null = null;
+
+    try {
+      const employee = await qr.manager.findOne(Employee, {
+        where: { id },
+      });
+
+      if (!employee) {
+        throw new NotFoundException('Empleado no encontrado.');
+      }
+
+      const blockingChecks = await Promise.all([
+        qr.manager.query(
+          'SELECT COUNT(*)::int AS total FROM vacation_requests WHERE employee_id = $1 OR boss_employee_id = $1 OR hr_employee_id = $1',
+          [id],
+        ),
+        qr.manager.query(
+          'SELECT COUNT(*)::int AS total FROM employee_exit_permits WHERE employee_id = $1 OR boss_employee_id = $1 OR hr_employee_id = $1',
+          [id],
+        ),
+        qr.manager.query(
+          'SELECT COUNT(*)::int AS total FROM employee_job_actions WHERE employee_id = $1',
+          [id],
+        ),
+        qr.manager.query(
+          'SELECT COUNT(*)::int AS total FROM area_managers WHERE employee_id = $1',
+          [id],
+        ),
+        qr.manager.query(
+          'SELECT COUNT(*)::int AS total FROM employee_payment_receipts WHERE employee_id = $1',
+          [id],
+        ),
+      ]);
+
+      const [
+        vacationRequestsCount,
+        exitPermitsCount,
+        jobActionsCount,
+        areaManagersCount,
+        payrollReceiptsCount,
+      ] = blockingChecks.map((result) => Number(result?.[0]?.total || 0));
+
+      if (
+        vacationRequestsCount > 0 ||
+        exitPermitsCount > 0 ||
+        jobActionsCount > 0 ||
+        areaManagersCount > 0 ||
+        payrollReceiptsCount > 0
+      ) {
+        throw new BadRequestException([
+          'No se puede eliminar este empleado porque ya tiene movimientos operativos registrados.',
+        ]);
+      }
+
+      const documents = await qr.manager.find(EmployeeDocument, {
+        where: { employeeId: id },
+      });
+
+      documentPathsToDelete.push(
+        ...documents.map((document) => document.filePath).filter(Boolean),
+      );
+
+      const user = await qr.manager.findOne(User, {
+        where: { employeeId: id },
+      });
+
+      const intakeRequest = await qr.manager.findOne(EmployeeIntakeRequest, {
+        where: {
+          converted_employee_id: id,
+        },
+      });
+
+      await qr.manager.query(
+        'DELETE FROM employee_government_vacation_exclusions WHERE employee_id = $1',
+        [id],
+      );
+      await qr.manager.query(
+        'DELETE FROM vacation_movements WHERE employee_id = $1',
+        [id],
+      );
+      await qr.manager.query(
+        'DELETE FROM employee_vacation_periods WHERE employee_id = $1',
+        [id],
+      );
+      await qr.manager.delete(EmployeeDocument, { employeeId: id });
+      await qr.manager.delete(EmployeeUnpaidLeave, { employeeId: id });
+      await qr.manager.delete(AcademicHistory, { employeeId: id });
+      await qr.manager.delete(EmployeeEmergencyContact, { employeeId: id });
+      await qr.manager.delete(EmployeeJobRecord, { employeeId: id });
+
+      if (user) {
+        await qr.manager.query(
+          'DELETE FROM roles_user WHERE user_id::text = $1',
+          [user.id],
+        );
+        await qr.manager.delete(User, { id: user.id });
+      }
+
+      await qr.manager.delete(Employee, { id });
+
+      if (intakeRequest) {
+        intakeRequest.status = 'REVIEWED';
+        intakeRequest.converted_employee_id = null;
+        intakeRequest.converted_at = null;
+        await qr.manager.save(EmployeeIntakeRequest, intakeRequest);
+        restoredIntakeRequestId = intakeRequest.id;
+      }
+
+      await qr.commitTransaction();
+    } catch (error) {
+      await qr.rollbackTransaction();
+
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+
+      console.log(error);
+      throw new InternalServerErrorException([
+        'Error al eliminar el empleado.',
+      ]);
+    } finally {
+      await qr.release();
+    }
+
+    for (const filePath of documentPathsToDelete) {
+      this.storageService.deleteFile(filePath);
+    }
+
+    return {
+      message:
+        'Empleado eliminado correctamente. La solicitud temporal asociada quedó revisada para reconvertir.',
+      id,
+      restoredIntakeRequestId,
     };
   }
 
