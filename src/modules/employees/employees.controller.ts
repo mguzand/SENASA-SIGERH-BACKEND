@@ -45,7 +45,7 @@ export class EmployeesController {
   @Get('test/mails')
   async testMails() {
     return this.employeesService.test({
-      email: 'berlin.neto@senasa.gob.hn',
+      email: 'mguzand@gmail.com',
       firstName: 'Test',
       middleName: 'Middle',
       lastName: 'Last',

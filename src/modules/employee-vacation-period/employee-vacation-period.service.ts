@@ -19,6 +19,7 @@ import {
   VacationRequestStatus,
 } from 'src/common/enums/vacation.enums';
 import { BootstrapVacationPeriodsDto } from './dto/bootstrap-vacation-periods.dto';
+import { ManualAdjustVacationPeriodsDto } from './dto/manual-adjust-vacation-periods.dto';
 
 @Injectable()
 export class EmployeeVacationPeriodService {
@@ -215,6 +216,133 @@ export class EmployeeVacationPeriodService {
 
     for (const period of periods) {
       await this.processSinglePeriod(period);
+    }
+  }
+
+  async manualAdjustPeriods(
+    employeeId: string,
+    dto: ManualAdjustVacationPeriodsDto,
+    createdByUserId: string | null,
+  ) {
+    const queryRunner = this.dataSource.createQueryRunner();
+
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      const targetIds = dto.periods.map((period) => period.id);
+      const periods = await queryRunner.manager.find(EmployeeVacationPeriod, {
+        where: targetIds.map((id) => ({ id, employeeId })),
+        order: { periodNumber: 'ASC' },
+      });
+
+      if (periods.length !== targetIds.length) {
+        throw new NotFoundException(
+          'Uno o más períodos vacacionales no pertenecen al empleado.',
+        );
+      }
+
+      const adjustmentDate = dto.adjustment_date || this.formatDate(new Date());
+      const allowedStatuses = [
+        VacationPeriodStatus.AVAILABLE,
+        VacationPeriodStatus.PENDING,
+      ];
+
+      const results: any[] = [];
+
+      for (const incoming of dto.periods) {
+        const period = periods.find((item) => item.id === incoming.id);
+
+        if (!period) {
+          throw new NotFoundException('Período vacacional no encontrado.');
+        }
+
+        if (!allowedStatuses.includes(period.status)) {
+          throw new BadRequestException(
+            `Solo se pueden reajustar períodos activos o pendientes. Período ${period.periodNumber} inválido.`,
+          );
+        }
+
+        if (!allowedStatuses.includes(incoming.status)) {
+          throw new BadRequestException(
+            `El período ${period.periodNumber} solo puede quedar como activo o pendiente.`,
+          );
+        }
+
+        const oldData = {
+          earned_days: Number(period.earnedDays),
+          used_days: Number(period.usedDays),
+          government_days: Number(period.governmentDays),
+          adjustment_days: Number(period.adjustmentDays),
+          available_days: Number(period.availableDays),
+          status: period.status,
+        };
+
+        const nextAvailableDays =
+          Number(incoming.earned_days) -
+          Number(incoming.used_days) -
+          Number(incoming.government_days) +
+          Number(incoming.adjustment_days);
+
+        if (nextAvailableDays < 0) {
+          throw new BadRequestException(
+            `El período ${period.periodNumber} no puede quedar con saldo negativo.`,
+          );
+        }
+
+        period.earnedDays = Number(incoming.earned_days);
+        period.usedDays = Number(incoming.used_days);
+        period.governmentDays = Number(incoming.government_days);
+        period.adjustmentDays = Number(incoming.adjustment_days);
+        period.availableDays = nextAvailableDays;
+        period.status = incoming.status;
+
+        await queryRunner.manager.save(EmployeeVacationPeriod, period);
+
+        const difference = nextAvailableDays - oldData.available_days;
+
+        await this.vacationMovementService.createWithManager(
+          {
+            employeeId: employeeId,
+            vacationPeriodId: period.id,
+            vacationRequestId: null,
+            type: VacationMovementType.ADJUSTMENT,
+            days: difference,
+            movementDate: adjustmentDate,
+            description: `${dto.observation}. Período ${period.periodNumber}: saldo ${oldData.available_days} -> ${nextAvailableDays}, ganados ${oldData.earned_days} -> ${incoming.earned_days}, tomados ${oldData.used_days} -> ${incoming.used_days}, gobierno ${oldData.government_days} -> ${incoming.government_days}, ajuste ${oldData.adjustment_days} -> ${incoming.adjustment_days}.`,
+            createdByUserId,
+          },
+          queryRunner.manager,
+        );
+
+        results.push({
+          period_id: period.id,
+          period_number: period.periodNumber,
+          old: oldData,
+          current: {
+            earned_days: Number(period.earnedDays),
+            used_days: Number(period.usedDays),
+            government_days: Number(period.governmentDays),
+            adjustment_days: Number(period.adjustmentDays),
+            available_days: Number(period.availableDays),
+            status: period.status,
+          },
+          difference,
+        });
+      }
+
+      await queryRunner.commitTransaction();
+
+      return {
+        message: 'Reajuste vacacional guardado correctamente.',
+        employee_id: employeeId,
+        adjusted_periods: results,
+      };
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
     }
   }
 

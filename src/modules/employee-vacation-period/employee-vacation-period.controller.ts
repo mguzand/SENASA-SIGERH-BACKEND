@@ -1,7 +1,8 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Req } from '@nestjs/common';
 import { EmployeeVacationPeriodService } from './employee-vacation-period.service';
 import { BootstrapVacationPeriodsDto } from './dto/bootstrap-vacation-periods.dto';
 import { Public } from 'src/common/decorators/public.decorator';
+import { ManualAdjustVacationPeriodsDto } from './dto/manual-adjust-vacation-periods.dto';
 
 @Controller('employee-vacation-period')
 export class EmployeeVacationPeriodController {
@@ -36,5 +37,18 @@ export class EmployeeVacationPeriodController {
   @Get(':periodId/detail')
   getPeriodDetail(@Param('periodId') periodId: string) {
     return this.employeeVacationPeriodService.getPeriodDetail(periodId);
+  }
+
+  @Patch('employee/:employeeId/manual-adjustment')
+  manualAdjustPeriods(
+    @Param('employeeId') employeeId: string,
+    @Body() dto: ManualAdjustVacationPeriodsDto,
+    @Req() req: any,
+  ) {
+    return this.employeeVacationPeriodService.manualAdjustPeriods(
+      employeeId,
+      dto,
+      req.user?.id ?? null,
+    );
   }
 }
