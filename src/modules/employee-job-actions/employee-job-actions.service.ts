@@ -8,7 +8,10 @@ import { EmployeeJobAction } from './entities/employee-job-action.entity';
 import { EmployeeJobRecordService } from '../employee-job-record/employee-job-record.service';
 import { EmployeeVacationPeriodService } from '../employee-vacation-period/employee-vacation-period.service';
 import { EmployeeJobRecord } from '../employee-job-record/entities/employee-job-record.entity';
+import { EmployeeVacationPeriod } from '../employee-vacation-period/entities/employee-vacation-period.entity';
 import { Employee } from '../employees/entities/employee.entity';
+import { EmployeeUnpaidLeave } from '../employees/entities/employee-unpaid-leave.entity';
+import { VacationPeriodStatus } from 'src/common/enums/vacation.enums';
 
 @Injectable()
 export class EmployeeJobActionsService {
@@ -106,6 +109,13 @@ export class EmployeeJobActionsService {
         );
       }
 
+      if (dto.action_type === EmployeeJobActionType.UNPAID_LEAVE) {
+        recalculatedPeriods = await this.registerUnpaidLeaveWithManager(
+          dto,
+          queryRunner.manager,
+        );
+      }
+
       const employee = await queryRunner.manager.findOne(Employee, {
         where: { id: dto.employee_id },
       });
@@ -145,6 +155,18 @@ export class EmployeeJobActionsService {
       .getRepository(EmployeeJobAction)
       .createQueryBuilder('action')
       .leftJoinAndSelect('action.employee', 'employee')
+      .leftJoinAndSelect(
+        'employee.jobRecords',
+        'jobRecord',
+        'LOWER(jobRecord.status) = :jobRecordStatus',
+        { jobRecordStatus: 'active' },
+      )
+      .leftJoinAndSelect('jobRecord.area', 'jobRecordArea')
+      .leftJoinAndSelect('jobRecord.position', 'jobRecordPosition')
+      .leftJoinAndSelect(
+        'jobRecord.functionalPosition',
+        'jobRecordFunctionalPosition',
+      )
       .orderBy('action.modificationDate', 'DESC')
       .addOrderBy('action.created_at', 'DESC');
 
@@ -155,7 +177,7 @@ export class EmployeeJobActionsService {
     const actions = await query.getMany();
 
     return actions.map((action) =>
-      this.mapAction(action, action.employee, null),
+      this.mapAction(action, action.employee, action.employee?.jobRecords?.[0] ?? null),
     );
   }
 
@@ -280,6 +302,28 @@ export class EmployeeJobActionsService {
           ? `${nextPosition || 'Puesto seleccionado'} · ${nextArea}`
           : nextPosition,
         summary: `Cambio de puesto hacia ${nextPosition || 'puesto seleccionado'}${nextArea ? ` en ${nextArea}` : ''}.`,
+      };
+    }
+
+    if (dto.action_type === EmployeeJobActionType.UNPAID_LEAVE) {
+      const startDate = this.parseDateOnlyStrict(dto.new_unpaid_leave_start_date);
+      const endDate = this.parseDateOnlyStrict(dto.new_unpaid_leave_end_date);
+
+      if (!startDate || !endDate) {
+        return {
+          previousValue: 'Sin licencia',
+          nextValue: null,
+          summary: 'Licencia sin goce de sueldo registrada.',
+        };
+      }
+
+      const days = this.getInclusiveDays(startDate, endDate);
+      const dateRange = `${this.formatHumanDate(startDate)} al ${this.formatHumanDate(endDate)}`;
+
+      return {
+        previousValue: 'Sin licencia',
+        nextValue: `${dateRange} · ${days} día${days === 1 ? '' : 's'}`,
+        summary: `Licencia sin goce de sueldo del ${dateRange} (${days} día${days === 1 ? '' : 's'}).`,
       };
     }
 
@@ -427,6 +471,8 @@ export class EmployeeJobActionsService {
         return 'Cambio de puesto';
       case EmployeeJobActionType.STATUS_CHANGE:
         return 'Cambio de estado';
+      case EmployeeJobActionType.UNPAID_LEAVE:
+        return 'Licencia sin goce de sueldo';
       default:
         return 'Acción al personal';
     }
@@ -442,6 +488,8 @@ export class EmployeeJobActionsService {
         return 'position_change';
       case EmployeeJobActionType.STATUS_CHANGE:
         return 'status_change';
+      case EmployeeJobActionType.UNPAID_LEAVE:
+        return 'unpaid_leave';
       default:
         return 'status_change';
     }
@@ -457,9 +505,136 @@ export class EmployeeJobActionsService {
         return 'Cambio de puesto aplicado correctamente';
       case EmployeeJobActionType.STATUS_CHANGE:
         return 'Cambio de estado aplicado correctamente';
+      case EmployeeJobActionType.UNPAID_LEAVE:
+        return 'Licencia sin goce registrada correctamente';
       default:
         return 'Acción al personal registrada correctamente';
     }
+  }
+
+  private async registerUnpaidLeaveWithManager(
+    dto: CreateEmployeeJobActionDto,
+    manager: EntityManager,
+  ) {
+    const startDate = this.parseDateOnlyStrict(dto.new_unpaid_leave_start_date);
+    const endDate = this.parseDateOnlyStrict(dto.new_unpaid_leave_end_date);
+
+    if (!startDate || !endDate) {
+      throw new BadRequestException(
+        'Las fechas de la licencia sin goce no son válidas',
+      );
+    }
+
+    if (endDate.getTime() < startDate.getTime()) {
+      throw new BadRequestException(
+        'La fecha final de la licencia sin goce no puede ser anterior al inicio.',
+      );
+    }
+
+    const days = this.getInclusiveDays(startDate, endDate);
+
+    await manager.insert(EmployeeUnpaidLeave, {
+      employeeId: dto.employee_id,
+      startDate,
+      endDate,
+      days,
+      observation: dto.observation?.trim() || null,
+    });
+
+    const employee = await manager.findOne(Employee, {
+      where: { id: dto.employee_id },
+    });
+
+    if (!employee?.entryDate) {
+      throw new BadRequestException(
+        'El empleado no tiene fecha de ingreso registrada',
+      );
+    }
+
+    const entryDate = this.parseDateOnlyStrict(
+      this.serializeDateOnly(employee.entryDate),
+    );
+
+    if (!entryDate) {
+      throw new BadRequestException(
+        'La fecha de ingreso del empleado no es válida',
+      );
+    }
+
+    const periods = await manager.find(EmployeeVacationPeriod, {
+      where: [
+        {
+          employeeId: dto.employee_id,
+          status: VacationPeriodStatus.AVAILABLE,
+        },
+        {
+          employeeId: dto.employee_id,
+          status: VacationPeriodStatus.PENDING,
+        },
+      ],
+      order: {
+        periodNumber: 'ASC',
+      },
+    });
+
+    if (!periods.length) {
+      return [];
+    }
+
+    const firstAffectedPeriod = this.findFirstAffectedPeriodNumber(
+      entryDate,
+      startDate,
+      endDate,
+      periods[periods.length - 1].periodNumber,
+    );
+
+    if (firstAffectedPeriod === null) {
+      return [];
+    }
+
+    const adjustedPeriods: Array<{
+      period_id: string;
+      period_number: number;
+      old_end_date: string;
+      new_end_date: string;
+      old_accreditation_date: string;
+      new_accreditation_date: string;
+      shift_days: number;
+    }> = [];
+
+    for (const period of periods) {
+      if (period.periodNumber < firstAffectedPeriod) {
+        continue;
+      }
+
+      const oldEndDate = this.parseDateOnlyStrict(this.serializeDateOnly(period.endDate));
+      const oldAccreditationDate = this.parseDateOnlyStrict(
+        this.serializeDateOnly(period.accreditationDate),
+      );
+
+      if (!oldEndDate || !oldAccreditationDate) {
+        continue;
+      }
+
+      period.endDate = this.serializeDateOnly(this.addDays(oldEndDate, days));
+      period.accreditationDate = this.serializeDateOnly(
+        this.addDays(oldAccreditationDate, days),
+      );
+
+      await manager.save(EmployeeVacationPeriod, period);
+
+      adjustedPeriods.push({
+        period_id: period.id,
+        period_number: period.periodNumber,
+        old_end_date: this.serializeDateOnly(oldEndDate),
+        new_end_date: period.endDate,
+        old_accreditation_date: this.serializeDateOnly(oldAccreditationDate),
+        new_accreditation_date: period.accreditationDate,
+        shift_days: days,
+      });
+    }
+
+    return adjustedPeriods;
   }
 
   private readableStatus(status: string | null | undefined) {
@@ -510,5 +685,74 @@ export class EmployeeJobActionsService {
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
+  }
+
+  private parseDateOnlyStrict(value: string | null | undefined) {
+    if (!value) return null;
+
+    const match = String(value)
+      .trim()
+      .match(/^(\d{4})-(\d{2})-(\d{2})$/);
+
+    if (!match) return null;
+
+    const date = new Date(
+      Number(match[1]),
+      Number(match[2]) - 1,
+      Number(match[3]),
+      12,
+      0,
+      0,
+      0,
+    );
+
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  private formatHumanDate(value: Date) {
+    return value.toLocaleDateString('es-HN', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+  }
+
+  private addYears(date: Date, years: number) {
+    const nextDate = new Date(date);
+    nextDate.setFullYear(nextDate.getFullYear() + years);
+    return nextDate;
+  }
+
+  private addDays(date: Date, days: number) {
+    const nextDate = new Date(date);
+    nextDate.setDate(nextDate.getDate() + days);
+    return nextDate;
+  }
+
+  private getInclusiveDays(start: Date, end: Date) {
+    const millisecondsPerDay = 1000 * 60 * 60 * 24;
+    return Math.floor((end.getTime() - start.getTime()) / millisecondsPerDay) + 1;
+  }
+
+  private findFirstAffectedPeriodNumber(
+    entryDate: Date,
+    leaveStart: Date,
+    leaveEnd: Date,
+    maxPeriodNumber: number,
+  ) {
+    for (let currentPeriod = 1; currentPeriod <= maxPeriodNumber; currentPeriod++) {
+      const periodStart = this.addYears(entryDate, currentPeriod - 1);
+      const accreditationDate = this.addYears(entryDate, currentPeriod);
+
+      const overlapsCurrentPeriod =
+        leaveStart.getTime() <= accreditationDate.getTime() &&
+        leaveEnd.getTime() >= periodStart.getTime();
+
+      if (overlapsCurrentPeriod) {
+        return currentPeriod;
+      }
+    }
+
+    return null;
   }
 }

@@ -44,6 +44,14 @@ export class CreateEmployeeJobActionDto {
   @IsString()
   new_employee_status?: string;
 
+  @ValidateIf((o) => o.action_type === EmployeeJobActionType.UNPAID_LEAVE)
+  @IsDateString()
+  new_unpaid_leave_start_date?: string;
+
+  @ValidateIf((o) => o.action_type === EmployeeJobActionType.UNPAID_LEAVE)
+  @IsDateString()
+  new_unpaid_leave_end_date?: string;
+
   @IsDateString()
   modification_date: string;
 
