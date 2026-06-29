@@ -1,4 +1,86 @@
-import { IsDateString, IsEmail, IsNotEmpty, IsOptional, IsString, Length, Matches } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsDateString,
+  IsEmail,
+  IsInt,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Length,
+  Matches,
+  ValidateNested,
+} from 'class-validator';
+import { Type } from 'class-transformer';
+
+export class PublicIntakeLevelDto {
+  @IsString()
+  name: string;
+
+  @IsString()
+  value: string;
+}
+
+export class PublicIntakeAcademicHistoryDto {
+  @ValidateNested()
+  @Type(() => PublicIntakeLevelDto)
+  level: PublicIntakeLevelDto;
+
+  @IsString()
+  institution: string;
+
+  @IsString()
+  career: string;
+
+  @IsString()
+  title: string;
+
+  @IsInt()
+  startYear: number;
+
+  @IsOptional()
+  @IsInt()
+  endYear?: number | null;
+
+  @IsBoolean()
+  inProgress: boolean;
+
+  @IsOptional()
+  @IsString()
+  notes?: string | null;
+}
+
+export class PublicIntakeDocumentDto {
+  @IsString()
+  documentTypeKey: string;
+
+  @IsString()
+  originalName: string;
+
+  @IsString()
+  name: string;
+
+  @IsString()
+  extension: string;
+
+  @IsString()
+  mimeType: string;
+
+  @IsNumber()
+  size: number;
+
+  @IsString()
+  base64: string;
+
+  @IsOptional()
+  @IsDateString()
+  expirationDate?: string | null;
+
+  @IsOptional()
+  @IsString()
+  notes?: string | null;
+}
 
 export class CreateEmployeeIntakeDto {
   @IsString()
@@ -32,7 +114,35 @@ export class CreateEmployeeIntakeDto {
 
   @IsOptional()
   @IsString()
+  phone?: string | null;
+
+  @IsOptional()
+  @IsString()
   home_address?: string | null;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PublicIntakeAcademicHistoryDto)
+  academic_history?: PublicIntakeAcademicHistoryDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PublicIntakeDocumentDto)
+  general_documents?: PublicIntakeDocumentDto[];
+
+  @IsOptional()
+  @IsString()
+  emergency_contact_name?: string | null;
+
+  @IsOptional()
+  @IsString()
+  emergency_contact_relationship?: string | null;
+
+  @IsOptional()
+  @IsString()
+  emergency_contact_phone?: string | null;
 
   @IsString()
   @IsNotEmpty()

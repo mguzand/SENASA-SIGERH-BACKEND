@@ -69,6 +69,6 @@ export class AuthService {
       };
     });
     const token = this._jwtService.sign(payload[0]);
-    return { token };
+    return { token, payload: payload[0] || null };
   }
 }

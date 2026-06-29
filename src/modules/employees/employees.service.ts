@@ -21,7 +21,10 @@ import { Brackets } from 'typeorm';
 import { EmployeeVacationPeriodService } from '../employee-vacation-period/employee-vacation-period.service';
 import { UsersService } from '../users/users.service';
 import { sendNewEmployee } from 'src/common/helpers/send-email.helper';
-import { EmployeeIntakeRequest } from '../employee-intake/entities/employee-intake.entity';
+import {
+  EmployeeIntakeRequest,
+  PublicIntakeGeneralDocumentRecord,
+} from '../employee-intake/entities/employee-intake.entity';
 import { EmployeeJobRecord } from '../employee-job-record/entities/employee-job-record.entity';
 import { UpdateEmployeeEditableDto } from './dtos/update-employee-editable.dto';
 import * as path from 'path';
@@ -434,12 +437,24 @@ export class EmployeesService {
           ]);
         }
 
-        if (intakeRequest.status !== 'REVIEWED') {
+      if (intakeRequest.status !== 'REVIEWED') {
           throw new BadRequestException([
             'La solicitud temporal debe estar revisada antes de convertirla en empleado.',
           ]);
         }
       }
+
+      const intakeAcademicHistory =
+        dto.academicHistory?.length
+          ? dto.academicHistory
+          : intakeRequest?.academic_history || [];
+      const hasManualGeneralDocuments = dto.documents?.some(
+        (doc) => doc.documentTypeKey === 'general',
+      );
+      const intakeGeneralDocuments =
+        !hasManualGeneralDocuments && intakeRequest?.general_documents?.length
+          ? intakeRequest.general_documents
+          : [];
 
       //! ////////////////////////////////////////////////////////////////////////////
       //!Verificamos que no exista otro empleado con el mismo dni ////////////////////
@@ -457,43 +472,52 @@ export class EmployeesService {
       //!creamos el insert del empleado y lo guardamos en una variable para usar su id;
       const employee = qr.manager.create(Employee, {
         dni: dto.dni,
-        rtn: this.normalizeOptionalString(dto.rtn),
+        rtn: this.normalizeOptionalString(dto.rtn) || intakeRequest?.rtn || null,
         firstName: dto.firstName,
         middleName: dto.middleName,
         lastName: dto.lastName,
         secondLastName: dto.secondLastName,
         gender: dto.gender,
-        marital_status: dto.marital_status,
-        type_blood: dto.type_blood,
+        marital_status: dto.marital_status || intakeRequest?.marital_status || null,
+        type_blood: dto.type_blood || intakeRequest?.blood_type || null,
         birth_date: parseDateOnly(dto.birth_date),
-        birth_place: dto.birth_place,
-        address: dto.address,
+        birth_place: dto.birth_place || intakeRequest?.birth_place || null,
+        address: dto.address || intakeRequest?.home_address || null,
         entryDate: parseDateOnly(dto.start_date) || new Date(),
         schedule_id: dto.schedule_id,
         regional_id: dto.regional_id,
         status: dto.status ? String(dto.status).toUpperCase() : 'ACTIVE',
-        email: dto.email,
-        phone: dto.phone,
+        email: dto.email || intakeRequest?.email || null,
+        phone: dto.phone || intakeRequest?.phone || null,
         position_id: dto.position_id,
-        biometric_id: dto.biometric_id,
+        biometric_id: dto.biometric_id || intakeRequest?.biometric_id || null,
       });
 
       savedEmployee = await qr.manager.save(Employee, employee);
 
       //! ///////////////////////////////////////////////////////////////////////////////////////////
       //!creamos el insert del contacto de emergencia usando el id del empleado que acabamos de crear
+      const resolvedEmergencyContactName =
+        dto.emergency_contact_name || intakeRequest?.emergency_contact_name || null;
+      const resolvedEmergencyContactRelationship =
+        dto.emergency_contact_relationship ||
+        intakeRequest?.emergency_contact_relationship ||
+        null;
+      const resolvedEmergencyContactPhone =
+        dto.emergency_contact_phone || intakeRequest?.emergency_contact_phone || null;
+
       if (
-        dto.emergency_contact_name &&
-        dto.emergency_contact_relationship &&
-        dto.emergency_contact_phone
+        resolvedEmergencyContactName &&
+        resolvedEmergencyContactRelationship &&
+        resolvedEmergencyContactPhone
       ) {
         const employeeEmergencyContact = qr.manager.create(
           EmployeeEmergencyContact,
           {
             employeeId: savedEmployee.id,
-            emergency_contact_name: dto.emergency_contact_name,
-            emergency_contact_relationship: dto.emergency_contact_relationship,
-            emergency_contact_phone: dto.emergency_contact_phone,
+            emergency_contact_name: resolvedEmergencyContactName,
+            emergency_contact_relationship: resolvedEmergencyContactRelationship,
+            emergency_contact_phone: resolvedEmergencyContactPhone,
           },
         );
         await qr.manager.save(
@@ -504,10 +528,10 @@ export class EmployeesService {
 
       //! //////////////////////////////////////////////////////////////////////////////////////////
       //! creamos el insert de la historia academica usando el id del empleado que acabamos de crear
-      if (dto.academicHistory?.length) {
+      if (intakeAcademicHistory?.length) {
         await this.academicHistoryService.createMany(
           savedEmployee.id,
-          dto.academicHistory || [],
+          intakeAcademicHistory as any,
           qr.manager,
         );
       }
@@ -582,6 +606,16 @@ export class EmployeesService {
             isPrivate: false,
           });
         }
+      }
+
+      if (intakeGeneralDocuments?.length) {
+        await this.copyIntakeGeneralDocuments(
+          savedEmployee.id,
+          intakeGeneralDocuments,
+          qr.manager,
+          writtenFiles,
+          filesToConvertAfterCommit,
+        );
       }
 
       if (
@@ -684,7 +718,7 @@ export class EmployeesService {
       );
 
       await sendNewEmployee(
-        dto.email,
+        dto.email || intakeRequest?.email || '',
         `${dto.firstName} ${dto.lastName} bienvenido al Portal del Empleado`,
         createdUser.username,
         `${dto.firstName} ${dto.middleName}, ${dto.lastName}`,
@@ -936,6 +970,71 @@ export class EmployeesService {
 
       const saved = await manager.save(EmployeeDocument, employeeDocument);
       savedDocuments.push(saved);
+    }
+
+    return savedDocuments;
+  }
+
+  async copyIntakeGeneralDocuments(
+    employeeId: string,
+    documents: PublicIntakeGeneralDocumentRecord[],
+    manager: EntityManager,
+    writtenFiles: string[],
+    filesToConvertAfterCommit: {
+      documentId: string;
+      filePath: string;
+      folder: string;
+      fileName: string;
+    }[],
+  ) {
+    if (!documents?.length) return [];
+
+    const savedDocuments: EmployeeDocument[] = [];
+
+    for (const doc of documents) {
+      if (!doc.filePath) {
+        continue;
+      }
+
+      const extension = (doc.extension || 'pdf').replace('.', '').toLowerCase();
+      const fileName = `${randomUUID()}.${extension}`;
+      const folder = `employees/${employeeId}`;
+      const filePath = this.storageService.copyStoredFile(
+        doc.filePath,
+        folder,
+        fileName,
+      );
+
+      writtenFiles.push(filePath);
+
+      const employeeDocument = manager.create(EmployeeDocument, {
+        employeeId,
+        documentType: doc.documentTypeKey || 'general',
+        fileName,
+        originalName: doc.originalName || doc.name || fileName,
+        extension,
+        mimeType: doc.mimeType || 'application/octet-stream',
+        fileSize: Number(doc.size || 0),
+        filePath,
+        expirationDate: doc.expirationDate
+          ? parseDateOnly(doc.expirationDate)
+          : null,
+        notes: doc.notes || 'Documento importado desde solicitud temporal',
+        isActive: true,
+        isPrivate: false,
+      });
+
+      const saved = await manager.save(EmployeeDocument, employeeDocument);
+      savedDocuments.push(saved);
+
+      if (extension === 'doc' || extension === 'docx') {
+        filesToConvertAfterCommit.push({
+          documentId: saved.id,
+          filePath,
+          folder,
+          fileName,
+        });
+      }
     }
 
     return savedDocuments;

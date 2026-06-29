@@ -37,6 +37,71 @@ export class UsersService {
     private readonly _rolUserService: RolUserService,
   ) {}
 
+  async findById(id: string) {
+    const values = await this._userRepo
+      .createQueryBuilder('user')
+      .innerJoinAndSelect('user.employee', 'employee')
+      .leftJoinAndSelect('employee.schedule', 'schedule')
+      .leftJoinAndSelect(
+        'employee.jobRecords',
+        'jobRecord',
+        'LOWER(jobRecord.status) = :jobRecordStatus',
+        { jobRecordStatus: 'active' },
+      )
+      .leftJoinAndSelect('jobRecord.area', 'area')
+      .leftJoinAndSelect('jobRecord.modality', 'modality')
+      .leftJoinAndSelect('jobRecord.position', 'jobRecordPosition')
+      .leftJoinAndSelect(
+        'jobRecord.functionalPosition',
+        'jobRecordFunctionalPosition',
+      )
+
+      .where('user.id = :id', { id })
+      .andWhere('user.is_active = :isActive', { isActive: true })
+      .getOne();
+
+      if (values) {
+        return this.formatDataSSO(values);
+      } else {
+        return null;
+      } 
+  }
+
+  async formatDataSSO(items: any) {
+     const { employee, ...rest } = items;
+     const currentRecord = employee.jobRecords?.find(
+      (record: any) => String(record.status || '').toLowerCase() === 'active',
+     );
+
+     return {
+      id: rest.id,
+      username: rest.username,
+      isActive: rest.isActive,
+       employee: employee ? {
+         id: employee.id,
+         rtn: employee.rtn,
+         names: employee.firstName + ' ' + employee.middleName,
+         surname: employee.lastName + ' ' + employee.secondLastName,
+         firstName: employee.firstName,
+         middleName: employee.middleName,
+         lastName: employee.lastName,
+         secondLastName: employee.secondLastName,
+         email: employee.email,
+         phone: employee.phone,
+         modalityName: currentRecord?.modality?.name || null,
+            functionalPositionName:
+              currentRecord?.functionalPosition?.name || null,
+            nominalPositionName: currentRecord?.position?.name || null,
+            departmentName: currentRecord?.area?.name || null,
+            department_id: currentRecord?.area?.id || null,
+
+       }: null,
+     }
+
+
+  }
+
+
   async createUser(
     dto: {
       employeeId: string;

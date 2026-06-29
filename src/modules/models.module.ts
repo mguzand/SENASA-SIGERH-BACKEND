@@ -30,6 +30,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { SystemModule } from './system/system.module';
 import { PayrollImportModule } from './payroll-import/payroll-import.module';
 import { EmployeeJobActionsModule } from './employee-job-actions/employee-job-actions.module';
+import { SsoModule } from './sso/sso.module';
 
 @Module({
   imports: [
@@ -64,6 +65,7 @@ import { EmployeeJobActionsModule } from './employee-job-actions/employee-job-ac
     SystemModule,
     PayrollImportModule,
     EmployeeJobActionsModule,
+    SsoModule,
   ],
   exports: [],
 })

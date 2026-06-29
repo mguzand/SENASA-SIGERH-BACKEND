@@ -16,6 +16,13 @@ export class RolUserService {
     private readonly dataSource: DataSource,
   ) {}
 
+   
+  async userHasAccessToSystem(userId: string, systemId: string): Promise<boolean> {
+    const count = await this.getCountPermissions(userId, systemId); 
+    return count > 0;
+  }
+
+
   async getAllByUser(id_user: string, system: string) {
     const rol_user = await this._rolUser
       .createQueryBuilder('rol_user')

@@ -8,7 +8,11 @@ import {
   serializeDateOnly,
 } from 'src/common/utils/date-only.util';
 import { CreateEmployeeIntakeDto } from './dto/create-employee-intake.dto';
-import { EmployeeIntakeRequest } from './entities/employee-intake.entity';
+import {
+  EmployeeIntakeRequest,
+  PublicIntakeAcademicHistoryRecord,
+  PublicIntakeGeneralDocumentRecord,
+} from './entities/employee-intake.entity';
 import { ListEmployeeIntakeDto } from './dto/list-employee-intake.dto';
 import { ReviewEmployeeIntakeDto } from './dto/review-employee-intake.dto';
 
@@ -40,6 +44,10 @@ export class EmployeeIntakeService {
     let criminalRecordFilePath: string | null = null;
     let previousFilePath: string | null = null;
     let previousCriminalRecordFilePath: string | null = null;
+    let previousGeneralDocumentPaths: string[] = [];
+    let generalDocumentFilePaths: string[] = [];
+    let savedAcademicHistory: PublicIntakeAcademicHistoryRecord[] | null = null;
+    let savedGeneralDocuments: PublicIntakeGeneralDocumentRecord[] | null = null;
 
     try {
       const extension = (dto.cv_extension || 'pdf').replace('.', '').toLowerCase();
@@ -70,6 +78,18 @@ export class EmployeeIntakeService {
 
       previousFilePath = existing?.cv_file_path || null;
       previousCriminalRecordFilePath = existing?.criminal_record_file_path || null;
+      previousGeneralDocumentPaths =
+        existing?.general_documents?.map((document) => document.filePath).filter(Boolean) || [];
+
+      if (dto.academic_history?.length) {
+        savedAcademicHistory = this.normalizeAcademicHistory(dto.academic_history);
+      }
+
+      if (dto.general_documents?.length) {
+        const generalDocumentsResult = this.saveGeneralDocuments(identity, dto.general_documents);
+        savedGeneralDocuments = generalDocumentsResult.records;
+        generalDocumentFilePaths = generalDocumentsResult.filePaths;
+      }
 
       const entity = this.employeeIntakeRepository.create({
         id: existing?.id,
@@ -79,9 +99,11 @@ export class EmployeeIntakeService {
         marital_status: dto.marital_status?.trim() || null,
         blood_type: dto.blood_type?.trim() || null,
         email: dto.email?.trim() || null,
+        phone: dto.phone?.trim() || existing?.phone || null,
         home_address: dto.home_address?.trim() || null,
         birth_place: existing?.birth_place || null,
-        phone: existing?.phone || null,
+        academic_history: savedAcademicHistory || existing?.academic_history || null,
+        general_documents: savedGeneralDocuments || existing?.general_documents || null,
         cv_file_path: filePath,
         cv_original_name: dto.cv_original_name?.trim() || null,
         cv_extension: extension,
@@ -117,9 +139,14 @@ export class EmployeeIntakeService {
         regional_id: existing?.regional_id || null,
         employee_status: existing?.employee_status || null,
         biometric_id: existing?.biometric_id || null,
-        emergency_contact_name: existing?.emergency_contact_name || null,
-        emergency_contact_relationship: existing?.emergency_contact_relationship || null,
-        emergency_contact_phone: existing?.emergency_contact_phone || null,
+        emergency_contact_name:
+          dto.emergency_contact_name?.trim() || existing?.emergency_contact_name || null,
+        emergency_contact_relationship:
+          dto.emergency_contact_relationship?.trim() ||
+          existing?.emergency_contact_relationship ||
+          null,
+        emergency_contact_phone:
+          dto.emergency_contact_phone?.trim() || existing?.emergency_contact_phone || null,
       });
 
       const saved = await this.employeeIntakeRepository.save(entity);
@@ -134,6 +161,12 @@ export class EmployeeIntakeService {
         previousCriminalRecordFilePath !== criminalRecordFilePath
       ) {
         this.storageService.deleteFile(previousCriminalRecordFilePath);
+      }
+
+      if (generalDocumentFilePaths.length) {
+        previousGeneralDocumentPaths
+          .filter((filePath) => !generalDocumentFilePaths.includes(filePath))
+          .forEach((filePath) => this.storageService.deleteFile(filePath));
       }
 
       return {
@@ -151,6 +184,10 @@ export class EmployeeIntakeService {
 
       if (criminalRecordFilePath) {
         this.storageService.deleteFile(criminalRecordFilePath);
+      }
+
+      for (const filePath of generalDocumentFilePaths) {
+        this.storageService.deleteFile(filePath);
       }
 
       throw error;
@@ -214,6 +251,7 @@ export class EmployeeIntakeService {
         bloodType: record.blood_type,
         email: record.email,
         homeAddress: record.home_address,
+        phone: record.phone,
         cvOriginalName: record.cv_original_name,
         criminalRecordOriginalName: record.criminal_record_original_name,
         criminalRecordExpirationDate: serializeDateOnly(
@@ -258,6 +296,8 @@ export class EmployeeIntakeService {
       homeAddress: record.home_address,
       birthPlace: record.birth_place,
       phone: record.phone,
+      academicHistory: record.academic_history || [],
+      generalDocuments: record.general_documents || [],
       cvOriginalName: record.cv_original_name,
       cvExtension: record.cv_extension,
       cvMimeType: record.cv_mime_type,
@@ -376,10 +416,73 @@ export class EmployeeIntakeService {
       this.storageService.deleteFile(record.criminal_record_file_path);
     }
 
+    for (const document of record.general_documents || []) {
+      if (document.filePath) {
+        this.storageService.deleteFile(document.filePath);
+      }
+    }
+
     return {
       message: 'Solicitud temporal eliminada correctamente',
       id,
     };
+  }
+
+  private normalizeAcademicHistory(
+    history: CreateEmployeeIntakeDto['academic_history'],
+  ): PublicIntakeAcademicHistoryRecord[] {
+    return (history || []).map((item) => ({
+      level: {
+        name: item.level?.name?.trim() || '',
+        value: item.level?.value?.trim() || '',
+      },
+      institution: item.institution?.trim() || '',
+      career: item.career?.trim() || '',
+      title: item.title?.trim() || '',
+      startYear: Number(item.startYear || new Date().getFullYear()),
+      endYear:
+        item.endYear === null || item.endYear === undefined
+          ? null
+          : Number(item.endYear),
+      inProgress: Boolean(item.inProgress),
+      notes: item.notes?.trim() || null,
+    }));
+  }
+
+  private saveGeneralDocuments(
+    identity: string,
+    documents: CreateEmployeeIntakeDto['general_documents'],
+  ): {
+    records: PublicIntakeGeneralDocumentRecord[];
+    filePaths: string[];
+  } {
+    const records: PublicIntakeGeneralDocumentRecord[] = [];
+    const filePaths: string[] = [];
+
+    for (const doc of documents || []) {
+      const extension = (doc.extension || 'pdf').replace('.', '').toLowerCase();
+      const fileName = `${identity}-general-${randomUUID()}.${extension}`;
+      const filePath = this.storageService.saveBase64File(
+        doc.base64,
+        'employee-intake/general-documents',
+        fileName,
+      );
+
+      filePaths.push(filePath);
+      records.push({
+        documentTypeKey: doc.documentTypeKey || 'general',
+        originalName: doc.originalName?.trim() || doc.name?.trim() || fileName,
+        name: doc.name?.trim() || doc.originalName?.trim() || fileName,
+        extension,
+        mimeType: doc.mimeType?.trim() || 'application/octet-stream',
+        size: Number(doc.size || 0),
+        expirationDate: doc.expirationDate || null,
+        notes: doc.notes?.trim() || null,
+        filePath,
+      });
+    }
+
+    return { records, filePaths };
   }
 
 }

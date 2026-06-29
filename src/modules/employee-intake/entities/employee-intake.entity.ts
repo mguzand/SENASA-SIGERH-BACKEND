@@ -6,6 +6,32 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
+export interface PublicIntakeAcademicHistoryRecord {
+  level: {
+    name: string;
+    value: string;
+  };
+  institution: string;
+  career: string;
+  title: string;
+  startYear: number;
+  endYear: number | null;
+  inProgress: boolean;
+  notes: string | null;
+}
+
+export interface PublicIntakeGeneralDocumentRecord {
+  documentTypeKey: string;
+  originalName: string;
+  name: string;
+  extension: string;
+  mimeType: string;
+  size: number;
+  expirationDate: string | null;
+  notes: string | null;
+  filePath: string;
+}
+
 @Entity('employee_intake_requests', { synchronize: true })
 export class EmployeeIntakeRequest {
   @PrimaryGeneratedColumn('uuid')
@@ -37,6 +63,12 @@ export class EmployeeIntakeRequest {
 
   @Column({ length: 30, nullable: true, type: 'varchar' })
   phone: string | null;
+
+  @Column({ type: 'simple-json', nullable: true })
+  academic_history: PublicIntakeAcademicHistoryRecord[] | null;
+
+  @Column({ type: 'simple-json', nullable: true })
+  general_documents: PublicIntakeGeneralDocumentRecord[] | null;
 
   @Column({ type: 'text' })
   cv_file_path: string;
