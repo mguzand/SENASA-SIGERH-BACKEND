@@ -261,11 +261,11 @@ export class UsersService {
         'jobRecordFunctionalPosition',
       )
 
-      .where('user.username = :username or user.email = :email', {
+      .where('user.username = :username', {
         username,
         email: username,
-      })
-      .andWhere('user.is_active = :isActive', { isActive: false })
+      }) 
+      .andWhere('employee.status = :status', { status: 'ACTIVE' })
       .getOne();
 
     if (values) {
