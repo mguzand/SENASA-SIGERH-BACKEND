@@ -208,7 +208,9 @@ export class SsoService {
       throw new NotFoundException('Cliente SSO no encontrado o inactivo.');
     }
 
-    if (!client.redirectUris.includes(dto.redirect_uri)) {
+    console.log('client.redirectUris', client.redirectUris, dto.redirect_uri.toString());
+
+    if (!client.redirectUris.includes(dto.redirect_uri.toString())) {
       throw new BadRequestException('redirect_uri no autorizado.');
     }
 

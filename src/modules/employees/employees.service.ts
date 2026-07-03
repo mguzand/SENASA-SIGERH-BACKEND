@@ -1052,14 +1052,45 @@ export class EmployeesService {
 
     const resultPerson = await personQuery.getOne();
 
-    if (!resultPerson) {
-      InternalRNP = await this._RnpService.getDataByDni(identity);
-      if (!InternalRNP) {
-        rnp = await this._rnpService.getDataByDni(identity);
-      }
+    if (resultPerson) {
+      const detailedPerson = await this.findOne(resultPerson.id);
+
+      return {
+        person: {
+          id: detailedPerson.id,
+          employeeCode: detailedPerson.employeeCode,
+          dni: detailedPerson.dni,
+          fullName: detailedPerson.fullName,
+          firstName: detailedPerson.firstName,
+          middleName: detailedPerson.middleName,
+          lastName: detailedPerson.lastName,
+          secondLastName: detailedPerson.secondLastName,
+          email: detailedPerson.email,
+          phone: detailedPerson.phone,
+          status: detailedPerson.status,
+          regionalName: detailedPerson.regionalName,
+          regionalAddress: detailedPerson.regionalAddress,
+          scheduleDescription: detailedPerson.scheduleDescription,
+          scheduleStartTime: detailedPerson.scheduleStartTime,
+          scheduleEndTime: detailedPerson.scheduleEndTime,
+          modalityName: detailedPerson.modalityName,
+          functionalPositionName: detailedPerson.functionalPositionName,
+          nominalPositionName: detailedPerson.nominalPositionName,
+          departmentName: detailedPerson.departmentName,
+          departmentId: detailedPerson.departmentId,
+          emergencyContact: detailedPerson.emergencyContact,
+        },
+        rnp,
+        InternalRNP,
+      };
     }
 
-    return { person: resultPerson, rnp, InternalRNP };
+    InternalRNP = await this._RnpService.getDataByDni(identity);
+    if (!InternalRNP) {
+      rnp = await this._rnpService.getDataByDni(identity);
+    }
+
+    return { person: null, rnp, InternalRNP };
   }
 
   async test(dto: {

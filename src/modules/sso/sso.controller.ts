@@ -103,6 +103,8 @@ export class SsoController {
       if (dto.scope) loginUrl.searchParams.set('scope', dto.scope);
       if (dto.state) loginUrl.searchParams.set('state', dto.state);
 
+
+      
       return res.redirect(loginUrl.toString());
     }
 
