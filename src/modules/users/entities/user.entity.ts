@@ -40,6 +40,15 @@ export class User {
   @Column({ nullable: true, name: 'last_login_at' })
   lastLoginAt: Date;
 
+  @Column({ nullable: true, name: 'password_reset_otp_hash' })
+  passwordResetOtpHash?: string | null;
+
+  @Column({ nullable: true, name: 'password_reset_otp_expires_at', type: 'timestamp' })
+  passwordResetOtpExpiresAt?: Date | null;
+
+  @Column({ nullable: true, name: 'password_reset_otp_requested_at', type: 'timestamp' })
+  passwordResetOtpRequestedAt?: Date | null;
+
   @Column({
     type: 'timestamp',
     nullable: true,

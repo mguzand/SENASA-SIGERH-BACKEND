@@ -16,6 +16,7 @@ import { Components } from '../components/entities/components.entity';
 import { Rol } from '../rol/entities/rol.entity';
 import { ListSystemUsersDto } from './dto/list-system-users.dto';
 import { UpdateSystemUserPermissionsDto } from './dto/update-system-user-permissions.dto';
+import { comparePassword } from 'src/common/helpers/password.helper';
 
 @Injectable()
 export class UsersService {
@@ -353,7 +354,53 @@ export class UsersService {
     if (!user) throw new BadRequestException(['Usuario no encontrado.']);
 
     user.password = await hashPassword(data.password);
+    user.passwordResetOtpHash = null;
+    user.passwordResetOtpExpiresAt = null;
+    user.passwordResetOtpRequestedAt = null;
     return await this._userRepo.save(user);
+  }
+
+  async findByUsernameOrEmail(identifier: string) {
+    const normalized = String(identifier || '').trim().toLowerCase();
+
+    if (!normalized) return null;
+
+    return this._userRepo
+      .createQueryBuilder('user')
+      .innerJoinAndSelect('user.employee', 'employee')
+      .where('LOWER(user.username) = :normalized', { normalized })
+      .orWhere('LOWER(user.email) = :normalized', { normalized })
+      .orWhere('LOWER(employee.email) = :normalized', { normalized })
+      .getOne();
+  }
+
+  async savePasswordResetOtp(userId: string, plainCode: string, expiresAt: Date) {
+    const user = await this._userRepo.findOne({ where: { id: userId } });
+
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado.');
+    }
+
+    user.passwordResetOtpHash = hashPassword(plainCode);
+    user.passwordResetOtpExpiresAt = expiresAt;
+    user.passwordResetOtpRequestedAt = new Date();
+
+    return this._userRepo.save(user);
+  }
+
+  async validatePasswordResetOtp(identifier: string, code: string) {
+    const user = await this.findByUsernameOrEmail(identifier);
+
+    if (!user || !user.passwordResetOtpHash || !user.passwordResetOtpExpiresAt) {
+      return null;
+    }
+
+    if (user.passwordResetOtpExpiresAt.getTime() < Date.now()) {
+      return null;
+    }
+
+    const isValid = comparePassword(code, user.passwordResetOtpHash);
+    return isValid ? user : null;
   }
 
   async findSystemUsers(query: ListSystemUsersDto) {

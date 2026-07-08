@@ -1,8 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { comparePassword } from './helpers/password.helper';
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from 'src/modules/users/users.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { sendPasswordResetOtp } from '../helpers/send-email.helper';
 
 @Injectable()
 export class AuthService {
@@ -36,6 +37,62 @@ export class AuthService {
 
   async updatePassword(data: ChangePasswordDto) {
     return this._userService.updatePassword(data);
+  }
+
+  async requestPasswordResetOtp(identifier: string) {
+    const user = await this._userService.findByUsernameOrEmail(identifier);
+    const targetEmail = user?.email || user?.employee?.email;
+
+    if (!targetEmail) {
+      return {
+        message:
+          'Si la cuenta existe, enviaremos un codigo temporal al correo registrado.',
+      };
+    }
+
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const expiresInMinutes = 10;
+    const expiresAt = new Date(Date.now() + expiresInMinutes * 60 * 1000);
+
+    await this._userService.savePasswordResetOtp(user.id, code, expiresAt);
+
+    await sendPasswordResetOtp(
+      targetEmail,
+      'Codigo de recuperacion - Portal del Empleado',
+      user.employee?.firstName || user.username,
+      code,
+      expiresInMinutes,
+    );
+
+    return {
+      message:
+        'Si la cuenta existe, enviaremos un codigo temporal al correo registrado.',
+      expiresInMinutes,
+    };
+  }
+
+  async confirmPasswordResetOtp(
+    identifier: string,
+    code: string,
+    newPassword: string,
+  ) {
+    const user = await this._userService.validatePasswordResetOtp(
+      identifier,
+      code,
+    );
+
+    if (!user) {
+      throw new BadRequestException(['El codigo es invalido o ya vencio.']);
+    }
+
+    await this._userService.updatePassword({
+      username: user.username,
+      password: newPassword,
+    });
+
+    return {
+      message: 'La contrasena fue restablecida correctamente.',
+    };
   }
 
   ///////////////////////////////////////////////////////////////////////////////

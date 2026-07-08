@@ -642,7 +642,22 @@ export class EmployeeVacationPeriodService {
   ): Promise<void> {
     const nextPeriodNumber = currentPeriod.periodNumber + 1;
 
-    const modalityId = currentPeriod.employeeJobRecord.modalityId;
+    const existingNextPeriod = await manager.findOne(EmployeeVacationPeriod, {
+      where: {
+        employeeId: currentPeriod.employeeId,
+        periodNumber: nextPeriodNumber,
+      },
+    });
+
+    if (existingNextPeriod) {
+      this.logger.warn(
+        `Ya existe el período ${nextPeriodNumber} para el empleado ${currentPeriod.employeeId}`,
+      );
+      return;
+    }
+
+    const modalityId = currentPeriod.employeeJobRecord?.modalityId;
+
     if (!modalityId) {
       throw new BadRequestException(
         'El registro laboral no tiene modalidad asociada',
@@ -651,11 +666,11 @@ export class EmployeeVacationPeriodService {
 
     const earnedDays =
       await this.vacationContractRuleService.getDaysByModalityAndYear(
-        currentPeriod.employeeJobRecord.modalityId,
+        modalityId,
         nextPeriodNumber,
       );
 
-    const currentEndDate = new Date(currentPeriod.endDate);
+    const currentEndDate = new Date(`${currentPeriod.endDate}T12:00:00`);
 
     const nextStartDate = new Date(currentEndDate);
     nextStartDate.setDate(nextStartDate.getDate() + 1);
@@ -667,7 +682,7 @@ export class EmployeeVacationPeriodService {
     const accreditationDate = new Date(nextEndDate);
     accreditationDate.setDate(accreditationDate.getDate() + 1);
 
-    const newPeriod = this.periodRepository.create({
+    const newPeriod = manager.create(EmployeeVacationPeriod, {
       employeeId: currentPeriod.employeeId,
       employeeJobRecordId: currentPeriod.employeeJobRecordId,
       periodNumber: nextPeriodNumber,
@@ -682,43 +697,48 @@ export class EmployeeVacationPeriodService {
       status: VacationPeriodStatus.PENDING,
     });
 
-    await manager.save(newPeriod);
+    await manager.save(EmployeeVacationPeriod, newPeriod);
   }
 
-  private async closeOldPeriods(
+ private async closeOldPeriods(
     employeeId: string,
     manager: EntityManager,
   ): Promise<void> {
-    const periods = await this.periodRepository.find({
-      where: { employeeId },
-      order: { periodNumber: 'DESC' },
+    const availablePeriods = await manager.find(EmployeeVacationPeriod, {
+      where: {
+        employeeId,
+        status: VacationPeriodStatus.AVAILABLE,
+      },
+      order: {
+        periodNumber: 'DESC',
+      },
     });
 
-    const oldPeriods = periods.slice(2);
+    const oldPeriods = availablePeriods.slice(2);
 
     for (const period of oldPeriods) {
-      if (period.status === VacationPeriodStatus.EXPIRED) continue;
-
       const expiredDays = Number(period.availableDays);
 
       period.status = VacationPeriodStatus.EXPIRED;
       period.availableDays = 0;
 
-      await manager.save(period);
+      await manager.save(EmployeeVacationPeriod, period);
 
-      await this.vacationMovementService.createWithManager(
-        {
-          employeeId: period.employeeId,
-          vacationPeriodId: period.id,
-          vacationRequestId: null,
-          type: VacationMovementType.EXPIRED,
-          days: expiredDays,
-          movementDate: this.formatDate(new Date()),
-          description: 'Periodo vencido automáticamente',
-          createdByUserId: null,
-        },
-        manager,
-      );
+      if (expiredDays > 0) {
+        await this.vacationMovementService.createWithManager(
+          {
+            employeeId: period.employeeId,
+            vacationPeriodId: period.id,
+            vacationRequestId: null,
+            type: VacationMovementType.EXPIRED,
+            days: expiredDays,
+            movementDate: this.formatDate(new Date()),
+            description: 'Periodo vencido automáticamente',
+            createdByUserId: null,
+          },
+          manager,
+        );
+      }
     }
   }
 
