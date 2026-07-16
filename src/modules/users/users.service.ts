@@ -4,23 +4,25 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { DataSource, EntityManager, In, Repository } from 'typeorm';
-import { User } from './entities/user.entity';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ChangePasswordDto } from 'src/common/auth/dto/change-password.dto';
-import { hashPassword } from 'src/common/helpers/password.helper';
-import { RolUserService } from '../rol-user/rol-user.service';
-import { Employee } from '../employees/entities/employee.entity';
-import { EmployeeJobRecord } from '../employee-job-record/entities/employee-job-record.entity';
-import { RolUser } from '../rol-user/entities/rol-user.entity';
+import {
+  comparePassword,
+  hashPassword,
+} from 'src/common/helpers/password.helper';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { Components } from '../components/entities/components.entity';
+import { EmployeeJobRecord } from '../employee-job-record/entities/employee-job-record.entity';
+import { Employee } from '../employees/entities/employee.entity';
+import { RolUser } from '../rol-user/entities/rol-user.entity';
+import { RolUserService } from '../rol-user/rol-user.service';
 import { Rol } from '../rol/entities/rol.entity';
-import { ListSystemUsersDto } from './dto/list-system-users.dto';
-import { UpdateSystemUserPermissionsDto } from './dto/update-system-user-permissions.dto';
-import { comparePassword } from 'src/common/helpers/password.helper';
 import { SystemRole } from '../system/entities/system-role.entity';
 import { System } from '../system/entities/system.entity';
-import { ConfigService } from '@nestjs/config';
+import { ListSystemUsersDto } from './dto/list-system-users.dto';
+import { UpdateSystemUserPermissionsDto } from './dto/update-system-user-permissions.dto';
+import { User } from './entities/user.entity';
 
 @Injectable()
 export class UsersService {
@@ -70,47 +72,45 @@ export class UsersService {
       .andWhere('user.is_active = :isActive', { isActive: true })
       .getOne();
 
-      if (values) {
-        return this.formatDataSSO(values);
-      } else {
-        return null;
-      } 
+    if (values) {
+      return this.formatDataSSO(values);
+    } else {
+      return null;
+    }
   }
 
   async formatDataSSO(items: any) {
-     const { employee, ...rest } = items;
-     const currentRecord = employee.jobRecords?.find(
+    const { employee, ...rest } = items;
+    const currentRecord = employee.jobRecords?.find(
       (record: any) => String(record.status || '').toLowerCase() === 'active',
-     );
+    );
 
-     return {
+    return {
       id: rest.id,
       username: rest.username,
       isActive: rest.isActive,
-       employee: employee ? {
-         id: employee.id,
-         rtn: employee.rtn,
-         names: employee.firstName + ' ' + employee.middleName,
-         surname: employee.lastName + ' ' + employee.secondLastName,
-         firstName: employee.firstName,
-         middleName: employee.middleName,
-         lastName: employee.lastName,
-         secondLastName: employee.secondLastName,
-         email: employee.email,
-         phone: employee.phone,
-         modalityName: currentRecord?.modality?.name || null,
+      employee: employee
+        ? {
+            id: employee.id,
+            rtn: employee.rtn,
+            names: employee.firstName + ' ' + employee.middleName,
+            surname: employee.lastName + ' ' + employee.secondLastName,
+            firstName: employee.firstName,
+            middleName: employee.middleName,
+            lastName: employee.lastName,
+            secondLastName: employee.secondLastName,
+            email: employee.email,
+            phone: employee.phone,
+            modalityName: currentRecord?.modality?.name || null,
             functionalPositionName:
               currentRecord?.functionalPosition?.name || null,
             nominalPositionName: currentRecord?.position?.name || null,
             departmentName: currentRecord?.area?.name || null,
             department_id: currentRecord?.area?.id || null,
-
-       }: null,
-     }
-
-
+          }
+        : null,
+    };
   }
-
 
   async createUser(
     dto: {
@@ -274,7 +274,7 @@ export class UsersService {
       .where('user.username = :username', {
         username,
         email: username,
-      }) 
+      })
       .andWhere('employee.status = :status', { status: 'ACTIVE' })
       .getOne();
 
@@ -370,7 +370,9 @@ export class UsersService {
   }
 
   async findByUsernameOrEmail(identifier: string) {
-    const normalized = String(identifier || '').trim().toLowerCase();
+    const normalized = String(identifier || '')
+      .trim()
+      .toLowerCase();
 
     if (!normalized) return null;
 
@@ -383,7 +385,11 @@ export class UsersService {
       .getOne();
   }
 
-  async savePasswordResetOtp(userId: string, plainCode: string, expiresAt: Date) {
+  async savePasswordResetOtp(
+    userId: string,
+    plainCode: string,
+    expiresAt: Date,
+  ) {
     const user = await this._userRepo.findOne({ where: { id: userId } });
 
     if (!user) {
@@ -400,7 +406,11 @@ export class UsersService {
   async validatePasswordResetOtp(identifier: string, code: string) {
     const user = await this.findByUsernameOrEmail(identifier);
 
-    if (!user || !user.passwordResetOtpHash || !user.passwordResetOtpExpiresAt) {
+    if (
+      !user ||
+      !user.passwordResetOtpHash ||
+      !user.passwordResetOtpExpiresAt
+    ) {
       return null;
     }
 
@@ -629,7 +639,7 @@ export class UsersService {
 
   async getSystemPermissionCatalog(systemId: string) {
     const systemRoles = await this.ensureSystemRoles(systemId);
-    await this.backfillSystemRoleIds(systemId);
+    // await this.backfillSystemRoleIds(systemId);
 
     const [components, roles] = await Promise.all([
       this.componentsRepository.find({
@@ -923,8 +933,10 @@ export class UsersService {
       },
     });
 
-    return !!requester &&
+    return (
+      !!requester &&
       (configuredManagers.has(requester.username.toLowerCase()) ||
-        configuredManagers.has(requester.email.toLowerCase()));
+        configuredManagers.has(requester.email.toLowerCase()))
+    );
   }
 }
