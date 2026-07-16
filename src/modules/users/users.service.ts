@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -17,6 +18,9 @@ import { Rol } from '../rol/entities/rol.entity';
 import { ListSystemUsersDto } from './dto/list-system-users.dto';
 import { UpdateSystemUserPermissionsDto } from './dto/update-system-user-permissions.dto';
 import { comparePassword } from 'src/common/helpers/password.helper';
+import { SystemRole } from '../system/entities/system-role.entity';
+import { System } from '../system/entities/system.entity';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class UsersService {
@@ -33,7 +37,12 @@ export class UsersService {
     private readonly componentsRepository: Repository<Components>,
     @InjectRepository(Rol)
     private readonly rolRepository: Repository<Rol>,
+    @InjectRepository(SystemRole)
+    private readonly systemRoleRepository: Repository<SystemRole>,
+    @InjectRepository(System)
+    private readonly systemRepository: Repository<System>,
     private readonly dataSource: DataSource,
+    private readonly configService: ConfigService,
 
     private readonly _rolUserService: RolUserService,
   ) {}
@@ -511,6 +520,41 @@ export class UsersService {
     };
   }
 
+  async getManageableSystems(requesterId: string) {
+    const defaultSystemId = this.getDefaultSystemId();
+    const canManageMultiple = await this.isMultiSystemManager(requesterId);
+
+    const systems = canManageMultiple
+      ? await this.systemRepository.find({
+          order: {
+            description: 'ASC',
+          },
+        })
+      : await this.systemRepository.find({
+          where: {
+            id: defaultSystemId,
+          },
+        });
+
+    return systems.map((system) => ({
+      id: system.id,
+      description: system.description,
+      isDefault: system.id === defaultSystemId,
+    }));
+  }
+
+  async assertCanManageSystem(requesterId: string, systemId: string) {
+    if (systemId === this.getDefaultSystemId()) {
+      return;
+    }
+
+    if (!(await this.isMultiSystemManager(requesterId))) {
+      throw new ForbiddenException(
+        'No tienes autorización para administrar permisos de otros sistemas.',
+      );
+    }
+  }
+
   async findAvailableEmployeesForSystem(systemId: string, search?: string) {
     const normalizedSearch = search?.trim().toLowerCase() || '';
 
@@ -584,6 +628,9 @@ export class UsersService {
   }
 
   async getSystemPermissionCatalog(systemId: string) {
+    const systemRoles = await this.ensureSystemRoles(systemId);
+    await this.backfillSystemRoleIds(systemId);
+
     const [components, roles] = await Promise.all([
       this.componentsRepository.find({
         where: {
@@ -594,11 +641,7 @@ export class UsersService {
           components_id: 'ASC',
         },
       }),
-      this.rolRepository.find({
-        order: {
-          rol: 'ASC',
-        },
-      }),
+      Promise.resolve(systemRoles),
     ]);
 
     return {
@@ -609,7 +652,9 @@ export class UsersService {
         visible: component.visible,
       })),
       roles: roles.map((role) => ({
-        rol: role.rol,
+        id: role.id,
+        code: role.code,
+        rol: role.code,
         description: role.description,
       })),
     };
@@ -631,13 +676,20 @@ export class UsersService {
     const currentPermissions = await this.rolUserRepository
       .createQueryBuilder('rolUser')
       .innerJoinAndSelect('rolUser.components', 'component')
+      .leftJoinAndSelect('rolUser.systemRole', 'systemRole')
       .where('rolUser.user_id = :userId', { userId })
       .andWhere('component.system_id = :systemId', { systemId })
       .getMany();
 
-    const selectedByComponent = new Map<number, string>();
+    const selectedByComponent = new Map<
+      number,
+      { id: string | null; code: string }
+    >();
     currentPermissions.forEach((item) => {
-      selectedByComponent.set(item.component_id, item.rol);
+      selectedByComponent.set(item.component_id, {
+        id: item.system_role_id,
+        code: item.systemRole?.code || item.rol,
+      });
     });
 
     return {
@@ -659,7 +711,10 @@ export class UsersService {
       },
       components: catalog.components.map((component) => ({
         ...component,
-        selectedRole: selectedByComponent.get(component.components_id) || null,
+        selectedRole:
+          selectedByComponent.get(component.components_id)?.code || null,
+        selectedRoleId:
+          selectedByComponent.get(component.components_id)?.id || null,
       })),
       roles: catalog.roles,
     };
@@ -687,8 +742,17 @@ export class UsersService {
     const systemComponentIds = systemComponents.map(
       (component) => component.components_id,
     );
-    const allowedRoles = await this.rolRepository.find();
-    const allowedRoleIds = new Set(allowedRoles.map((role) => role.rol));
+    const allowedRoles = await this.ensureSystemRoles(systemId);
+    const allowedRolesById = new Map(
+      allowedRoles.map((role) => [role.id, role]),
+    );
+    const allowedRolesByCode = new Map(
+      allowedRoles.map((role) => [role.code, role]),
+    );
+    const resolvedAssignments: {
+      component_id: number;
+      role: SystemRole;
+    }[] = [];
 
     for (const assignment of dto.assignments || []) {
       if (!systemComponentIds.includes(assignment.component_id)) {
@@ -697,11 +761,22 @@ export class UsersService {
         ]);
       }
 
-      if (!allowedRoleIds.has(assignment.rol)) {
+      const role = assignment.systemRoleId
+        ? allowedRolesById.get(assignment.systemRoleId)
+        : assignment.rol
+          ? allowedRolesByCode.get(assignment.rol)
+          : undefined;
+
+      if (!role) {
         throw new BadRequestException([
-          `El rol ${assignment.rol} no es válido.`,
+          `El rol indicado para el componente ${assignment.component_id} no pertenece al sistema seleccionado.`,
         ]);
       }
+
+      resolvedAssignments.push({
+        component_id: assignment.component_id,
+        role,
+      });
     }
 
     const queryRunner = this.dataSource.createQueryRunner();
@@ -721,11 +796,13 @@ export class UsersService {
           .execute();
       }
 
-      for (const assignment of dto.assignments || []) {
+      for (const assignment of resolvedAssignments) {
         const entity = queryRunner.manager.create(RolUser, {
           user_id: userId as any,
-          rol: assignment.rol,
+          // Se conserva durante la transición para no afectar login, menú ni SSO.
+          rol: assignment.role.code,
           component_id: assignment.component_id,
+          system_role_id: assignment.role.id,
         });
         await queryRunner.manager.save(RolUser, entity);
       }
@@ -739,5 +816,115 @@ export class UsersService {
     } finally {
       await queryRunner.release();
     }
+  }
+
+  private async ensureSystemRoles(systemId: string) {
+    const existing = await this.systemRoleRepository.find({
+      where: {
+        systemId,
+        isActive: true,
+      },
+      order: {
+        order: 'ASC',
+        code: 'ASC',
+      },
+    });
+
+    if (existing.length) {
+      return existing;
+    }
+
+    const legacyRoles = await this.rolRepository.find({
+      order: {
+        rol: 'ASC',
+      },
+    });
+
+    if (!legacyRoles.length) {
+      return [];
+    }
+
+    try {
+      await this.systemRoleRepository.save(
+        legacyRoles.map((role, index) =>
+          this.systemRoleRepository.create({
+            systemId,
+            code: role.rol,
+            description: role.description,
+            isActive: true,
+            order: index + 1,
+          }),
+        ),
+      );
+    } catch {
+      // Otra solicitud pudo crear el catálogo al mismo tiempo.
+    }
+
+    return this.systemRoleRepository.find({
+      where: {
+        systemId,
+        isActive: true,
+      },
+      order: {
+        order: 'ASC',
+        code: 'ASC',
+      },
+    });
+  }
+
+  private async backfillSystemRoleIds(systemId: string) {
+    await this.dataSource.query(
+      `
+        UPDATE roles_user permission
+        SET system_role_id = system_role.id
+        FROM components component, system_roles system_role
+        WHERE permission.component_id = component.components_id
+          AND system_role.system_id = component.system_id
+          AND system_role.code = permission.rol
+          AND component.system_id = $1
+          AND permission.system_role_id IS NULL
+      `,
+      [systemId],
+    );
+  }
+
+  private getDefaultSystemId() {
+    return this.configService.get<string>(
+      'DEFAULT_SYSTEM_ID',
+      '6816a2e5-085a-4d96-8a36-a8546d886051',
+    );
+  }
+
+  private async isMultiSystemManager(requesterId: string) {
+    const configuredManagers = new Set(
+      this.configService
+        .get<string>('MULTI_SYSTEM_ADMIN_USERS', '')
+        .split(',')
+        .map((value) => value.trim().toLowerCase())
+        .filter(Boolean),
+    );
+
+    if (!configuredManagers.size) {
+      return false;
+    }
+
+    if (configuredManagers.has(String(requesterId).toLowerCase())) {
+      return true;
+    }
+
+    const requester = await this._userRepo.findOne({
+      where: {
+        id: requesterId,
+      },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+      },
+    });
+
+    return !!requester &&
+      (configuredManagers.has(requester.username.toLowerCase()) ||
+        configuredManagers.has(requester.email.toLowerCase()));
   }
 }

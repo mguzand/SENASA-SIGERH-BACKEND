@@ -6,6 +6,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsUUID,
   ValidateNested,
 } from 'class-validator';
 
@@ -13,9 +14,15 @@ class SystemPermissionAssignmentDto {
   @IsInt()
   component_id: number;
 
+  @IsOptional()
+  @IsUUID()
+  systemRoleId?: string;
+
+  // Compatibilidad temporal con clientes anteriores.
+  @IsOptional()
   @IsString()
   @IsNotEmpty()
-  rol: string;
+  rol?: string;
 }
 
 export class UpdateSystemUserPermissionsDto {

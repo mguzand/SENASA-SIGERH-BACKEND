@@ -8,6 +8,7 @@ import {
 } from 'typeorm';
 
 import { Components } from 'src/modules/components/entities/components.entity';
+import { SystemRole } from './system-role.entity';
 
 @Entity('systems', { synchronize: true })
 export class System {
@@ -19,6 +20,9 @@ export class System {
 
   @OneToMany(() => Components, (component) => component.system)
   components: Components[];
+
+  @OneToMany(() => SystemRole, (role) => role.system)
+  roles: SystemRole[];
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

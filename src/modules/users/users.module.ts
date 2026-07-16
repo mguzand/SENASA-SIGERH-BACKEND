@@ -9,10 +9,21 @@ import { EmployeeJobRecord } from '../employee-job-record/entities/employee-job-
 import { RolUser } from '../rol-user/entities/rol-user.entity';
 import { Components } from '../components/entities/components.entity';
 import { Rol } from '../rol/entities/rol.entity';
+import { SystemRole } from '../system/entities/system-role.entity';
+import { System } from '../system/entities/system.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, Employee, EmployeeJobRecord, RolUser, Components, Rol]),
+    TypeOrmModule.forFeature([
+      User,
+      Employee,
+      EmployeeJobRecord,
+      RolUser,
+      Components,
+      Rol,
+      System,
+      SystemRole,
+    ]),
     RolUserModule,
   ],
   controllers: [UsersController],
