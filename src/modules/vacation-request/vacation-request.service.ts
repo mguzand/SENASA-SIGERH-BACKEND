@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -16,17 +17,17 @@ import {
 
 import { VacationRequestStage } from './enum/vacation-request-stage.enum';
 
-import { VacationRequestDetailService } from '../vacation-request-detail/vacation-request-detail.service';
-import { EmployeeVacationPeriodService } from '../employee-vacation-period/employee-vacation-period.service';
-import { VacationMovementService } from '../vacation-movement/vacation-movement.service';
-import { VacationRequestDayService } from '../vacation_request_days/vacation_request_days.service';
-import { CreateVacationRequestDto } from './dtos/create-vacation-request.dto';
-import { ListHrVacationRequestsDto } from './dtos/list-hr-vacation-requests.dto';
-import { ReviewVacationRequestDto } from './dtos/review-vacation-request.dto';
 import { sendVacations } from 'src/common/helpers/send-email.helper';
 import { AreaManagerService } from '../area-manager/area-manager.service';
 import { AreaManagerRole } from '../area-manager/interfaces/area-manager-role.enum';
+import { EmployeeVacationPeriodService } from '../employee-vacation-period/employee-vacation-period.service';
+import { VacationMovementService } from '../vacation-movement/vacation-movement.service';
+import { VacationRequestDetailService } from '../vacation-request-detail/vacation-request-detail.service';
+import { VacationRequestDayService } from '../vacation_request_days/vacation_request_days.service';
 import { CreateManualVacationRequestDto } from './dtos/create-manual-vacation-request.dto';
+import { CreateVacationRequestDto } from './dtos/create-vacation-request.dto';
+import { ListHrVacationRequestsDto } from './dtos/list-hr-vacation-requests.dto';
+import { ReviewVacationRequestDto } from './dtos/review-vacation-request.dto';
 
 @Injectable()
 export class VacationRequestService {
@@ -376,7 +377,17 @@ export class VacationRequestService {
       .createQueryBuilder('request')
       .leftJoinAndSelect('request.employee', 'employee')
       .leftJoinAndSelect('request.area', 'area')
-      .where('request.area_id IN (:...areaIds)', { areaIds });
+      .where('request.area_id IN (:...areaIds)', { areaIds })
+      .andWhere(
+        `EXISTS (
+          SELECT 1
+          FROM employee_job_records current_job
+          WHERE current_job.employee_id = request.employee_id
+            AND LOWER(current_job.status) = :activeJobStatus
+            AND current_job.area_id IN (:...areaIds)
+        )`,
+        { activeJobStatus: 'active' },
+      );
 
     if (params.search?.trim()) {
       const search = `%${params.search.trim().toLowerCase()}%`;
@@ -426,7 +437,6 @@ export class VacationRequestService {
       .orderBy('boss_status_order', 'ASC')
       .addOrderBy('request.start_date', 'DESC')
       .addOrderBy('request.created_at', 'DESC');
-
     const [requests, total] = await query
       .skip((page - 1) * limit)
       .take(limit)
@@ -434,7 +444,17 @@ export class VacationRequestService {
 
     const statsBaseQuery = this.vacationRequestRepository
       .createQueryBuilder('request')
-      .where('request.area_id IN (:...areaIds)', { areaIds });
+      .where('request.area_id IN (:...areaIds)', { areaIds })
+      .andWhere(
+        `EXISTS (
+          SELECT 1
+          FROM employee_job_records current_job
+          WHERE current_job.employee_id = request.employee_id
+            AND LOWER(current_job.status) = :activeJobStatus
+            AND current_job.area_id IN (:...areaIds)
+        )`,
+        { activeJobStatus: 'active' },
+      );
 
     const pendingCount = await this.applyBossInboxStatusFilter(
       statsBaseQuery.clone(),
@@ -642,6 +662,17 @@ export class VacationRequestService {
 
     if (!request) {
       throw new NotFoundException('Solicitud de vacaciones no encontrada');
+    }
+
+    const areaIds = await this.areaManagerService.findAreaIdsByEmployeeAndRole(
+      bossEmployeeId,
+      AreaManagerRole.BOSS,
+    );
+
+    if (!areaIds.includes(request.area_id)) {
+      throw new ForbiddenException(
+        'No tienes autorización para revisar solicitudes de esta área',
+      );
     }
 
     if (request.stage !== VacationRequestStage.BOSS_REVIEW) {

@@ -31,6 +31,7 @@ import { SystemModule } from './system/system.module';
 import { PayrollImportModule } from './payroll-import/payroll-import.module';
 import { EmployeeJobActionsModule } from './employee-job-actions/employee-job-actions.module';
 import { SsoModule } from './sso/sso.module';
+import { EmploymentCertificateRequestsModule } from './employment-certificate-requests/employment-certificate-requests.module';
 
 @Module({
   imports: [
@@ -66,6 +67,7 @@ import { SsoModule } from './sso/sso.module';
     PayrollImportModule,
     EmployeeJobActionsModule,
     SsoModule,
+    EmploymentCertificateRequestsModule,
   ],
   exports: [],
 })

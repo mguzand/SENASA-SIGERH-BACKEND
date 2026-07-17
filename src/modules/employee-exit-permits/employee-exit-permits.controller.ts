@@ -28,7 +28,7 @@ export class EmployeeExitPermitsController {
   findHrInbox(@Query() query: ListHrExitPermitsDto, @Req() req: any) {
     return this.employeeExitPermitsService.findHrInbox(
       query,
-      req.user.employee_id,
+      this.getEmployeeId(req),
     );
   }
 
@@ -36,7 +36,7 @@ export class EmployeeExitPermitsController {
   findBossInbox(@Query() query: ListHrExitPermitsDto, @Req() req: any) {
     return this.employeeExitPermitsService.findBossInbox(
       query,
-      req.user.employee_id,
+      this.getEmployeeId(req),
     );
   }
 
@@ -49,7 +49,7 @@ export class EmployeeExitPermitsController {
     return this.employeeExitPermitsService.reviewByBoss(
       id,
       dto,
-      req.user.employee_id,
+      this.getEmployeeId(req),
     );
   }
 
@@ -62,7 +62,16 @@ export class EmployeeExitPermitsController {
     return this.employeeExitPermitsService.reviewByHr(
       id,
       dto,
-      req.user.employee_id,
+      this.getEmployeeId(req),
+    );
+  }
+
+  private getEmployeeId(req: any): string {
+    return (
+      req.user?.employee_id ??
+      req.user?.employeeId ??
+      req.user?.employees?.id ??
+      req.user?.employee?.id
     );
   }
 }

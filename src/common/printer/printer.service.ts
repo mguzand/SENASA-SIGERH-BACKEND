@@ -9,6 +9,12 @@ const fonts = {
     italics: 'fonts/Roboto-Italic.ttf',
     bolditalics: 'fonts/Roboto-MediumItalic.ttf',
   },
+  Georgias: {
+    normal: 'fonts/georgia.ttf',
+    bold: 'fonts/georgiab.ttf',
+    italics: 'fonts/georgia.ttf',
+    bolditalics: 'fonts/georgiab.ttf',
+  },
 };
 
 @Injectable()

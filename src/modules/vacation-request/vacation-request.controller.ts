@@ -37,7 +37,10 @@ export class VacationRequestController {
 
   @Post('manual')
   createManual(@Body() dto: CreateManualVacationRequestDto, @Req() req: any) {
-    return this.vacationRequestService.createManual(dto, req.user.employee_id);
+    return this.vacationRequestService.createManual(
+      dto,
+      this.getEmployeeId(req),
+    );
   }
 
   @Patch(':id/boss-review')
@@ -49,7 +52,7 @@ export class VacationRequestController {
     return this.vacationRequestService.bossReview(
       id,
       dto,
-      req.user.employee_id,
+      this.getEmployeeId(req),
     );
   }
 
@@ -59,19 +62,26 @@ export class VacationRequestController {
     @Body() dto: ReviewVacationRequestDto,
     @Req() req: any,
   ) {
-    return this.vacationRequestService.hrReview(id, dto, req.user.employee_id);
+    return this.vacationRequestService.hrReview(
+      id,
+      dto,
+      this.getEmployeeId(req),
+    );
   }
 
   @Get('hr/inbox')
   hrInbox(@Query() query: ListHrVacationRequestsDto, @Req() req: any) {
-    return this.vacationRequestService.findHrInbox(query, req.user.employee_id);
+    return this.vacationRequestService.findHrInbox(
+      query,
+      this.getEmployeeId(req),
+    );
   }
 
   @Get('boss/inbox')
   bossInbox(@Query() query: ListHrVacationRequestsDto, @Req() req: any) {
     return this.vacationRequestService.findBossInbox(
       query,
-      req.user.employee_id,
+      this.getEmployeeId(req),
     );
   }
 
@@ -88,5 +98,14 @@ export class VacationRequestController {
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.vacationRequestService.findOne(id);
+  }
+
+  private getEmployeeId(req: any): string {
+    return (
+      req.user?.employee_id ??
+      req.user?.employeeId ??
+      req.user?.employees?.id ??
+      req.user?.employee?.id
+    );
   }
 }

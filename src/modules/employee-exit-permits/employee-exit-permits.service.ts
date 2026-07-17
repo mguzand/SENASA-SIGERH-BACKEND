@@ -232,6 +232,17 @@ export class EmployeeExitPermitsService {
       )
       .where('permit.area_id IN (:...areaIds)', { areaIds });
 
+    query.andWhere(
+      `EXISTS (
+        SELECT 1
+        FROM employee_job_records current_job
+        WHERE current_job.employee_id = permit.employee_id
+          AND LOWER(current_job.status) = :activeJobStatus
+          AND current_job.area_id IN (:...areaIds)
+      )`,
+      { activeJobStatus: 'active' },
+    );
+
     if (params.search?.trim()) {
       const search = `%${params.search.trim().toLowerCase()}%`;
 
@@ -293,7 +304,17 @@ export class EmployeeExitPermitsService {
 
     const statsBaseQuery = this.exitPermitRepository
       .createQueryBuilder('permit')
-      .where('permit.area_id IN (:...areaIds)', { areaIds });
+      .where('permit.area_id IN (:...areaIds)', { areaIds })
+      .andWhere(
+        `EXISTS (
+          SELECT 1
+          FROM employee_job_records current_job
+          WHERE current_job.employee_id = permit.employee_id
+            AND LOWER(current_job.status) = :activeJobStatus
+            AND current_job.area_id IN (:...areaIds)
+        )`,
+        { activeJobStatus: 'active' },
+      );
 
     const [pending, approved, rejected] = await Promise.all([
       this.applyBossStatusFilter(statsBaseQuery.clone(), 'pending').getCount(),
@@ -397,7 +418,12 @@ export class EmployeeExitPermitsService {
       );
     }
 
-    if (exitPermit.boss_employee_id !== currentEmployeeId) {
+    const areaIds = await this.areaManagersService.findAreaIdsByEmployeeAndRole(
+      currentEmployeeId,
+      AreaManagerRole.BOSS,
+    );
+
+    if (!areaIds.includes(exitPermit.area_id)) {
       throw new ForbiddenException(
         'No tienes permiso para revisar esta solicitud',
       );
