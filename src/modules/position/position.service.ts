@@ -57,9 +57,14 @@ export class PositionService {
     }
 
     const assignedCount = await this.countAssignedEmployees(id);
-    if (assignedCount > 0) {
+    const hasStructuralChanges =
+      (dto.code !== undefined && dto.code.trim() !== position.code) ||
+      (dto.name !== undefined && dto.name.trim() !== position.name) ||
+      (dto.isActive !== undefined && dto.isActive !== position.isActive);
+
+    if (assignedCount > 0 && hasStructuralChanges) {
       throw new BadRequestException(
-        'No se puede editar un puesto con empleados asignados',
+        'El código, nombre y estado no pueden modificarse mientras el puesto tenga empleados asignados. Sí puedes actualizar la descripción, responsabilidades y requisitos.',
       );
     }
 
@@ -165,6 +170,8 @@ export class PositionService {
       .addSelect('position.code', 'positionCode')
       .addSelect('position.name', 'positionName')
       .addSelect('position.description', 'positionDescription')
+      .addSelect('position.responsibilities', 'positionResponsibilities')
+      .addSelect('position.requirements', 'positionRequirements')
       .addSelect('position.isActive', 'isActive')
       .addSelect('area.id', 'departmentId')
       .addSelect('area.name', 'departmentName')
@@ -173,6 +180,8 @@ export class PositionService {
       .addGroupBy('position.code')
       .addGroupBy('position.name')
       .addGroupBy('position.description')
+      .addGroupBy('position.responsibilities')
+      .addGroupBy('position.requirements')
       .addGroupBy('position.isActive')
       .addGroupBy('area.id')
       .addGroupBy('area.name')
@@ -240,6 +249,8 @@ export class PositionService {
         code: item.positionCode,
         name: item.positionName,
         description: item.positionDescription,
+        responsibilities: item.positionResponsibilities,
+        requirements: item.positionRequirements,
         departmentId: item.departmentId,
         departmentName: item.departmentName || 'Sin departamento',
         employeeCount: Number(item.employeeCount || 0),

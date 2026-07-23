@@ -75,6 +75,9 @@ export class Employee {
   @Column({ nullable: true, name: 'phone' })
   phone: string;
 
+  @Column({ nullable: true, name: 'profile_photo_path', type: 'text' })
+  profile_photo_path: string | null;
+
   @Column({ nullable: true, name: 'regional_id', type: 'uuid' })
   regional_id: string; //! Relación con la tabla de regionales------------------------------------
 

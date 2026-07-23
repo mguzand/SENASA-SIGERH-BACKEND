@@ -1,4 +1,11 @@
-import { IsEmail, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
+import {
+  IsEmail,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+} from 'class-validator';
 
 export class UpdateEmployeeEditableDto {
   @IsOptional()
@@ -30,6 +37,19 @@ export class UpdateEmployeeEditableDto {
   functional_position?: string | null;
 
   @IsOptional()
+  @IsUUID()
+  organizational_type?: string | null;
+
+  @IsOptional()
+  @IsUUID()
+  area_id?: string | null;
+
+  @IsOptional()
   @IsNumber()
   salary?: number | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(4_000_000)
+  profile_photo_base64?: string | null;
 }

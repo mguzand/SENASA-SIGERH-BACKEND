@@ -28,6 +28,7 @@ import {
 import { EmployeeJobRecord } from '../employee-job-record/entities/employee-job-record.entity';
 import { UpdateEmployeeEditableDto } from './dtos/update-employee-editable.dto';
 import * as path from 'path';
+import * as fs from 'fs';
 import {
   parseDateOnly,
   serializeDateOnly,
@@ -35,6 +36,9 @@ import {
 import { EmployeeUnpaidLeave } from './entities/employee-unpaid-leave.entity';
 import { User } from '../users/entities/user.entity';
 import { AcademicHistory } from '../academic-history/entities/academic-history.entity';
+import { OrganizationalUnit } from '../department/entities/organizational-unit.entity';
+import { AreaManager } from '../area-manager/entities/area-manager.entity';
+import { AreaManagerRole } from '../area-manager/interfaces/area-manager-role.enum';
 interface FindAllEmployeesParams {
   search?: string;
   departmentId?: string;
@@ -77,6 +81,7 @@ export class EmployeesService {
         { jobRecordStatus: 'active' },
       )
       .leftJoinAndSelect('jobRecord.area', 'area')
+      .leftJoinAndSelect('area.unitType', 'areaUnitType')
       .leftJoinAndSelect('jobRecord.modality', 'modality')
       .leftJoinAndSelect('jobRecord.position', 'jobRecordPosition')
       .leftJoinAndSelect(
@@ -221,6 +226,7 @@ export class EmployeesService {
         { jobRecordStatus: 'active' },
       )
       .leftJoinAndSelect('jobRecord.area', 'area')
+      .leftJoinAndSelect('area.unitType', 'detailAreaUnitType')
       .leftJoinAndSelect('jobRecord.modality', 'modality')
       .leftJoinAndSelect('jobRecord.position', 'jobRecordPosition')
       .leftJoinAndSelect(
@@ -240,6 +246,31 @@ export class EmployeesService {
     const currentRecord = employee.jobRecords?.find(
       (record) => String(record.status || '').toLowerCase() === 'active',
     );
+    const directBoss = currentRecord?.area?.id
+      ? await this.dataSource.getRepository(AreaManager).findOne({
+          where: {
+            area_id: currentRecord.area.id,
+            role: AreaManagerRole.BOSS,
+            is_active: true,
+          },
+          relations: {
+            employee: true,
+          },
+          order: {
+            created_at: 'DESC',
+          },
+        })
+      : null;
+    const directBossName = directBoss?.employee
+      ? [
+          directBoss.employee.firstName,
+          directBoss.employee.middleName,
+          directBoss.employee.lastName,
+          directBoss.employee.secondLastName,
+        ]
+          .filter(Boolean)
+          .join(' ')
+      : null;
 
     const fullName = [
       employee.firstName,
@@ -273,6 +304,13 @@ export class EmployeesService {
       maritalStatus: employee.marital_status,
       bloodType: employee.type_blood,
       biometricId: employee.biometric_id,
+      profilePhotoUrl: employee.profile_photo_path
+        ? `/employees/${employee.id}/profile-photo?v=${
+            employee.updated_at
+              ? new Date(employee.updated_at).getTime()
+              : Date.now()
+          }`
+        : null,
       regionalName: employee.regional?.name || null,
       regionalAddress: employee.regional?.address || null,
       scheduleDescription: employee.schedule?.description || null,
@@ -283,6 +321,9 @@ export class EmployeesService {
       nominalPositionName: currentRecord?.position?.name || null,
       departmentName: currentRecord?.area?.name || null,
       departmentId: currentRecord?.area?.id || null,
+      organizationalTypeId: currentRecord?.area?.unitType?.id || null,
+      organizationalTypeName: currentRecord?.area?.unitType?.name || null,
+      directBossName,
       salary:
         currentRecord?.salary !== null && currentRecord?.salary !== undefined
           ? Number(currentRecord.salary)
@@ -321,6 +362,9 @@ export class EmployeesService {
 
   async updateEditableData(id: string, dto: UpdateEmployeeEditableDto) {
     const qr = this.dataSource.createQueryRunner();
+    let newProfilePhotoPath: string | null = null;
+    let previousProfilePhotoPath: string | null = null;
+
     await qr.connect();
     await qr.startTransaction();
 
@@ -366,6 +410,17 @@ export class EmployeesService {
         (employee as any).biometric_id = dto.biometric_id?.trim() || null;
       }
 
+      if (dto.profile_photo_base64) {
+        this.validateProfilePhoto(dto.profile_photo_base64);
+        previousProfilePhotoPath = employee.profile_photo_path;
+        newProfilePhotoPath = this.storageService.saveBase64File(
+          dto.profile_photo_base64,
+          `employees/${employee.id}`,
+          `${randomUUID()}photo.png`,
+        );
+        employee.profile_photo_path = newProfilePhotoPath;
+      }
+
       if (dto.nominal_position !== undefined) {
         activeJobRecord.nominal_position = dto.nominal_position || null;
         (employee as any).position_id = dto.nominal_position || null;
@@ -373,6 +428,36 @@ export class EmployeesService {
 
       if (dto.functional_position !== undefined) {
         activeJobRecord.functional_position = dto.functional_position || null;
+      }
+
+      if (
+        dto.organizational_type !== undefined ||
+        dto.area_id !== undefined
+      ) {
+        if (!dto.organizational_type || !dto.area_id) {
+          throw new BadRequestException([
+            'Debes seleccionar el tipo y la unidad organizacional.',
+          ]);
+        }
+
+        const organizationalUnit = await qr.manager.findOne(
+          OrganizationalUnit,
+          {
+            where: {
+              id: dto.area_id,
+              unit_type: dto.organizational_type,
+              is_active: true,
+            },
+          },
+        );
+
+        if (!organizationalUnit) {
+          throw new BadRequestException([
+            'La unidad organizacional seleccionada no pertenece al tipo indicado o está inactiva.',
+          ]);
+        }
+
+        activeJobRecord.area_id = organizationalUnit.id;
       }
 
       if (dto.salary !== undefined) {
@@ -384,9 +469,20 @@ export class EmployeesService {
       await qr.manager.save(EmployeeJobRecord, activeJobRecord);
       await qr.commitTransaction();
 
+      if (
+        previousProfilePhotoPath &&
+        previousProfilePhotoPath !== newProfilePhotoPath
+      ) {
+        this.storageService.deleteFile(previousProfilePhotoPath);
+      }
+
       return this.findOne(id);
     } catch (error) {
       await qr.rollbackTransaction();
+
+      if (newProfilePhotoPath) {
+        this.storageService.deleteFile(newProfilePhotoPath);
+      }
 
       if (
         error instanceof NotFoundException ||
@@ -400,6 +496,52 @@ export class EmployeesService {
       ]);
     } finally {
       await qr.release();
+    }
+  }
+
+  async getProfilePhoto(id: string) {
+    const employee = await this._employee.findOne({
+      where: { id },
+      select: ['id', 'profile_photo_path'],
+    });
+
+    if (!employee?.profile_photo_path) {
+      throw new NotFoundException('El empleado no tiene foto de perfil.');
+    }
+
+    const absolutePath = this.storageService.getAbsolutePath(
+      employee.profile_photo_path,
+    );
+
+    if (!fs.existsSync(absolutePath)) {
+      throw new NotFoundException('La foto de perfil no está disponible.');
+    }
+
+    return absolutePath;
+  }
+
+  private validateProfilePhoto(base64: string) {
+    const match = base64.match(/^data:image\/png;base64,([A-Za-z0-9+/=\s]+)$/);
+
+    if (!match) {
+      throw new BadRequestException([
+        'La foto de perfil debe enviarse como una imagen PNG válida.',
+      ]);
+    }
+
+    const buffer = Buffer.from(match[1].replace(/\s/g, ''), 'base64');
+    const pngSignature = Buffer.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    ]);
+
+    if (
+      !buffer.length ||
+      buffer.length > 2 * 1024 * 1024 ||
+      !buffer.subarray(0, 8).equals(pngSignature)
+    ) {
+      throw new BadRequestException([
+        'La foto de perfil no es un PNG válido o supera el límite de 2 MB.',
+      ]);
     }
   }
 

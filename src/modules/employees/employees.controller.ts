@@ -64,6 +64,15 @@ export class EmployeesController {
     return res.download(absolutePath, originalName || 'documento');
   }
 
+  @Get(':id/profile-photo')
+  async getProfilePhoto(@Param('id') id: string, @Res() res: Response) {
+    const absolutePath = await this.employeesService.getProfilePhoto(id);
+
+    res.type('image/png');
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    return res.sendFile(absolutePath);
+  }
+
   @Post()
   create(@Body() createEmployeeDto: CreateEmployeeDto, @Req() req: any) {
     return this.employeesService.create(createEmployeeDto, req.user);
