@@ -17,6 +17,7 @@ import { ExitPermitStage } from './enums/exit-permit-stage.enum';
 import { ExitPermitStatus } from './enums/exit-permit-status.enum';
 import { AreaManagerRole } from '../area-manager/interfaces/area-manager-role.enum';
 import { AreaManagerService } from '../area-manager/area-manager.service';
+import { ApprovalRoutingService } from '../area-manager/approval-routing.service';
 
 @Injectable()
 export class EmployeeExitPermitsService {
@@ -25,6 +26,7 @@ export class EmployeeExitPermitsService {
     private readonly exitPermitRepository: Repository<EmployeeExitPermit>,
 
     private readonly areaManagersService: AreaManagerService,
+    private readonly approvalRoutingService: ApprovalRoutingService,
   ) {}
 
   async findHrInbox(params: ListHrExitPermitsDto, currentEmployeeId: string) {
@@ -197,24 +199,6 @@ export class EmployeeExitPermitsService {
     const limit = Math.min(Math.max(Number(params.limit) || 6, 1), 24);
     const status = params.status || 'pending';
 
-    if (!areaIds.length) {
-      return {
-        data: [],
-        meta: {
-          page,
-          limit,
-          total: 0,
-          totalPages: 0,
-        },
-        stats: {
-          pending: 0,
-          approved: 0,
-          rejected: 0,
-          total: 0,
-        },
-      };
-    }
-
     const query = this.exitPermitRepository
       .createQueryBuilder('permit')
       .leftJoinAndSelect('permit.employee', 'employee')
@@ -229,19 +213,9 @@ export class EmployeeExitPermitsService {
       .leftJoinAndSelect(
         'jobRecord.functionalPosition',
         'jobRecordFunctionalPosition',
-      )
-      .where('permit.area_id IN (:...areaIds)', { areaIds });
+      );
 
-    query.andWhere(
-      `EXISTS (
-        SELECT 1
-        FROM employee_job_records current_job
-        WHERE current_job.employee_id = permit.employee_id
-          AND LOWER(current_job.status) = :activeJobStatus
-          AND current_job.area_id IN (:...areaIds)
-      )`,
-      { activeJobStatus: 'active' },
-    );
+    this.applyBossOwnershipFilter(query, currentEmployeeId, areaIds);
 
     if (params.search?.trim()) {
       const search = `%${params.search.trim().toLowerCase()}%`;
@@ -303,18 +277,13 @@ export class EmployeeExitPermitsService {
       .getManyAndCount();
 
     const statsBaseQuery = this.exitPermitRepository
-      .createQueryBuilder('permit')
-      .where('permit.area_id IN (:...areaIds)', { areaIds })
-      .andWhere(
-        `EXISTS (
-          SELECT 1
-          FROM employee_job_records current_job
-          WHERE current_job.employee_id = permit.employee_id
-            AND LOWER(current_job.status) = :activeJobStatus
-            AND current_job.area_id IN (:...areaIds)
-        )`,
-        { activeJobStatus: 'active' },
-      );
+      .createQueryBuilder('permit');
+
+    this.applyBossOwnershipFilter(
+      statsBaseQuery,
+      currentEmployeeId,
+      areaIds,
+    );
 
     const [pending, approved, rejected] = await Promise.all([
       this.applyBossStatusFilter(statsBaseQuery.clone(), 'pending').getCount(),
@@ -340,17 +309,10 @@ export class EmployeeExitPermitsService {
   }
 
   async create(dto: CreateEmployeeExitPermitDto) {
-    const bossManager =
-      await this.areaManagersService.findActiveManagerByAreaAndRole(
-        dto.area_id,
-        AreaManagerRole.BOSS,
-      );
-
-    if (!bossManager) {
-      throw new BadRequestException(
-        'No existe un jefe activo configurado para esta área',
-      );
-    }
+    const approval = await this.approvalRoutingService.resolve(
+      dto.employee_id,
+      dto.area_id,
+    );
 
     const hrManager =
       await this.areaManagersService.findActiveManagerByAreaAndRole(
@@ -379,6 +341,8 @@ export class EmployeeExitPermitsService {
     const exitPermit = this.exitPermitRepository.create({
       employee_id: dto.employee_id,
       area_id: dto.area_id,
+      regional_id: approval.regionalId,
+      approval_scope: approval.scope,
       description: dto.description,
       permit_type: dto.permit_type,
       exit_date: dto.exit_date as any,
@@ -389,7 +353,7 @@ export class EmployeeExitPermitsService {
       stage: ExitPermitStage.BOSS_REVIEW,
       status: ExitPermitStatus.PENDING,
 
-      boss_employee_id: bossManager.employee_id,
+      boss_employee_id: approval.employeeId,
       boss_status: ExitPermitStatus.PENDING,
 
       hr_employee_id: hrManager.employee_id,
@@ -418,15 +382,24 @@ export class EmployeeExitPermitsService {
       );
     }
 
-    const areaIds = await this.areaManagersService.findAreaIdsByEmployeeAndRole(
-      currentEmployeeId,
-      AreaManagerRole.BOSS,
-    );
+    if (exitPermit.boss_employee_id) {
+      if (exitPermit.boss_employee_id !== currentEmployeeId) {
+        throw new ForbiddenException(
+          'No tienes permiso para revisar esta solicitud',
+        );
+      }
+    } else {
+      const areaIds =
+        await this.areaManagersService.findAreaIdsByEmployeeAndRole(
+          currentEmployeeId,
+          AreaManagerRole.BOSS,
+        );
 
-    if (!areaIds.includes(exitPermit.area_id)) {
-      throw new ForbiddenException(
-        'No tienes permiso para revisar esta solicitud',
-      );
+      if (!areaIds.includes(exitPermit.area_id)) {
+        throw new ForbiddenException(
+          'No tienes permiso para revisar esta solicitud',
+        );
+      }
     }
 
     exitPermit.boss_status = dto.status;
@@ -444,6 +417,28 @@ export class EmployeeExitPermitsService {
     }
 
     return await this.exitPermitRepository.save(exitPermit);
+  }
+
+  private applyBossOwnershipFilter(
+    query: any,
+    currentEmployeeId: string,
+    areaIds: string[],
+  ) {
+    if (areaIds.length) {
+      return query.andWhere(
+        `(permit.boss_employee_id = :currentEmployeeId
+          OR (
+            permit.boss_employee_id IS NULL
+            AND permit.area_id IN (:...legacyAreaIds)
+          ))`,
+        { currentEmployeeId, legacyAreaIds: areaIds },
+      );
+    }
+
+    return query.andWhere(
+      'permit.boss_employee_id = :currentEmployeeId',
+      { currentEmployeeId },
+    );
   }
 
   async reviewByHr(

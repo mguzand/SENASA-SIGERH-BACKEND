@@ -193,6 +193,7 @@ export class EmployeesService {
           nominalPositionName: currentRecord?.position?.name || null,
           departmentName: currentRecord?.area?.name || null,
           departmentId: currentRecord?.area?.id || null,
+          regionalId: employee.regional_id || null,
           status: String(employee.status || '').toUpperCase(),
           entryDate: serializeDateOnly(employee.entryDate),
           salary:

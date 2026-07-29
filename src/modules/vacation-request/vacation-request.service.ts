@@ -28,6 +28,8 @@ import { CreateManualVacationRequestDto } from './dtos/create-manual-vacation-re
 import { CreateVacationRequestDto } from './dtos/create-vacation-request.dto';
 import { ListHrVacationRequestsDto } from './dtos/list-hr-vacation-requests.dto';
 import { ReviewVacationRequestDto } from './dtos/review-vacation-request.dto';
+import { ApprovalRoutingService } from '../area-manager/approval-routing.service';
+import { Employee } from '../employees/entities/employee.entity';
 
 @Injectable()
 export class VacationRequestService {
@@ -42,6 +44,7 @@ export class VacationRequestService {
     private readonly employeeVacationPeriodService: EmployeeVacationPeriodService,
     private readonly vacationMovementService: VacationMovementService,
     private readonly areaManagerService: AreaManagerService,
+    private readonly approvalRoutingService: ApprovalRoutingService,
   ) {}
 
   async createManual(
@@ -354,40 +357,12 @@ export class VacationRequestService {
     const limit = Math.min(Math.max(Number(params.limit) || 6, 1), 24);
     const status = params.status || 'pending';
 
-    if (!areaIds.length) {
-      return {
-        data: [],
-        meta: {
-          page,
-          limit,
-          total: 0,
-          totalPages: 0,
-        },
-        stats: {
-          pending: 0,
-          requestedDays: 0,
-          approved: 0,
-          rejected: 0,
-          total: 0,
-        },
-      };
-    }
-
     const query = this.vacationRequestRepository
       .createQueryBuilder('request')
       .leftJoinAndSelect('request.employee', 'employee')
-      .leftJoinAndSelect('request.area', 'area')
-      .where('request.area_id IN (:...areaIds)', { areaIds })
-      .andWhere(
-        `EXISTS (
-          SELECT 1
-          FROM employee_job_records current_job
-          WHERE current_job.employee_id = request.employee_id
-            AND LOWER(current_job.status) = :activeJobStatus
-            AND current_job.area_id IN (:...areaIds)
-        )`,
-        { activeJobStatus: 'active' },
-      );
+      .leftJoinAndSelect('request.area', 'area');
+
+    this.applyBossOwnershipFilter(query, currentEmployeeId, areaIds);
 
     if (params.search?.trim()) {
       const search = `%${params.search.trim().toLowerCase()}%`;
@@ -443,18 +418,13 @@ export class VacationRequestService {
       .getManyAndCount();
 
     const statsBaseQuery = this.vacationRequestRepository
-      .createQueryBuilder('request')
-      .where('request.area_id IN (:...areaIds)', { areaIds })
-      .andWhere(
-        `EXISTS (
-          SELECT 1
-          FROM employee_job_records current_job
-          WHERE current_job.employee_id = request.employee_id
-            AND LOWER(current_job.status) = :activeJobStatus
-            AND current_job.area_id IN (:...areaIds)
-        )`,
-        { activeJobStatus: 'active' },
-      );
+      .createQueryBuilder('request');
+
+    this.applyBossOwnershipFilter(
+      statsBaseQuery,
+      currentEmployeeId,
+      areaIds,
+    );
 
     const pendingCount = await this.applyBossInboxStatusFilter(
       statsBaseQuery.clone(),
@@ -537,6 +507,10 @@ export class VacationRequestService {
     }
 
     const sortedDays = [...new Set(dto.days)].sort();
+    const approval = await this.approvalRoutingService.resolve(
+      dto.employee_id,
+      dto.area_id,
+    );
 
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
@@ -546,6 +520,8 @@ export class VacationRequestService {
       const request = queryRunner.manager.create(VacationRequest, {
         employee_id: dto.employee_id,
         area_id: dto.area_id,
+        regional_id: approval.regionalId,
+        approval_scope: approval.scope,
         start_date: sortedDays[0],
         end_date: sortedDays[sortedDays.length - 1],
         requested_days: sortedDays.length,
@@ -553,6 +529,7 @@ export class VacationRequestService {
         employee_comment: dto.employee_comment ?? null,
         stage: VacationRequestStage.BOSS_REVIEW,
         status: VacationRequestStatus.PENDING,
+        boss_employee_id: approval.employeeId,
         boss_status: VacationRequestStatus.PENDING,
         hr_status: VacationRequestStatus.PENDING,
         is_processed: false,
@@ -577,8 +554,8 @@ export class VacationRequestService {
         })
         .join(', ');
 
-      this.sendMailBoos(
-        dto.area_id,
+      this.sendMailToApprover(
+        approval.employee,
         users,
         formatted,
         dto.days.length,
@@ -606,8 +583,13 @@ export class VacationRequestService {
       })
       .join(', ');
 
-    return this.sendMailBoos(
+    const approval = await this.approvalRoutingService.resolve(
+      dto.employee_id,
       dto.area_id,
+    );
+
+    return this.sendMailToApprover(
+      approval.employee,
       users,
       formatted,
       dto.days.length,
@@ -616,24 +598,19 @@ export class VacationRequestService {
     );
   }
 
-  async sendMailBoos(
-    area_id: string,
+  async sendMailToApprover(
+    bossEmployee: Employee,
     users: any,
     formatted: string,
     requestedDays: number,
     comment: string = '',
     id_request: string,
   ) {
-    const boss = await this.areaManagerService.findTypeEmployee(
-      area_id,
-      AreaManagerRole.BOSS,
-    );
-
-    if (boss) {
+    if (bossEmployee) {
       await sendVacations(
-        boss.employee.email,
+        bossEmployee.email,
         `Se requiere su aprobación para una solicitud de vacaciones de ${users.employees.firstName} ${users.employees.lastName}`,
-        `${boss.employee.firstName} ${boss.employee.lastName}`,
+        `${bossEmployee.firstName} ${bossEmployee.lastName}`,
         `${users.employees.names} ${users.employees.surname}`,
         formatted,
         `${requestedDays}`,
@@ -647,7 +624,7 @@ export class VacationRequestService {
         message: '',
       };
     } else {
-      throw new BadRequestException('no hay jefe para este empleado');
+      throw new BadRequestException('No hay aprobador para este empleado');
     }
   }
 
@@ -664,15 +641,24 @@ export class VacationRequestService {
       throw new NotFoundException('Solicitud de vacaciones no encontrada');
     }
 
-    const areaIds = await this.areaManagerService.findAreaIdsByEmployeeAndRole(
-      bossEmployeeId,
-      AreaManagerRole.BOSS,
-    );
+    if (request.boss_employee_id) {
+      if (request.boss_employee_id !== bossEmployeeId) {
+        throw new ForbiddenException(
+          'No tienes autorización para revisar esta solicitud',
+        );
+      }
+    } else {
+      const areaIds =
+        await this.areaManagerService.findAreaIdsByEmployeeAndRole(
+          bossEmployeeId,
+          AreaManagerRole.BOSS,
+        );
 
-    if (!areaIds.includes(request.area_id)) {
-      throw new ForbiddenException(
-        'No tienes autorización para revisar solicitudes de esta área',
-      );
+      if (!areaIds.includes(request.area_id)) {
+        throw new ForbiddenException(
+          'No tienes autorización para revisar solicitudes de esta área',
+        );
+      }
     }
 
     if (request.stage !== VacationRequestStage.BOSS_REVIEW) {
@@ -708,6 +694,28 @@ export class VacationRequestService {
     }
 
     return this.vacationRequestRepository.save(request);
+  }
+
+  private applyBossOwnershipFilter(
+    query: any,
+    currentEmployeeId: string,
+    areaIds: string[],
+  ) {
+    if (areaIds.length) {
+      return query.andWhere(
+        `(request.boss_employee_id = :currentEmployeeId
+          OR (
+            request.boss_employee_id IS NULL
+            AND request.area_id IN (:...legacyAreaIds)
+          ))`,
+        { currentEmployeeId, legacyAreaIds: areaIds },
+      );
+    }
+
+    return query.andWhere(
+      'request.boss_employee_id = :currentEmployeeId',
+      { currentEmployeeId },
+    );
   }
 
   async hrReview(

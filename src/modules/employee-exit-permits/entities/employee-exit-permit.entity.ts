@@ -24,6 +24,12 @@ export class EmployeeExitPermit {
   @Column('uuid')
   area_id: string;
 
+  @Column({ type: 'uuid', nullable: true })
+  regional_id: string | null;
+
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  approval_scope: 'AREA' | 'REGIONAL' | null;
+
   @Column('text')
   description: string;
 

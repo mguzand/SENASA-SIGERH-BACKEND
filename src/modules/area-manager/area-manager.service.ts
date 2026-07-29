@@ -11,12 +11,15 @@ import {
   parseDateOnly,
   serializeDateOnly,
 } from 'src/common/utils/date-only.util';
+import { RegionalManager } from './entities/regional-manager.entity';
 
 @Injectable()
 export class AreaManagerService {
   constructor(
     @InjectRepository(AreaManager)
     private readonly areaManagerRepository: Repository<AreaManager>,
+    @InjectRepository(RegionalManager)
+    private readonly regionalManagerRepository: Repository<RegionalManager>,
     private readonly storageService: StorageService,
   ) {}
 
@@ -344,9 +347,31 @@ export class AreaManagerService {
     });
 
     if (!manager) {
+      const regionalManager = await this.regionalManagerRepository.findOne({
+        where: {
+          employee_id: employeeId,
+          is_active: true,
+        },
+        relations: { regional: true },
+      });
+
+      if (regionalManager) {
+        return {
+          hasAccess: true,
+          isDelegate: false,
+          isRegionalManager: true,
+          roleLabel: regionalManager.regional?.is_main_office
+            ? 'Director General'
+            : 'Jefe regional',
+          areaId,
+          areaName: regionalManager.regional?.name || null,
+        };
+      }
+
       return {
         hasAccess: false,
         isDelegate: false,
+        isRegionalManager: false,
         roleLabel: null,
         areaId,
         areaName: null,
@@ -356,6 +381,7 @@ export class AreaManagerService {
     return {
       hasAccess: true,
       isDelegate: manager.is_a_delegate,
+      isRegionalManager: false,
       roleLabel: manager.is_a_delegate ? 'Delegado' : 'Jefe',
       areaId: manager.area_id,
       areaName: manager.area?.name || null,
