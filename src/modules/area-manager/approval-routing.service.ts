@@ -60,6 +60,9 @@ export class ApprovalRoutingService {
     const mainRegional = await this.regionalRepository.findOne({
       where: { is_main_office: true, is_active: true },
     });
+
+    console.log(mainRegional);
+
     if (!mainRegional) {
       throw new BadRequestException(
         'No existe una regional principal activa configurada.',

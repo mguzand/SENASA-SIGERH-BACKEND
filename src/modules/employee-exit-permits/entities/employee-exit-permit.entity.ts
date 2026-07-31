@@ -1,17 +1,17 @@
 import {
-  Entity,
-  PrimaryGeneratedColumn,
-  Column,
-  ManyToOne,
-  JoinColumn,
   BeforeInsert,
   BeforeUpdate,
+  Column,
+  Entity,
+  JoinColumn,
+  ManyToOne,
+  PrimaryGeneratedColumn,
 } from 'typeorm';
 
+import { OrganizationalUnit } from 'src/modules/department/entities/organizational-unit.entity';
 import { Employee } from '../../employees/entities/employee.entity';
 import { ExitPermitStage } from '../enums/exit-permit-stage.enum';
 import { ExitPermitStatus } from '../enums/exit-permit-status.enum';
-import { OrganizationalUnit } from 'src/modules/department/entities/organizational-unit.entity';
 
 @Entity('employee_exit_permits')
 export class EmployeeExitPermit {
@@ -112,7 +112,7 @@ export class EmployeeExitPermit {
     type: 'uuid',
     nullable: true,
   })
-  hr_employee_id: string;
+  hr_employee_id: string | null;
 
   @Column({
     type: 'enum',

@@ -13,11 +13,11 @@ import { CreateEmployeeExitPermitDto } from './dto/create-employee-exit-permit.d
 import { ListHrExitPermitsDto } from './dto/list-hr-exit-permits.dto';
 import { ReviewEmployeeExitPermitDto } from './dto/review-employee-exit-permit.dto';
 
+import { ApprovalRoutingService } from '../area-manager/approval-routing.service';
+import { AreaManagerService } from '../area-manager/area-manager.service';
+import { AreaManagerRole } from '../area-manager/interfaces/area-manager-role.enum';
 import { ExitPermitStage } from './enums/exit-permit-stage.enum';
 import { ExitPermitStatus } from './enums/exit-permit-status.enum';
-import { AreaManagerRole } from '../area-manager/interfaces/area-manager-role.enum';
-import { AreaManagerService } from '../area-manager/area-manager.service';
-import { ApprovalRoutingService } from '../area-manager/approval-routing.service';
 
 @Injectable()
 export class EmployeeExitPermitsService {
@@ -63,22 +63,22 @@ export class EmployeeExitPermitsService {
         new Brackets((qb) => {
           qb.where('LOWER(permit.description) LIKE :search', { search });
           qb.orWhere('LOWER(employee.firstName) LIKE :search', { search });
-          qb.orWhere('LOWER(COALESCE(employee.middleName, \'\')) LIKE :search', {
+          qb.orWhere("LOWER(COALESCE(employee.middleName, '')) LIKE :search", {
             search,
           });
           qb.orWhere('LOWER(employee.lastName) LIKE :search', { search });
           qb.orWhere(
-            'LOWER(COALESCE(employee.secondLastName, \'\')) LIKE :search',
+            "LOWER(COALESCE(employee.secondLastName, '')) LIKE :search",
             { search },
           );
-          qb.orWhere('LOWER(COALESCE(employee.dni, \'\')) LIKE :search', {
+          qb.orWhere("LOWER(COALESCE(employee.dni, '')) LIKE :search", {
             search,
           });
           qb.orWhere(
-            'LOWER(COALESCE(employee.biometric_id, \'\')) LIKE :search',
+            "LOWER(COALESCE(employee.biometric_id, '')) LIKE :search",
             { search },
           );
-          qb.orWhere('LOWER(COALESCE(area.name, \'\')) LIKE :search', { search });
+          qb.orWhere("LOWER(COALESCE(area.name, '')) LIKE :search", { search });
           qb.orWhere(
             `LOWER(
               CONCAT(
@@ -155,11 +155,14 @@ export class EmployeeExitPermitsService {
               ? `EMP-${employee.id.slice(0, 4).toUpperCase()}`
               : 'EMP-0000',
           employeeName: fullName || 'Empleado sin nombre',
-          employeeInitials: `${employee?.firstName?.[0] || ''}${employee?.lastName?.[0] || ''}`
-            .toUpperCase()
-            .trim(),
+          employeeInitials:
+            `${employee?.firstName?.[0] || ''}${employee?.lastName?.[0] || ''}`
+              .toUpperCase()
+              .trim(),
           departmentName:
-            currentRecord?.area?.name || permit.area?.name || 'Sin área asignada',
+            currentRecord?.area?.name ||
+            permit.area?.name ||
+            'Sin área asignada',
           status: permit.hr_status,
           stage: permit.stage,
           exitDate: permit.exit_date,
@@ -223,23 +226,23 @@ export class EmployeeExitPermitsService {
       query.andWhere(
         new Brackets((qb) => {
           qb.where('LOWER(permit.description) LIKE :search', { search });
-          qb.orWhere('LOWER(COALESCE(permit.permit_type, \'\')) LIKE :search', {
+          qb.orWhere("LOWER(COALESCE(permit.permit_type, '')) LIKE :search", {
             search,
           });
           qb.orWhere('LOWER(employee.firstName) LIKE :search', { search });
-          qb.orWhere('LOWER(COALESCE(employee.middleName, \'\')) LIKE :search', {
+          qb.orWhere("LOWER(COALESCE(employee.middleName, '')) LIKE :search", {
             search,
           });
           qb.orWhere('LOWER(employee.lastName) LIKE :search', { search });
           qb.orWhere(
-            'LOWER(COALESCE(employee.secondLastName, \'\')) LIKE :search',
+            "LOWER(COALESCE(employee.secondLastName, '')) LIKE :search",
             { search },
           );
           qb.orWhere(
-            'LOWER(COALESCE(employee.biometric_id, \'\')) LIKE :search',
+            "LOWER(COALESCE(employee.biometric_id, '')) LIKE :search",
             { search },
           );
-          qb.orWhere('LOWER(COALESCE(area.name, \'\')) LIKE :search', { search });
+          qb.orWhere("LOWER(COALESCE(area.name, '')) LIKE :search", { search });
           qb.orWhere(
             `LOWER(
               CONCAT(
@@ -276,14 +279,10 @@ export class EmployeeExitPermitsService {
       .take(limit)
       .getManyAndCount();
 
-    const statsBaseQuery = this.exitPermitRepository
-      .createQueryBuilder('permit');
+    const statsBaseQuery =
+      this.exitPermitRepository.createQueryBuilder('permit');
 
-    this.applyBossOwnershipFilter(
-      statsBaseQuery,
-      currentEmployeeId,
-      areaIds,
-    );
+    this.applyBossOwnershipFilter(statsBaseQuery, currentEmployeeId, areaIds);
 
     const [pending, approved, rejected] = await Promise.all([
       this.applyBossStatusFilter(statsBaseQuery.clone(), 'pending').getCount(),
@@ -292,7 +291,9 @@ export class EmployeeExitPermitsService {
     ]);
 
     return {
-      data: permits.map((permit) => this.mapExitPermitInboxItem(permit, 'boss')),
+      data: permits.map((permit) =>
+        this.mapExitPermitInboxItem(permit, 'boss'),
+      ),
       meta: {
         page,
         limit,
@@ -313,18 +314,6 @@ export class EmployeeExitPermitsService {
       dto.employee_id,
       dto.area_id,
     );
-
-    const hrManager =
-      await this.areaManagersService.findActiveManagerByAreaAndRole(
-        dto.area_id,
-        AreaManagerRole.HR,
-      );
-
-    if (!hrManager) {
-      throw new BadRequestException(
-        'No existe un encargado de RRHH activo configurado para esta área',
-      );
-    }
 
     if (dto.without_return && dto.return_time) {
       throw new BadRequestException(
@@ -355,8 +344,6 @@ export class EmployeeExitPermitsService {
 
       boss_employee_id: approval.employeeId,
       boss_status: ExitPermitStatus.PENDING,
-
-      hr_employee_id: hrManager.employee_id,
       hr_status: ExitPermitStatus.PENDING,
     });
 
@@ -435,10 +422,9 @@ export class EmployeeExitPermitsService {
       );
     }
 
-    return query.andWhere(
-      'permit.boss_employee_id = :currentEmployeeId',
-      { currentEmployeeId },
-    );
+    return query.andWhere('permit.boss_employee_id = :currentEmployeeId', {
+      currentEmployeeId,
+    });
   }
 
   async reviewByHr(
