@@ -40,6 +40,14 @@ export class EmployeeExitPermitsController {
     );
   }
 
+  @Get('boss/:id')
+  findBossDetail(@Param('id') id: string, @Req() req: any) {
+    return this.employeeExitPermitsService.findBossDetail(
+      id,
+      this.getEmployeeId(req),
+    );
+  }
+
   @Patch(':id/review-boss')
   reviewByBoss(
     @Param('id') id: string,

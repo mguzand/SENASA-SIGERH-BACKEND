@@ -308,6 +308,32 @@ export class EmployeeExitPermitsService {
     };
   }
 
+  async findBossDetail(id: string, currentEmployeeId: string) {
+    const permit = await this.exitPermitRepository.findOne({
+      where: { id },
+      relations: {
+        employee: { jobRecords: { area: true, position: true, functionalPosition: true } },
+        area: true,
+      },
+    });
+    if (!permit) {
+      throw new NotFoundException('Solicitud de salida no encontrada');
+    }
+
+    const areaIds = await this.areaManagersService.findAreaIdsByEmployeeAndRole(
+      currentEmployeeId,
+      AreaManagerRole.BOSS,
+    );
+    const ownsAssignedRequest = permit.boss_employee_id === currentEmployeeId;
+    const canTakeOverAreaRequest =
+      permit.approval_scope !== 'REGIONAL' && areaIds.includes(permit.area_id);
+    if (!ownsAssignedRequest && !canTakeOverAreaRequest) {
+      throw new ForbiddenException('No tienes permiso para consultar esta solicitud');
+    }
+
+    return this.mapExitPermitInboxItem(permit, 'boss');
+  }
+
   async create(dto: CreateEmployeeExitPermitDto) {
     const approval = await this.approvalRoutingService.resolve(
       dto.employee_id,
