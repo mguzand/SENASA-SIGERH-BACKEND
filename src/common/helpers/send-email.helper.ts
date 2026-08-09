@@ -2,6 +2,7 @@ import * as nodemailer from 'nodemailer';
 import { sendMailTemplate } from '../mails/send-vacations.mail';
 import { sendMailNewEmployee } from '../mails/send-employee-register.mail';
 import { sendPasswordResetOtpMail } from '../mails/send-password-reset-otp.mail';
+import { requestStatusMail } from '../mails/request-status.mail';
 
 let transporter: nodemailer.Transporter;
 
@@ -80,6 +81,36 @@ export const sendPasswordResetOtp = async (
     return response;
   } catch (error) {
     console.log(error);
+  }
+};
+
+export const sendRequestNotification = async (
+  to: string | null | undefined,
+  subject: string,
+  recipientName: string,
+  message: string,
+  detailLines: string[] = [],
+  actionUrl?: string,
+) => {
+  if (!to) return null;
+
+  refreshTransporter();
+  try {
+    return await transporter.sendMail({
+      subject,
+      html: requestStatusMail(
+        recipientName,
+        subject,
+        message,
+        detailLines,
+        actionUrl,
+      ),
+      from: `"EMPLEADOS SENASA" <${process.env.EMAIL_USER}>`,
+      to,
+    });
+  } catch (error) {
+    console.log(error);
+    return null;
   }
 };
 

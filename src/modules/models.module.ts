@@ -32,6 +32,7 @@ import { PayrollImportModule } from './payroll-import/payroll-import.module';
 import { EmployeeJobActionsModule } from './employee-job-actions/employee-job-actions.module';
 import { SsoModule } from './sso/sso.module';
 import { EmploymentCertificateRequestsModule } from './employment-certificate-requests/employment-certificate-requests.module';
+import { LeaveRequestsModule } from './leave-requests/leave-requests.module';
 
 @Module({
   imports: [
@@ -68,6 +69,7 @@ import { EmploymentCertificateRequestsModule } from './employment-certificate-re
     EmployeeJobActionsModule,
     SsoModule,
     EmploymentCertificateRequestsModule,
+    LeaveRequestsModule,
   ],
   exports: [],
 })

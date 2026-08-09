@@ -18,12 +18,17 @@ import { AreaManagerService } from '../area-manager/area-manager.service';
 import { AreaManagerRole } from '../area-manager/interfaces/area-manager-role.enum';
 import { ExitPermitStage } from './enums/exit-permit-stage.enum';
 import { ExitPermitStatus } from './enums/exit-permit-status.enum';
+import { Employee } from '../employees/entities/employee.entity';
+import { sendRequestNotification } from '../../common/helpers/send-email.helper';
 
 @Injectable()
 export class EmployeeExitPermitsService {
   constructor(
     @InjectRepository(EmployeeExitPermit)
     private readonly exitPermitRepository: Repository<EmployeeExitPermit>,
+
+    @InjectRepository(Employee)
+    private readonly employeeRepository: Repository<Employee>,
 
     private readonly areaManagersService: AreaManagerService,
     private readonly approvalRoutingService: ApprovalRoutingService,
@@ -49,10 +54,7 @@ export class EmployeeExitPermitsService {
         'jobRecord.functionalPosition',
         'jobRecordFunctionalPosition',
       )
-      .where('permit.hr_employee_id = :currentEmployeeId', {
-        currentEmployeeId,
-      })
-      .andWhere('permit.boss_status = :bossApproved', {
+      .where('permit.boss_status = :bossApproved', {
         bossApproved: ExitPermitStatus.APPROVED,
       });
 
@@ -117,10 +119,7 @@ export class EmployeeExitPermitsService {
 
     const statsBaseQuery = this.exitPermitRepository
       .createQueryBuilder('permit')
-      .where('permit.hr_employee_id = :currentEmployeeId', {
-        currentEmployeeId,
-      })
-      .andWhere('permit.boss_status = :bossApproved', {
+      .where('permit.boss_status = :bossApproved', {
         bossApproved: ExitPermitStatus.APPROVED,
       });
 
@@ -347,7 +346,24 @@ export class EmployeeExitPermitsService {
       hr_status: ExitPermitStatus.PENDING,
     });
 
-    return await this.exitPermitRepository.save(exitPermit);
+    const savedPermit = await this.exitPermitRepository.save(exitPermit);
+    const requester = await this.employeeRepository.findOneBy({ id: dto.employee_id });
+
+    await sendRequestNotification(
+      approval.employee.email,
+      `Nuevo pase de salida de ${this.employeeName(requester)}`,
+      this.employeeName(approval.employee),
+      'Tiene un pase de salida pendiente de revisión.',
+      [
+        `Empleado: ${this.employeeName(requester)}`,
+        `Fecha: ${dto.exit_date}`,
+        `Hora: ${dto.exit_time}`,
+        `Motivo: ${dto.description}`,
+      ],
+      'https://sigerh.senasa.gob.hn/exit-permit-requests/pending',
+    );
+
+    return savedPermit;
   }
 
   async reviewByBoss(
@@ -357,6 +373,7 @@ export class EmployeeExitPermitsService {
   ) {
     const exitPermit = await this.exitPermitRepository.findOne({
       where: { id },
+      relations: { employee: true },
     });
 
     if (!exitPermit) {
@@ -371,9 +388,20 @@ export class EmployeeExitPermitsService {
 
     if (exitPermit.boss_employee_id) {
       if (exitPermit.boss_employee_id !== currentEmployeeId) {
-        throw new ForbiddenException(
-          'No tienes permiso para revisar esta solicitud',
-        );
+        const delegatedAreaIds =
+          await this.areaManagersService.findAreaIdsByEmployeeAndRole(
+            currentEmployeeId,
+            AreaManagerRole.BOSS,
+          );
+        const canTakeOverAreaRequest =
+          exitPermit.approval_scope !== 'REGIONAL' &&
+          delegatedAreaIds.includes(exitPermit.area_id);
+
+        if (!canTakeOverAreaRequest) {
+          throw new ForbiddenException(
+            'No tienes permiso para revisar esta solicitud',
+          );
+        }
       }
     } else {
       const areaIds =
@@ -403,7 +431,18 @@ export class EmployeeExitPermitsService {
       exitPermit.status = ExitPermitStatus.REJECTED;
     }
 
-    return await this.exitPermitRepository.save(exitPermit);
+    const savedPermit = await this.exitPermitRepository.save(exitPermit);
+    await this.notifyEmployeeOfStatus(
+      savedPermit.employee,
+      'pase de salida',
+      dto.status,
+      dto.status === ExitPermitStatus.APPROVED
+        ? 'Su jefe aprobó la solicitud y fue enviada a Recursos Humanos para la revisión final.'
+        : 'Su jefe denegó la solicitud.',
+      dto.observation,
+    );
+
+    return savedPermit;
   }
 
   private applyBossOwnershipFilter(
@@ -415,10 +454,15 @@ export class EmployeeExitPermitsService {
       return query.andWhere(
         `(permit.boss_employee_id = :currentEmployeeId
           OR (
-            permit.boss_employee_id IS NULL
+            permit.approval_scope IS DISTINCT FROM 'REGIONAL'
             AND permit.area_id IN (:...legacyAreaIds)
+            AND permit.stage = :delegableBossStage
           ))`,
-        { currentEmployeeId, legacyAreaIds: areaIds },
+        {
+          currentEmployeeId,
+          legacyAreaIds: areaIds,
+          delegableBossStage: ExitPermitStage.BOSS_REVIEW,
+        },
       );
     }
 
@@ -434,6 +478,7 @@ export class EmployeeExitPermitsService {
   ) {
     const exitPermit = await this.exitPermitRepository.findOne({
       where: { id },
+      relations: { employee: true },
     });
 
     if (!exitPermit) {
@@ -446,13 +491,8 @@ export class EmployeeExitPermitsService {
       );
     }
 
-    if (exitPermit.hr_employee_id !== currentEmployeeId) {
-      throw new ForbiddenException(
-        'No tienes permiso para revisar esta solicitud de RRHH',
-      );
-    }
-
     exitPermit.hr_status = dto.status;
+    exitPermit.hr_employee_id = currentEmployeeId;
     exitPermit.hr_observation = dto.observation ?? null;
     exitPermit.hr_reviewed_at = new Date();
 
@@ -466,7 +506,18 @@ export class EmployeeExitPermitsService {
       exitPermit.status = ExitPermitStatus.REJECTED;
     }
 
-    return await this.exitPermitRepository.save(exitPermit);
+    const savedPermit = await this.exitPermitRepository.save(exitPermit);
+    await this.notifyEmployeeOfStatus(
+      savedPermit.employee,
+      'pase de salida',
+      dto.status,
+      dto.status === ExitPermitStatus.APPROVED
+        ? 'Recursos Humanos aprobó definitivamente su solicitud.'
+        : 'Recursos Humanos denegó su solicitud.',
+      dto.observation,
+    );
+
+    return savedPermit;
   }
 
   private applyHrStatusFilter(query: any, status: string) {
@@ -605,5 +656,34 @@ export class EmployeeExitPermitsService {
     }
 
     return Math.max(returnTotalMinutes - exitTotalMinutes, 0);
+  }
+
+  private employeeName(employee: Employee | null | undefined) {
+    return [
+      employee?.firstName,
+      employee?.middleName,
+      employee?.lastName,
+      employee?.secondLastName,
+    ]
+      .filter(Boolean)
+      .join(' ') || 'Empleado';
+  }
+
+  private async notifyEmployeeOfStatus(
+    employee: Employee,
+    requestType: string,
+    status: ExitPermitStatus,
+    message: string,
+    observation?: string,
+  ) {
+    await sendRequestNotification(
+      employee?.email,
+      `${requestType.charAt(0).toUpperCase() + requestType.slice(1)} ${
+        status === ExitPermitStatus.APPROVED ? 'aprobado' : 'denegado'
+      }`,
+      this.employeeName(employee),
+      message,
+      observation ? [`Observación: ${observation}`] : [],
+    );
   }
 }

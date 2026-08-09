@@ -61,8 +61,6 @@ export class ApprovalRoutingService {
       where: { is_main_office: true, is_active: true },
     });
 
-    console.log(mainRegional);
-
     if (!mainRegional) {
       throw new BadRequestException(
         'No existe una regional principal activa configurada.',

@@ -17,7 +17,10 @@ import {
 
 import { VacationRequestStage } from './enum/vacation-request-stage.enum';
 
-import { sendVacations } from 'src/common/helpers/send-email.helper';
+import {
+  sendRequestNotification,
+  sendVacations,
+} from 'src/common/helpers/send-email.helper';
 import { AreaManagerService } from '../area-manager/area-manager.service';
 import { AreaManagerRole } from '../area-manager/interfaces/area-manager-role.enum';
 import { EmployeeVacationPeriodService } from '../employee-vacation-period/employee-vacation-period.service';
@@ -554,7 +557,9 @@ export class VacationRequestService {
         })
         .join(', ');
 
-      this.sendMailToApprover(
+      await queryRunner.commitTransaction();
+
+      await this.sendMailToApprover(
         approval.employee,
         users,
         formatted,
@@ -562,8 +567,6 @@ export class VacationRequestService {
         dto.employee_comment,
         savedRequest.id,
       );
-
-      await queryRunner.commitTransaction();
 
       return this.findOne(savedRequest.id);
     } catch (error) {
@@ -635,6 +638,7 @@ export class VacationRequestService {
   ) {
     const request = await this.vacationRequestRepository.findOne({
       where: { id },
+      relations: { employee: true },
     });
 
     if (!request) {
@@ -643,9 +647,20 @@ export class VacationRequestService {
 
     if (request.boss_employee_id) {
       if (request.boss_employee_id !== bossEmployeeId) {
-        throw new ForbiddenException(
-          'No tienes autorización para revisar esta solicitud',
-        );
+        const delegatedAreaIds =
+          await this.areaManagerService.findAreaIdsByEmployeeAndRole(
+            bossEmployeeId,
+            AreaManagerRole.BOSS,
+          );
+        const canTakeOverAreaRequest =
+          request.approval_scope !== 'REGIONAL' &&
+          delegatedAreaIds.includes(request.area_id);
+
+        if (!canTakeOverAreaRequest) {
+          throw new ForbiddenException(
+            'No tienes autorización para revisar esta solicitud',
+          );
+        }
       }
     } else {
       const areaIds =
@@ -693,7 +708,17 @@ export class VacationRequestService {
       request.status = VacationRequestStatus.REJECTED;
     }
 
-    return this.vacationRequestRepository.save(request);
+    const savedRequest = await this.vacationRequestRepository.save(request);
+    await this.notifyVacationStatus(
+      savedRequest.employee,
+      dto.status,
+      dto.status === VacationRequestStatus.APPROVED
+        ? 'Su jefe aprobó la solicitud y fue enviada a Recursos Humanos para la revisión final.'
+        : 'Su jefe denegó la solicitud de vacaciones.',
+      dto.observation,
+    );
+
+    return savedRequest;
   }
 
   private applyBossOwnershipFilter(
@@ -705,10 +730,15 @@ export class VacationRequestService {
       return query.andWhere(
         `(request.boss_employee_id = :currentEmployeeId
           OR (
-            request.boss_employee_id IS NULL
+            request.approval_scope IS DISTINCT FROM 'REGIONAL'
             AND request.area_id IN (:...legacyAreaIds)
+            AND request.stage = :delegableBossStage
           ))`,
-        { currentEmployeeId, legacyAreaIds: areaIds },
+        {
+          currentEmployeeId,
+          legacyAreaIds: areaIds,
+          delegableBossStage: VacationRequestStage.BOSS_REVIEW,
+        },
       );
     }
 
@@ -725,7 +755,7 @@ export class VacationRequestService {
   ) {
     const request = await this.vacationRequestRepository.findOne({
       where: { id },
-      relations: ['days'],
+      relations: ['days', 'employee'],
     });
 
     if (!request) {
@@ -759,7 +789,14 @@ export class VacationRequestService {
       request.stage = VacationRequestStage.COMPLETED;
       request.status = VacationRequestStatus.REJECTED;
 
-      return this.vacationRequestRepository.save(request);
+      const savedRequest = await this.vacationRequestRepository.save(request);
+      await this.notifyVacationStatus(
+        savedRequest.employee,
+        dto.status,
+        'Recursos Humanos denegó su solicitud de vacaciones.',
+        dto.observation,
+      );
+      return savedRequest;
     }
 
     const validDays = await this.vacationRequestDayService.countValidDays(
@@ -823,6 +860,13 @@ export class VacationRequestService {
 
       await queryRunner.commitTransaction();
 
+      await this.notifyVacationStatus(
+        request.employee,
+        VacationRequestStatus.APPROVED,
+        'Recursos Humanos aprobó definitivamente su solicitud de vacaciones.',
+        dto.observation,
+      );
+
       return this.findOne(id);
     } catch (error) {
       await queryRunner.rollbackTransaction();
@@ -879,6 +923,32 @@ export class VacationRequestService {
 
   private formatDate(date: Date): string {
     return date.toISOString().split('T')[0];
+  }
+
+  private async notifyVacationStatus(
+    employee: Employee,
+    status: VacationRequestStatus,
+    message: string,
+    observation?: string,
+  ) {
+    const employeeName = [
+      employee?.firstName,
+      employee?.middleName,
+      employee?.lastName,
+      employee?.secondLastName,
+    ]
+      .filter(Boolean)
+      .join(' ') || 'Empleado';
+
+    await sendRequestNotification(
+      employee?.email,
+      `Solicitud de vacaciones ${
+        status === VacationRequestStatus.APPROVED ? 'aprobada' : 'denegada'
+      }`,
+      employeeName,
+      message,
+      observation ? [`Observación: ${observation}`] : [],
+    );
   }
 
   private applyHrInboxStatusFilter(
