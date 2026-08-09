@@ -102,9 +102,9 @@ export class LeaveRequestsService {
 
     const overlapping = await this.requestRepository
       .createQueryBuilder('request')
-      .where('request.employee_id = :employeeId', { employeeId: employee.id })
+      .where('request.employeeId = :employeeId', { employeeId: employee.id })
       .andWhere('request.status != :rejected', { rejected: LeaveRequestStatus.REJECTED })
-      .andWhere('request.start_date <= :endDate AND request.end_date >= :startDate', {
+      .andWhere('request.startDate <= :endDate AND request.endDate >= :startDate', {
         startDate,
         endDate,
       })
@@ -341,30 +341,30 @@ export class LeaveRequestsService {
       .innerJoinAndSelect('request.area', 'area')
       .innerJoinAndSelect('request.regional', 'regional');
 
-    if (directorId) builder.andWhere('request.director_employee_id = :directorId', { directorId });
+    if (directorId) builder.andWhere('request.directorEmployeeId = :directorId', { directorId });
     if (reviewer === 'DIRECTOR') builder.andWhere('request.type = :unpaid', { unpaid: LeaveRequestType.UNPAID });
     this.applyInboxStatus(builder, query.status || 'pending', reviewer);
 
     if (query.search?.trim()) {
       const search = `%${query.search.trim().toLowerCase()}%`;
       builder.andWhere(new Brackets((qb) => {
-        qb.where('LOWER(request.request_number) LIKE :search', { search })
+        qb.where('LOWER(request.requestNumber) LIKE :search', { search })
           .orWhere('LOWER(employee.firstName) LIKE :search', { search })
           .orWhere('LOWER(employee.lastName) LIKE :search', { search })
           .orWhere('LOWER(area.name) LIKE :search', { search });
       }));
     }
-    builder.orderBy('request.created_at', 'DESC');
+    builder.orderBy('request.createdAt', 'DESC');
     const [data, total] = await builder.skip((page - 1) * limit).take(limit).getManyAndCount();
     const scope = this.requestRepository.createQueryBuilder('request');
-    if (directorId) scope.where('request.director_employee_id = :directorId', { directorId });
+    if (directorId) scope.where('request.directorEmployeeId = :directorId', { directorId });
     const pendingStageForReviewer = reviewer === 'HR'
       ? LeaveRequestStage.HR_REVIEW
       : LeaveRequestStage.DIRECTOR_REVIEW;
     const [pending, approved, rejected, directorPending, completed] = await Promise.all([
-      scope.clone().andWhere(reviewer === 'HR' ? 'request.hr_status = :pending' : 'request.director_status = :pending', { pending: LeaveRequestStatus.PENDING }).andWhere('request.stage = :stage', { stage: pendingStageForReviewer }).getCount(),
-      scope.clone().andWhere(reviewer === 'HR' ? 'request.hr_status = :approved' : 'request.director_status = :approved', { approved: LeaveRequestStatus.APPROVED }).getCount(),
-      scope.clone().andWhere(reviewer === 'HR' ? 'request.hr_status = :rejected' : 'request.director_status = :rejected', { rejected: LeaveRequestStatus.REJECTED }).getCount(),
+      scope.clone().andWhere(reviewer === 'HR' ? 'request.hrStatus = :pending' : 'request.directorStatus = :pending', { pending: LeaveRequestStatus.PENDING }).andWhere('request.stage = :stage', { stage: pendingStageForReviewer }).getCount(),
+      scope.clone().andWhere(reviewer === 'HR' ? 'request.hrStatus = :approved' : 'request.directorStatus = :approved', { approved: LeaveRequestStatus.APPROVED }).getCount(),
+      scope.clone().andWhere(reviewer === 'HR' ? 'request.hrStatus = :rejected' : 'request.directorStatus = :rejected', { rejected: LeaveRequestStatus.REJECTED }).getCount(),
       scope.clone().andWhere('request.stage = :directorStage', { directorStage: LeaveRequestStage.DIRECTOR_REVIEW }).getCount(),
       scope.clone().andWhere('request.stage = :completedStage', { completedStage: LeaveRequestStage.COMPLETED }).getCount(),
     ]);
@@ -376,7 +376,7 @@ export class LeaveRequestsService {
   }
 
   private applyInboxStatus(builder: any, status: string, reviewer: 'HR' | 'DIRECTOR') {
-    const statusColumn = reviewer === 'HR' ? 'request.hr_status' : 'request.director_status';
+    const statusColumn = reviewer === 'HR' ? 'request.hrStatus' : 'request.directorStatus';
     const pendingStage = reviewer === 'HR' ? LeaveRequestStage.HR_REVIEW : LeaveRequestStage.DIRECTOR_REVIEW;
     if (status === 'pending') return builder.andWhere(`${statusColumn} = :filterStatus`, { filterStatus: LeaveRequestStatus.PENDING }).andWhere('request.stage = :pendingStage', { pendingStage });
     if (status === 'approved') return builder.andWhere(`${statusColumn} = :filterStatus`, { filterStatus: LeaveRequestStatus.APPROVED });
