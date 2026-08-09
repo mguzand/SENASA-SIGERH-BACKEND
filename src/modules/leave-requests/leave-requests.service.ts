@@ -356,7 +356,23 @@ export class LeaveRequestsService {
     }
     builder.orderBy('request.created_at', 'DESC');
     const [data, total] = await builder.skip((page - 1) * limit).take(limit).getManyAndCount();
-    return { data, meta: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) } };
+    const scope = this.requestRepository.createQueryBuilder('request');
+    if (directorId) scope.where('request.director_employee_id = :directorId', { directorId });
+    const pendingStageForReviewer = reviewer === 'HR'
+      ? LeaveRequestStage.HR_REVIEW
+      : LeaveRequestStage.DIRECTOR_REVIEW;
+    const [pending, approved, rejected, directorPending, completed] = await Promise.all([
+      scope.clone().andWhere(reviewer === 'HR' ? 'request.hr_status = :pending' : 'request.director_status = :pending', { pending: LeaveRequestStatus.PENDING }).andWhere('request.stage = :stage', { stage: pendingStageForReviewer }).getCount(),
+      scope.clone().andWhere(reviewer === 'HR' ? 'request.hr_status = :approved' : 'request.director_status = :approved', { approved: LeaveRequestStatus.APPROVED }).getCount(),
+      scope.clone().andWhere(reviewer === 'HR' ? 'request.hr_status = :rejected' : 'request.director_status = :rejected', { rejected: LeaveRequestStatus.REJECTED }).getCount(),
+      scope.clone().andWhere('request.stage = :directorStage', { directorStage: LeaveRequestStage.DIRECTOR_REVIEW }).getCount(),
+      scope.clone().andWhere('request.stage = :completedStage', { completedStage: LeaveRequestStage.COMPLETED }).getCount(),
+    ]);
+    return {
+      data,
+      meta: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) },
+      stats: { pending, approved, rejected, directorPending, completed, total: await scope.clone().getCount() },
+    };
   }
 
   private applyInboxStatus(builder: any, status: string, reviewer: 'HR' | 'DIRECTOR') {
