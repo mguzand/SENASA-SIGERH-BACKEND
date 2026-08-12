@@ -39,6 +39,7 @@ import { AcademicHistory } from '../academic-history/entities/academic-history.e
 import { OrganizationalUnit } from '../department/entities/organizational-unit.entity';
 import { AreaManager } from '../area-manager/entities/area-manager.entity';
 import { AreaManagerRole } from '../area-manager/interfaces/area-manager-role.enum';
+import { PublicCriminalRecordUpdateDto } from './dtos/public-criminal-record.dto';
 interface FindAllEmployeesParams {
   search?: string;
   departmentId?: string;
@@ -57,7 +58,6 @@ export class EmployeesService {
     private readonly employeeJobRecordRepository: Repository<EmployeeJobRecord>,
     @InjectRepository(EmployeeDocument)
     private _EmployeeDocument: Repository<EmployeeDocument>,
-
     private _rnpService: RnpService,
     private _RnpService: RnpServices,
     private readonly academicHistoryService: AcademicHistoryService,
@@ -66,6 +66,204 @@ export class EmployeesService {
     private readonly employeeVacationPeriodService: EmployeeVacationPeriodService,
     private readonly _usersService: UsersService,
   ) {}
+
+  async getPublicCriminalRecordStatus(dni: string) {
+    this.validatePublicDni(dni);
+    const employee = await this._employee
+      .createQueryBuilder('employee')
+      .leftJoinAndSelect(
+        'employee.jobRecords',
+        'jobRecord',
+        'LOWER(jobRecord.status) = :activeStatus',
+        { activeStatus: 'active' },
+      )
+      .leftJoinAndSelect('jobRecord.area', 'area')
+      .leftJoinAndSelect('jobRecord.functionalPosition', 'functionalPosition')
+      .leftJoinAndSelect('jobRecord.position', 'position')
+      .where('employee.dni = :dni', { dni })
+      .getOne();
+
+    if (!employee)
+      throw new NotFoundException(
+        'No se encontró un empleado con esa identidad.',
+      );
+
+    const currentDocument = await this._EmployeeDocument.findOne({
+      where: {
+        employeeId: employee.id,
+        documentType: 'criminal_record',
+        isActive: true,
+      },
+      order: { created_at: 'DESC' },
+    });
+    const documentStatus = this.getCriminalRecordStatus(
+      currentDocument?.expirationDate ?? null,
+    );
+    const job = employee.jobRecords?.[0];
+
+    return {
+      employee: {
+        fullName: [
+          employee.firstName,
+          employee.middleName,
+          employee.lastName,
+          employee.secondLastName,
+        ]
+          .filter(Boolean)
+          .join(' '),
+        employeeCode: employee.biometric_id
+          ? `EMP-${String(employee.biometric_id).padStart(4, '0')}`
+          : `EMP-${employee.id.slice(0, 4).toUpperCase()}`,
+        dni: employee.dni,
+        employmentStatus: String(employee.status || '').toUpperCase(),
+        departmentName: job?.area?.name || null,
+        positionName:
+          job?.functionalPosition?.name || job?.position?.name || null,
+      },
+      criminalRecord: {
+        expirationDate: currentDocument?.expirationDate ?? null,
+        ...documentStatus,
+      },
+    };
+  }
+
+  async updatePublicCriminalRecord(
+    dni: string,
+    dto: PublicCriminalRecordUpdateDto,
+  ) {
+    this.validatePublicDni(dni);
+    const status = await this.getPublicCriminalRecordStatus(dni);
+    if (!status.criminalRecord.canUpdate) {
+      throw new BadRequestException(
+        'Los antecedentes solo pueden actualizarse cuando faltan 30 días o menos para vencer.',
+      );
+    }
+
+    const employee = await this._employee.findOne({ where: { dni } });
+    if (!employee) throw new NotFoundException('Empleado no encontrado.');
+
+    const base64Payload = dto.base64.replace(
+      /^data:application\/pdf;base64,/i,
+      '',
+    );
+    const buffer = Buffer.from(base64Payload, 'base64');
+    if (
+      !buffer.length ||
+      buffer.length > 10 * 1024 * 1024 ||
+      buffer.subarray(0, 4).toString() !== '%PDF'
+    ) {
+      throw new BadRequestException(
+        'El PDF no es válido o supera el máximo de 10 MB.',
+      );
+    }
+
+    const expirationDate = new Date(
+      `${dto.expirationDate.slice(0, 10)}T00:00:00.000Z`,
+    );
+    if (
+      Number.isNaN(expirationDate.getTime()) ||
+      expirationDate <= new Date()
+    ) {
+      throw new BadRequestException(
+        'La nueva fecha de vencimiento debe ser futura.',
+      );
+    }
+
+    const fileName = `${randomUUID()}.pdf`;
+    const filePath = this.storageService.saveBase64File(
+      dto.base64,
+      `employees/${employee.id}`,
+      fileName,
+    );
+
+    try {
+      await this.dataSource.transaction(async (manager) => {
+        await manager.update(
+          EmployeeDocument,
+          {
+            employeeId: employee.id,
+            documentType: 'criminal_record',
+            isActive: true,
+          },
+          { isActive: false },
+        );
+        await manager.save(
+          manager.create(EmployeeDocument, {
+            employeeId: employee.id,
+            documentType: 'criminal_record',
+            fileName,
+            originalName: dto.originalName,
+            extension: 'pdf',
+            mimeType: 'application/pdf',
+            fileSize: buffer.length,
+            filePath,
+            isActive: true,
+            isPrivate: true,
+            expirationDate,
+            notes: 'Actualizado por el empleado desde la consulta pública.',
+          }),
+        );
+      });
+    } catch (error) {
+      this.storageService.deleteFile(filePath);
+      throw error;
+    }
+
+    return {
+      message: 'Antecedentes penales actualizados correctamente.',
+      expirationDate: dto.expirationDate.slice(0, 10),
+    };
+  }
+
+  private validatePublicDni(dni: string) {
+    if (!/^\d{13}$/.test(dni)) {
+      throw new BadRequestException('La identidad debe contener 13 dígitos.');
+    }
+  }
+
+  private getCriminalRecordStatus(expirationDate: Date | null) {
+    if (!expirationDate) {
+      return {
+        status: 'missing',
+        label: 'Documento pendiente',
+        daysRemaining: null,
+        canUpdate: true,
+      };
+    }
+    const today = new Date();
+    const todayUtc = Date.UTC(
+      today.getUTCFullYear(),
+      today.getUTCMonth(),
+      today.getUTCDate(),
+    );
+    const expiration = new Date(expirationDate);
+    const expirationUtc = Date.UTC(
+      expiration.getUTCFullYear(),
+      expiration.getUTCMonth(),
+      expiration.getUTCDate(),
+    );
+    const daysRemaining = Math.ceil((expirationUtc - todayUtc) / 86_400_000);
+    if (daysRemaining < 0)
+      return {
+        status: 'expired',
+        label: 'Documento vencido',
+        daysRemaining,
+        canUpdate: true,
+      };
+    if (daysRemaining <= 30)
+      return {
+        status: 'expiring',
+        label: 'Próximo a vencer',
+        daysRemaining,
+        canUpdate: true,
+      };
+    return {
+      status: 'current',
+      label: 'Documento vigente',
+      daysRemaining,
+      canUpdate: false,
+    };
+  }
 
   async findAll(params: FindAllEmployeesParams) {
     const page = Math.max(Number(params.page) || 1, 1);
@@ -431,10 +629,7 @@ export class EmployeesService {
         activeJobRecord.functional_position = dto.functional_position || null;
       }
 
-      if (
-        dto.organizational_type !== undefined ||
-        dto.area_id !== undefined
-      ) {
+      if (dto.organizational_type !== undefined || dto.area_id !== undefined) {
         if (!dto.organizational_type || !dto.area_id) {
           throw new BadRequestException([
             'Debes seleccionar el tipo y la unidad organizacional.',
@@ -580,17 +775,16 @@ export class EmployeesService {
           ]);
         }
 
-      if (intakeRequest.status !== 'REVIEWED') {
+        if (intakeRequest.status !== 'REVIEWED') {
           throw new BadRequestException([
             'La solicitud temporal debe estar revisada antes de convertirla en empleado.',
           ]);
         }
       }
 
-      const intakeAcademicHistory =
-        dto.academicHistory?.length
-          ? dto.academicHistory
-          : intakeRequest?.academic_history || [];
+      const intakeAcademicHistory = dto.academicHistory?.length
+        ? dto.academicHistory
+        : intakeRequest?.academic_history || [];
       const hasManualGeneralDocuments = dto.documents?.some(
         (doc) => doc.documentTypeKey === 'general',
       );
@@ -615,13 +809,15 @@ export class EmployeesService {
       //!creamos el insert del empleado y lo guardamos en una variable para usar su id;
       const employee = qr.manager.create(Employee, {
         dni: dto.dni,
-        rtn: this.normalizeOptionalString(dto.rtn) || intakeRequest?.rtn || null,
+        rtn:
+          this.normalizeOptionalString(dto.rtn) || intakeRequest?.rtn || null,
         firstName: dto.firstName,
         middleName: dto.middleName,
         lastName: dto.lastName,
         secondLastName: dto.secondLastName,
         gender: dto.gender,
-        marital_status: dto.marital_status || intakeRequest?.marital_status || null,
+        marital_status:
+          dto.marital_status || intakeRequest?.marital_status || null,
         type_blood: dto.type_blood || intakeRequest?.blood_type || null,
         birth_date: parseDateOnly(dto.birth_date),
         birth_place: dto.birth_place || intakeRequest?.birth_place || null,
@@ -641,13 +837,17 @@ export class EmployeesService {
       //! ///////////////////////////////////////////////////////////////////////////////////////////
       //!creamos el insert del contacto de emergencia usando el id del empleado que acabamos de crear
       const resolvedEmergencyContactName =
-        dto.emergency_contact_name || intakeRequest?.emergency_contact_name || null;
+        dto.emergency_contact_name ||
+        intakeRequest?.emergency_contact_name ||
+        null;
       const resolvedEmergencyContactRelationship =
         dto.emergency_contact_relationship ||
         intakeRequest?.emergency_contact_relationship ||
         null;
       const resolvedEmergencyContactPhone =
-        dto.emergency_contact_phone || intakeRequest?.emergency_contact_phone || null;
+        dto.emergency_contact_phone ||
+        intakeRequest?.emergency_contact_phone ||
+        null;
 
       if (
         resolvedEmergencyContactName &&
@@ -659,7 +859,8 @@ export class EmployeesService {
           {
             employeeId: savedEmployee.id,
             emergency_contact_name: resolvedEmergencyContactName,
-            emergency_contact_relationship: resolvedEmergencyContactRelationship,
+            emergency_contact_relationship:
+              resolvedEmergencyContactRelationship,
             emergency_contact_phone: resolvedEmergencyContactPhone,
           },
         );

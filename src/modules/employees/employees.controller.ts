@@ -15,6 +15,7 @@ import { Public } from 'src/common/decorators/public.decorator';
 import { CreateEmployeeDto } from './dtos/create-employees.dto';
 import { UpdateEmployeeEditableDto } from './dtos/update-employee-editable.dto';
 import type { Response } from 'express';
+import { PublicCriminalRecordUpdateDto } from './dtos/public-criminal-record.dto';
 
 @Controller('employees')
 export class EmployeesController {
@@ -84,6 +85,21 @@ export class EmployeesController {
     @Body() dto: UpdateEmployeeEditableDto,
   ) {
     return this.employeesService.updateEditableData(id, dto);
+  }
+
+  @Public()
+  @Get('public/criminal-record/:dni')
+  getPublicCriminalRecordStatus(@Param('dni') dni: string) {
+    return this.employeesService.getPublicCriminalRecordStatus(dni);
+  }
+
+  @Public()
+  @Post('public/criminal-record/:dni')
+  updatePublicCriminalRecord(
+    @Param('dni') dni: string,
+    @Body() dto: PublicCriminalRecordUpdateDto,
+  ) {
+    return this.employeesService.updatePublicCriminalRecord(dni, dto);
   }
 
   @Public()
