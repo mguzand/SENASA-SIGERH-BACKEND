@@ -78,6 +78,8 @@ export class DashboardService {
           departmentName: activeRecord?.area?.name || 'Sin departamento',
           documentType: document.documentType,
           originalName: document.originalName,
+          extension: document.extension,
+          mimeType: document.mimeType,
           expirationDate: document.expirationDate,
           daysExpired: Math.abs(this.diffInDays(today, new Date(document.expirationDate as Date))),
         };
