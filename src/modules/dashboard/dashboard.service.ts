@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Employee } from '../employees/entities/employee.entity';
@@ -45,8 +45,11 @@ export class DashboardService {
       )
       .leftJoinAndSelect('jobRecord.area', 'area')
       .where('document.isActive = :isActive', { isActive: true })
-      .andWhere('document.expirationDate IS NOT NULL')
-      .andWhere('document.expirationDate < :today', { today: this.toDateOnly(today) });
+      .andWhere('document.documentType = :documentType', { documentType: 'criminal_record' })
+      .andWhere('(document.expirationDate IS NULL OR document.expirationDate < :today)', {
+        today: this.toDateOnly(today),
+      })
+      .addSelect('CASE WHEN document.expirationDate IS NULL THEN 0 ELSE 1 END', 'expiration_priority');
 
     if (params.search?.trim()) {
       query.andWhere(
@@ -59,7 +62,8 @@ export class DashboardService {
     }
 
     const [documents, total] = await query
-      .orderBy('document.expirationDate', 'ASC')
+      .orderBy('expiration_priority', 'ASC')
+      .addOrderBy('document.expirationDate', 'ASC')
       .skip((page - 1) * limit)
       .take(limit)
       .getManyAndCount();
@@ -81,11 +85,36 @@ export class DashboardService {
           extension: document.extension,
           mimeType: document.mimeType,
           expirationDate: document.expirationDate,
-          daysExpired: Math.abs(this.diffInDays(today, new Date(document.expirationDate as Date))),
+          missingExpirationDate: !document.expirationDate,
+          daysExpired: document.expirationDate
+            ? Math.abs(this.diffInDays(today, new Date(document.expirationDate)))
+            : null,
         };
       }),
       meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
     };
+  }
+
+  async updateCriminalRecordExpirationDate(documentId: string, expirationDateValue: string) {
+    const document = await this.employeeDocumentRepository.findOne({
+      where: { id: documentId, documentType: 'criminal_record', isActive: true },
+    });
+    if (!document) {
+      throw new NotFoundException('No se encontró el antecedente penal activo.');
+    }
+
+    const dateOnly = String(expirationDateValue || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateOnly)) {
+      throw new BadRequestException('La fecha de vencimiento es obligatoria.');
+    }
+    const expirationDate = new Date(`${dateOnly}T00:00:00.000Z`);
+    if (Number.isNaN(expirationDate.getTime())) {
+      throw new BadRequestException('La fecha de vencimiento no es válida.');
+    }
+
+    document.expirationDate = expirationDate;
+    await this.employeeDocumentRepository.save(document);
+    return { message: 'Fecha de vencimiento actualizada correctamente.', expirationDate: dateOnly };
   }
 
   async getOverview() {
