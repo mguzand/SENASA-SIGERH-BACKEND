@@ -46,6 +46,7 @@ export class DashboardService {
       .leftJoinAndSelect('jobRecord.area', 'area')
       .where('document.isActive = :isActive', { isActive: true })
       .andWhere('document.documentType = :documentType', { documentType: 'criminal_record' })
+      .andWhere('employee.status = :employeeStatus', { employeeStatus: 'ACTIVE' })
       .andWhere('(document.expirationDate IS NULL OR document.expirationDate < :today)', {
         today: this.toDateOnly(today),
       })
