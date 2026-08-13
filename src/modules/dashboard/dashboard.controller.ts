@@ -16,8 +16,18 @@ export class DashboardController {
     @Query('search') search?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Query('view') view?: string,
+    @Query('updatedFrom') updatedFrom?: string,
+    @Query('updatedTo') updatedTo?: string,
   ) {
-    return this.dashboardService.getExpiredDocuments({ search, page, limit });
+    return this.dashboardService.getExpiredDocuments({
+      search,
+      page,
+      limit,
+      view,
+      updatedFrom,
+      updatedTo,
+    });
   }
 
   @Patch('expired-documents/:documentId/expiration-date')

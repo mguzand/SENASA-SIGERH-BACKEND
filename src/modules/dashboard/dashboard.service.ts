@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Employee } from '../employees/entities/employee.entity';
@@ -8,7 +12,10 @@ import { VacationRequest } from '../vacation-request/entities/vacation-request.e
 import { EmployeeExitPermit } from '../employee-exit-permits/entities/employee-exit-permit.entity';
 import { EmployeeIntakeRequest } from '../employee-intake/entities/employee-intake.entity';
 import { EmployeeJobRecord } from '../employee-job-record/entities/employee-job-record.entity';
-import { VacationPeriodStatus, VacationRequestStatus } from 'src/common/enums/vacation.enums';
+import {
+  VacationPeriodStatus,
+  VacationRequestStatus,
+} from 'src/common/enums/vacation.enums';
 import { ExitPermitStatus } from '../employee-exit-permits/enums/exit-permit-status.enum';
 
 @Injectable()
@@ -30,7 +37,14 @@ export class DashboardService {
     private readonly employeeJobRecordRepository: Repository<EmployeeJobRecord>,
   ) {}
 
-  async getExpiredDocuments(params: { search?: string; page?: string; limit?: string }) {
+  async getExpiredDocuments(params: {
+    search?: string;
+    page?: string;
+    limit?: string;
+    view?: string;
+    updatedFrom?: string;
+    updatedTo?: string;
+  }) {
     const page = Math.max(Number(params.page) || 1, 1);
     const limit = Math.min(Math.max(Number(params.limit) || 10, 1), 50);
     const today = new Date();
@@ -45,12 +59,47 @@ export class DashboardService {
       )
       .leftJoinAndSelect('jobRecord.area', 'area')
       .where('document.isActive = :isActive', { isActive: true })
-      .andWhere('document.documentType = :documentType', { documentType: 'criminal_record' })
-      .andWhere('employee.status = :employeeStatus', { employeeStatus: 'ACTIVE' })
-      .andWhere('(document.expirationDate IS NULL OR document.expirationDate < :today)', {
-        today: this.toDateOnly(today),
+      .andWhere('document.documentType = :documentType', {
+        documentType: 'criminal_record',
       })
-      .addSelect('CASE WHEN document.expirationDate IS NULL THEN 0 ELSE 1 END', 'expiration_priority');
+      .andWhere('employee.status = :employeeStatus', {
+        employeeStatus: 'ACTIVE',
+      });
+
+    const updatedView = params.view === 'updated';
+    if (updatedView) {
+      query
+        .andWhere('document.updated_at IS NOT NULL')
+        .andWhere('document.expirationDate IS NOT NULL')
+        .andWhere('document.expirationDate >= :today', {
+          today: this.toDateOnly(today),
+        });
+      if (
+        params.updatedFrom &&
+        /^\d{4}-\d{2}-\d{2}$/.test(params.updatedFrom)
+      ) {
+        query.andWhere('DATE(document.updated_at) >= :updatedFrom', {
+          updatedFrom: params.updatedFrom,
+        });
+      }
+      if (params.updatedTo && /^\d{4}-\d{2}-\d{2}$/.test(params.updatedTo)) {
+        query.andWhere('DATE(document.updated_at) <= :updatedTo', {
+          updatedTo: params.updatedTo,
+        });
+      }
+    } else {
+      query
+        .andWhere(
+          '(document.expirationDate IS NULL OR document.expirationDate < :today)',
+          {
+            today: this.toDateOnly(today),
+          },
+        )
+        .addSelect(
+          'CASE WHEN document.expirationDate IS NULL THEN 0 ELSE 1 END',
+          'expiration_priority',
+        );
+    }
 
     if (params.search?.trim()) {
       query.andWhere(
@@ -62,9 +111,15 @@ export class DashboardService {
       );
     }
 
+    if (updatedView) {
+      query.orderBy('document.updated_at', 'DESC');
+    } else {
+      query
+        .orderBy('expiration_priority', 'ASC')
+        .addOrderBy('document.expirationDate', 'ASC');
+    }
+
     const [documents, total] = await query
-      .orderBy('expiration_priority', 'ASC')
-      .addOrderBy('document.expirationDate', 'ASC')
       .skip((page - 1) * limit)
       .take(limit)
       .getManyAndCount();
@@ -87,8 +142,11 @@ export class DashboardService {
           mimeType: document.mimeType,
           expirationDate: document.expirationDate,
           missingExpirationDate: !document.expirationDate,
+          updatedAt: document.updated_at,
           daysExpired: document.expirationDate
-            ? Math.abs(this.diffInDays(today, new Date(document.expirationDate)))
+            ? Math.abs(
+                this.diffInDays(today, new Date(document.expirationDate)),
+              )
             : null,
         };
       }),
@@ -96,12 +154,21 @@ export class DashboardService {
     };
   }
 
-  async updateCriminalRecordExpirationDate(documentId: string, expirationDateValue: string) {
+  async updateCriminalRecordExpirationDate(
+    documentId: string,
+    expirationDateValue: string,
+  ) {
     const document = await this.employeeDocumentRepository.findOne({
-      where: { id: documentId, documentType: 'criminal_record', isActive: true },
+      where: {
+        id: documentId,
+        documentType: 'criminal_record',
+        isActive: true,
+      },
     });
     if (!document) {
-      throw new NotFoundException('No se encontró el antecedente penal activo.');
+      throw new NotFoundException(
+        'No se encontró el antecedente penal activo.',
+      );
     }
 
     const dateOnly = String(expirationDateValue || '').slice(0, 10);
@@ -115,7 +182,10 @@ export class DashboardService {
 
     document.expirationDate = expirationDate;
     await this.employeeDocumentRepository.save(document);
-    return { message: 'Fecha de vencimiento actualizada correctamente.', expirationDate: dateOnly };
+    return {
+      message: 'Fecha de vencimiento actualizada correctamente.',
+      expirationDate: dateOnly,
+    };
   }
 
   async getOverview() {
@@ -223,7 +293,9 @@ export class DashboardService {
         .leftJoinAndSelect('period.employee', 'employee')
         .leftJoinAndSelect('period.employeeJobRecord', 'jobRecord')
         .leftJoinAndSelect('jobRecord.area', 'area')
-        .where('period.status = :status', { status: VacationPeriodStatus.AVAILABLE })
+        .where('period.status = :status', {
+          status: VacationPeriodStatus.AVAILABLE,
+        })
         .andWhere('period.availableDays > 0')
         .andWhere('period.endDate >= :todayStr', { todayStr })
         .andWhere('period.endDate <= :plus45', {
@@ -261,7 +333,9 @@ export class DashboardService {
     ]);
 
     const birthdayMonthSet = birthdaysMonth.filter((employee) => {
-      const birthDate = employee.birth_date ? new Date(employee.birth_date) : null;
+      const birthDate = employee.birth_date
+        ? new Date(employee.birth_date)
+        : null;
       return birthDate?.getMonth() === today.getMonth();
     });
 
@@ -285,8 +359,12 @@ export class DashboardService {
         vacationPeriodsExpiring: vacationPeriodsExpiring.length,
       },
       birthdays: {
-        today: birthdaysToday.map((employee) => this.mapEmployeeBirthday(employee)),
-        month: birthdayMonthSet.map((employee) => this.mapEmployeeBirthday(employee)),
+        today: birthdaysToday.map((employee) =>
+          this.mapEmployeeBirthday(employee),
+        ),
+        month: birthdayMonthSet.map((employee) =>
+          this.mapEmployeeBirthday(employee),
+        ),
       },
       alerts: {
         documentsExpiring: documentsExpiring.map((document) => ({
@@ -295,19 +373,24 @@ export class DashboardService {
           employeeName: this.getEmployeeFullName(document.employee),
           employeeCode: this.getEmployeeCode(document.employee),
           departmentName:
-            document.employee?.jobRecords?.find((record) => String(record.status).toLowerCase() === 'active')?.area?.name ||
-            'Sin departamento',
+            document.employee?.jobRecords?.find(
+              (record) => String(record.status).toLowerCase() === 'active',
+            )?.area?.name || 'Sin departamento',
           documentType: document.documentType,
           expirationDate: document.expirationDate,
           originalName: document.originalName,
-          daysRemaining: this.diffInDays(today, new Date(document.expirationDate as Date)),
+          daysRemaining: this.diffInDays(
+            today,
+            new Date(document.expirationDate as Date),
+          ),
         })),
         vacationPeriodsExpiring: vacationPeriodsExpiring.map((period) => ({
           id: period.id,
           employeeId: period.employeeId,
           employeeName: this.getEmployeeFullName(period.employee),
           employeeCode: this.getEmployeeCode(period.employee),
-          departmentName: period.employeeJobRecord?.area?.name || 'Sin departamento',
+          departmentName:
+            period.employeeJobRecord?.area?.name || 'Sin departamento',
           periodNumber: period.periodNumber,
           endDate: period.endDate,
           availableDays: Number(period.availableDays || 0),
@@ -320,8 +403,9 @@ export class DashboardService {
           employeeName: this.getEmployeeFullName(employee),
           employeeCode: this.getEmployeeCode(employee),
           departmentName:
-            employee.jobRecords?.find((record) => String(record.status).toLowerCase() === 'active')?.area?.name ||
-            'Sin departamento',
+            employee.jobRecords?.find(
+              (record) => String(record.status).toLowerCase() === 'active',
+            )?.area?.name || 'Sin departamento',
           entryDate: employee.entryDate,
         })),
         employeesByStatus: employeesByStatusRaw.map((item) => ({
