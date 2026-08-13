@@ -30,6 +30,62 @@ export class DashboardService {
     private readonly employeeJobRecordRepository: Repository<EmployeeJobRecord>,
   ) {}
 
+  async getExpiredDocuments(params: { search?: string; page?: string; limit?: string }) {
+    const page = Math.max(Number(params.page) || 1, 1);
+    const limit = Math.min(Math.max(Number(params.limit) || 10, 1), 50);
+    const today = new Date();
+    const query = this.employeeDocumentRepository
+      .createQueryBuilder('document')
+      .leftJoinAndSelect('document.employee', 'employee')
+      .leftJoinAndSelect(
+        'employee.jobRecords',
+        'jobRecord',
+        'LOWER(jobRecord.status) = :jobStatus',
+        { jobStatus: 'active' },
+      )
+      .leftJoinAndSelect('jobRecord.area', 'area')
+      .where('document.isActive = :isActive', { isActive: true })
+      .andWhere('document.expirationDate IS NOT NULL')
+      .andWhere('document.expirationDate < :today', { today: this.toDateOnly(today) });
+
+    if (params.search?.trim()) {
+      query.andWhere(
+        `(LOWER(CONCAT(employee.firstName, ' ', COALESCE(employee.middleName, ''), ' ', employee.lastName, ' ', COALESCE(employee.secondLastName, ''))) LIKE :search
+          OR LOWER(COALESCE(employee.dni, '')) LIKE :search
+          OR LOWER(COALESCE(document.documentType, '')) LIKE :search
+          OR LOWER(COALESCE(document.originalName, '')) LIKE :search)`,
+        { search: `%${params.search.trim().toLowerCase()}%` },
+      );
+    }
+
+    const [documents, total] = await query
+      .orderBy('document.expirationDate', 'ASC')
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+
+    return {
+      data: documents.map((document) => {
+        const activeRecord = document.employee?.jobRecords?.find(
+          (record) => String(record.status).toLowerCase() === 'active',
+        );
+        return {
+          id: document.id,
+          employeeId: document.employeeId,
+          employeeName: this.getEmployeeFullName(document.employee),
+          employeeCode: this.getEmployeeCode(document.employee),
+          dni: document.employee?.dni || '',
+          departmentName: activeRecord?.area?.name || 'Sin departamento',
+          documentType: document.documentType,
+          originalName: document.originalName,
+          expirationDate: document.expirationDate,
+          daysExpired: Math.abs(this.diffInDays(today, new Date(document.expirationDate as Date))),
+        };
+      }),
+      meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    };
+  }
+
   async getOverview() {
     const today = new Date();
     const todayStr = this.toDateOnly(today);
