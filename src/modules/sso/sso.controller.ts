@@ -26,6 +26,22 @@ export class SsoController {
   }
 
 
+  @Public()
+  @Post('logout')
+  logout(@Res() res: Response) {
+    res.clearCookie('sso_token', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Sesión SSO cerrada correctamente.',
+    });
+  }
+
+
 
   @Public()
   @Get('login-page')
