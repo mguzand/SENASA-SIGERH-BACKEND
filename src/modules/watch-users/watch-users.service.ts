@@ -87,8 +87,6 @@ export class WatchUsersService {
       classFlag: 0,
       otherInfo: null,
       adminGroupId: 0,
-      accessFrom: null,
-      accessTo: null,
     });
     try {
       await this.repository.save(user);

@@ -92,9 +92,4 @@ export class WatchUser {
   @Column({ name: 'admingroupid', type: 'int', default: 0, nullable: true })
   adminGroupId: number | null;
 
-  @Column({ name: 'accessfrom', type: 'smalldatetime', nullable: true })
-  accessFrom: Date | null;
-
-  @Column({ name: 'accessto', type: 'smalldatetime', nullable: true })
-  accessTo: Date | null;
 }
