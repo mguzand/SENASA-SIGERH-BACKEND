@@ -45,15 +45,20 @@ export class WatchUsersService {
 
   async createFromEmployee(employee: Employee, failIfExists = false) {
     if (!employee.biometric_id) throw new Error('El empleado no tiene ID biométrico.');
-    const existing = await this.repository.findOne({ where: { userId: employee.biometric_id } });
+    const biometricId = String(employee.biometric_id).trim();
+    if (!biometricId) throw new Error('El empleado no tiene un ID biométrico válido.');
+    const existing = await this.repository
+      .createQueryBuilder('watchUser')
+      .where('LTRIM(RTRIM(watchUser.userId)) = :biometricId', { biometricId })
+      .getOne();
     if (existing) {
-      if (failIfExists) throw new Error(`El usuario ${employee.biometric_id} ya existe en el reloj.`);
-      return { created: false, userId: employee.biometric_id };
+      if (failIfExists) throw new Error(`El usuario ${biometricId} ya existe en el reloj.`);
+      return { created: false, userId: biometricId };
     }
     const activeJob = employee.jobRecords?.find((record) => record.isCurrent || String(record.status).toUpperCase() === 'ACTIVE');
     const user = this.repository.create({
-      userId: employee.biometric_id,
-      userCode: employee.biometric_id,
+      userId: biometricId,
+      userCode: biometricId,
       name: this.limit([employee.firstName, employee.middleName, employee.lastName, employee.secondLastName].filter(Boolean).join(' ').toUpperCase(), 50),
       sex: this.normalizeSex(employee.gender),
       password: employee.birth_date ? String(new Date(employee.birth_date).getUTCFullYear()) : null,
@@ -85,7 +90,14 @@ export class WatchUsersService {
       accessFrom: null,
       accessTo: null,
     });
-    await this.repository.save(user);
+    try {
+      await this.repository.save(user);
+    } catch (error) {
+      if (!failIfExists && this.isDuplicateKeyError(error)) {
+        return { created: false, userId: biometricId };
+      }
+      throw error;
+    }
     return { created: true, userId: user.userId };
   }
 
@@ -125,5 +137,13 @@ export class WatchUsersService {
   private limit(value: string | null | undefined, maximumLength: number) {
     const normalized = String(value || '').trim();
     return normalized ? normalized.slice(0, maximumLength) : null;
+  }
+
+  private isDuplicateKeyError(error: unknown) {
+    const candidate = error as { number?: number; code?: string; message?: string; driverError?: { number?: number; code?: string; message?: string } };
+    const number = candidate?.number ?? candidate?.driverError?.number;
+    const code = candidate?.code ?? candidate?.driverError?.code;
+    const message = `${candidate?.message || ''} ${candidate?.driverError?.message || ''}`;
+    return number === 2601 || number === 2627 || code === 'EREQUEST' && /duplicate key|primary key/i.test(message);
   }
 }
