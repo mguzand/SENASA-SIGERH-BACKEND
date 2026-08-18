@@ -40,6 +40,7 @@ import { OrganizationalUnit } from '../department/entities/organizational-unit.e
 import { AreaManager } from '../area-manager/entities/area-manager.entity';
 import { AreaManagerRole } from '../area-manager/interfaces/area-manager-role.enum';
 import { PublicCriminalRecordUpdateDto } from './dtos/public-criminal-record.dto';
+import { WatchUsersService } from '../watch-users/watch-users.service';
 interface FindAllEmployeesParams {
   search?: string;
   departmentId?: string;
@@ -65,7 +66,38 @@ export class EmployeesService {
     private readonly employeeJobRecordService: EmployeeJobRecordService,
     private readonly employeeVacationPeriodService: EmployeeVacationPeriodService,
     private readonly _usersService: UsersService,
+    private readonly watchUsersService: WatchUsersService,
   ) {}
+
+  async initializeBiometricIdSequence() {
+    await this.dataSource.query(`
+      CREATE SEQUENCE IF NOT EXISTS employees_biometric_id_seq START WITH 1 INCREMENT BY 1;
+      DO $$
+      DECLARE
+        maximum_id bigint;
+      BEGIN
+        SELECT MAX(biometric_id::bigint)
+          INTO maximum_id
+          FROM employees
+         WHERE biometric_id ~ '^[0-9]+$';
+
+        IF maximum_id IS NULL THEN
+          PERFORM setval('employees_biometric_id_seq', 1, false);
+        ELSE
+          PERFORM setval('employees_biometric_id_seq', maximum_id, true);
+        END IF;
+      END $$;
+
+      ALTER TABLE employees
+        ALTER COLUMN biometric_id
+        SET DEFAULT nextval('employees_biometric_id_seq')::text;
+
+      UPDATE employees
+         SET biometric_id = nextval('employees_biometric_id_seq')::text
+       WHERE biometric_id IS NULL
+          OR BTRIM(biometric_id) = '';
+    `);
+  }
 
   async getPublicCriminalRecordStatus(dni: string) {
     this.validatePublicDni(dni);
@@ -693,6 +725,7 @@ export class EmployeesService {
     } finally {
       await qr.release();
     }
+
   }
 
   async getProfilePhoto(id: string) {
@@ -807,6 +840,9 @@ export class EmployeesService {
 
       //! ////////////////////////////////////////////////////////////////////////////
       //!creamos el insert del empleado y lo guardamos en una variable para usar su id;
+      const [generatedBiometric] = await qr.manager.query(
+        `SELECT nextval('employees_biometric_id_seq')::text AS biometric_id`,
+      );
       const employee = qr.manager.create(Employee, {
         dni: dto.dni,
         rtn:
@@ -829,7 +865,7 @@ export class EmployeesService {
         email: dto.email || intakeRequest?.email || null,
         phone: dto.phone || intakeRequest?.phone || null,
         position_id: dto.position_id,
-        biometric_id: dto.biometric_id || intakeRequest?.biometric_id || null,
+        biometric_id: generatedBiometric.biometric_id,
       });
 
       savedEmployee = await qr.manager.save(Employee, employee);
@@ -1101,6 +1137,18 @@ export class EmployeesService {
       await qr.release();
     }
 
+    let watchSynchronization: { created: boolean; userId: string } | null = null;
+    let watchSynchronizationWarning: string | null = null;
+    if (savedEmployee) {
+      try {
+        watchSynchronization = await this.watchUsersService.createFromEmployee(savedEmployee);
+      } catch (error) {
+        watchSynchronizationWarning =
+          error instanceof Error ? error.message : 'No se pudo crear el usuario en el reloj.';
+        console.error('Empleado creado, pero no fue posible sincronizarlo con el reloj:', error);
+      }
+    }
+
     for (const file of filesToConvertAfterCommit) {
       try {
         const pdfPath = this.storageService.convertStoredWordToPdf(
@@ -1126,6 +1174,8 @@ export class EmployeesService {
     return {
       message: 'Empleado creado correctamente.',
       employee: savedEmployee,
+      watchSynchronization,
+      watchSynchronizationWarning,
     };
   }
 

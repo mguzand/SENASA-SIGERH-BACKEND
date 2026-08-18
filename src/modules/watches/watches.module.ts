@@ -8,5 +8,6 @@ import { TypeOrmModule } from '@nestjs/typeorm/dist/typeorm.module';
   imports: [TypeOrmModule.forFeature([FingerClient], 'sqlserver')],
   controllers: [WatchesController],
   providers: [WatchesService],
+  exports: [WatchesService],
 })
 export class WatchesModule {}

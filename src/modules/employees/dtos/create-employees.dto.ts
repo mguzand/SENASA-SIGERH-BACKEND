@@ -50,10 +50,6 @@ export class CreateEmployeeDto {
 
   @IsString()
   @IsOptional()
-  biometric_id: string;
-
-  @IsString()
-  @IsOptional()
   marital_status: string;
 
   @IsString()

@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, OnModuleInit } from '@nestjs/common';
 import { EmployeesService } from './employees.service';
 import { EmployeesController } from './employees.controller';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -14,6 +14,7 @@ import { UsersModule } from '../users/users.module';
 import { EmployeeIntakeRequest } from '../employee-intake/entities/employee-intake.entity';
 import { EmployeeJobRecord } from '../employee-job-record/entities/employee-job-record.entity';
 import { EmployeeUnpaidLeave } from './entities/employee-unpaid-leave.entity';
+import { WatchUsersModule } from '../watch-users/watch-users.module';
 
 @Module({
   controllers: [EmployeesController],
@@ -33,7 +34,14 @@ import { EmployeeUnpaidLeave } from './entities/employee-unpaid-leave.entity';
     EmployeeJobRecordModule,
     EmployeeVacationPeriodModule,
     UsersModule,
+    WatchUsersModule,
   ],
   exports: [EmployeesService],
 })
-export class EmployeesModule {}
+export class EmployeesModule implements OnModuleInit {
+  constructor(private readonly employeesService: EmployeesService) {}
+
+  async onModuleInit() {
+    await this.employeesService.initializeBiometricIdSequence();
+  }
+}

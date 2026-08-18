@@ -365,7 +365,6 @@ export class EmployeeIntakeService {
     record.schedule_id = dto.schedule_id;
     record.regional_id = dto.regional_id;
     record.employee_status = dto.employee_status?.trim() || null;
-    record.biometric_id = dto.biometric_id?.trim() || null;
     record.emergency_contact_name = dto.emergency_contact_name?.trim() || null;
     record.emergency_contact_relationship =
       dto.emergency_contact_relationship?.trim() || null;

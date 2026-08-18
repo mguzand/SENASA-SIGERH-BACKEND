@@ -87,11 +87,6 @@ export class ReviewEmployeeIntakeDto {
   @MaxLength(20)
   employee_status: string;
 
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(20)
-  biometric_id: string;
-
   @IsOptional()
   @IsString()
   @MaxLength(150)

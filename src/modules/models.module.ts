@@ -33,6 +33,8 @@ import { EmployeeJobActionsModule } from './employee-job-actions/employee-job-ac
 import { SsoModule } from './sso/sso.module';
 import { EmploymentCertificateRequestsModule } from './employment-certificate-requests/employment-certificate-requests.module';
 import { LeaveRequestsModule } from './leave-requests/leave-requests.module';
+import { AttendanceModule } from './attendance/attendance.module';
+import { WatchUsersModule } from './watch-users/watch-users.module';
 
 @Module({
   imports: [
@@ -70,6 +72,8 @@ import { LeaveRequestsModule } from './leave-requests/leave-requests.module';
     SsoModule,
     EmploymentCertificateRequestsModule,
     LeaveRequestsModule,
+    AttendanceModule,
+    WatchUsersModule,
   ],
   exports: [],
 })
