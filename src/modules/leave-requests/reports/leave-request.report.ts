@@ -16,14 +16,10 @@ const employeeName = (request: LeaveRequest) =>
 
 export const buildLeaveRequestReport = (
   request: LeaveRequest,
-  destination: 'HR' | 'DIRECTOR',
+  _destination: 'HR' | 'DIRECTOR',
 ): TDocumentDefinitions => {
-  const destinationName = destination === 'HR'
-    ? 'JEFATURA DE RECURSOS HUMANOS Y CAPACITACIÓN'
-    : 'DR. RAFAEL ENRIQUE RODRÍGUEZ ALVARADO\nDIRECTOR GENERAL DEL SENASA';
-  const origin = destination === 'HR'
-    ? employeeName(request)
-    : 'DIRECCIÓN DE RECURSOS HUMANOS Y CAPACITACIÓN DEL SENASA';
+  const destinationName = 'DR. RAFAEL ENRIQUE RODRIGUEZ ALVARADO\nDIRECTOR GENERAL DEL SENASA';
+  const origin = 'ING. KEVIN ERNESTO MENDOZA LIRA\nDIRECTOR DE RECURSOS HUMANOS Y CAPACITACION DEL SENASA';
   const paidLabel = request.type === LeaveRequestType.PAID
     ? 'LICENCIA REMUNERADA'
     : 'LICENCIA NO REMUNERADA';
@@ -47,8 +43,8 @@ export const buildLeaveRequestReport = (
       { text: [{ text: 'Vista la solicitud presentada por el colaborador ' }, { text: employeeName(request), bold: true }, { text: `, quien solicita ${paidLabel.toLowerCase()} por ${request.businessDays} día(s) hábil(es), del ${request.startDate} al ${request.endDate}, por el siguiente motivo: ${request.reason}.` }], alignment: 'justify' },
       { text: legalBasis[request.reasonType], alignment: 'justify', margin: [0, 14, 0, 0] },
       { text: [{ text: 'La Dirección de Recursos Humanos y Capacitación, basada en el artículo precedente, opina lo siguiente: ' }, { text: `Que se proceda a otorgar ${paidLabel.toLowerCase()} al colaborador ${employeeName(request)}, por el período solicitado.`, bold: true }], alignment: 'justify', margin: [0, 14, 0, 0] },
-      { image: join(__dirname, '../assets/hr-signature.png'), width: 190, alignment: 'center', margin: [0, 26, 0, 0] },
-      { text: 'DIRECCIÓN DE RECURSOS HUMANOS Y CAPACITACIÓN\nSERVICIO NACIONAL DE SANIDAD E INOCUIDAD AGROALIMENTARIA', bold: true, alignment: 'center', fontSize: 9, margin: [0, -8, 0, 0] },
+      { image: join(__dirname, '../assets/hr-signature.png'), width: 230, alignment: 'center', margin: [0, 22, 0, 0] },
+      { text: 'ING. KEVIN ERNESTO MENDOZA LIRA\nDIRECTOR DE RECURSOS HUMANOS Y CAPACITACION DEL SENASA', bold: true, alignment: 'center', fontSize: 9, margin: [0, -10, 0, 0] },
       { text: 'Cc: Archivo', fontSize: 9, margin: [0, 18, 0, 0] },
     ],
   };
