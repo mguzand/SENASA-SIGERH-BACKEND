@@ -13,4 +13,5 @@ describe('Attendance report rules', () => {
   it('does not evaluate lateness without schedule', () => expect(resolveAttendanceCode({ isWeekend: false, schedule: null, mark: { entry: '08:00:00', exit: '16:00:00' } }).status).toBe('NO_SCHEDULE'));
   it('reports missing entry', () => expect(resolveAttendanceCode({ isWeekend: false, schedule, mark: { entry: null, exit: '16:00:00' } }).status).toBe('MISSING_ENTRY'));
   it('reports missing exit', () => expect(resolveAttendanceCode({ isWeekend: false, schedule, mark: { entry: '08:00:00', exit: null } }).status).toBe('MISSING_EXIT'));
+  it('reports both marks missing', () => expect(resolveAttendanceCode({ isWeekend: false, schedule, mark: { entry: null, exit: null } }).status).toBe('MISSING_BOTH'));
 });

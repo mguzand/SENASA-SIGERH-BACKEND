@@ -57,6 +57,7 @@ export function resolveAttendanceCode(input: {
   }
   const scheduled = { scheduledEntry: input.schedule?.startTime || null, scheduledExit: input.schedule?.endTime || null };
   if (!input.mark) return { code: null, status: input.isWeekend ? 'NON_WORKING_DAY' : 'NO_DATA', description: input.isWeekend ? 'Fin de semana sin novedad' : 'Sin información de asistencia', entry: null, exit: null, ...scheduled, source: null };
+  if (!input.mark.entry && !input.mark.exit) return { code: null, status: 'MISSING_BOTH', description: 'Sin marcación de entrada ni salida', entry: null, exit: null, ...scheduled, source: 'BIOMETRIC' };
   if (!input.mark.entry) return { code: null, status: 'MISSING_ENTRY', description: 'Sin marcación de entrada', entry: null, exit: input.mark.exit, ...scheduled, source: 'BIOMETRIC' };
   if (!input.mark.exit) return { code: null, status: 'MISSING_EXIT', description: 'Sin marcación de salida', entry: input.mark.entry, exit: null, ...scheduled, source: 'BIOMETRIC' };
   if (!input.schedule) return { code: null, status: 'NO_SCHEDULE', description: 'Marcación no evaluable: empleado sin horario', entry: input.mark.entry, exit: input.mark.exit, ...scheduled, source: 'BIOMETRIC' };
