@@ -332,12 +332,13 @@ export class LeaveRequestsService {
     await runner.connect();
     await runner.startTransaction();
     try {
-      const request = await runner.manager.findOne(LeaveRequest, {
-        where: { id },
-        relations: { employee: true },
-        lock: { mode: 'pessimistic_write' },
-      });
+      const request = await runner.manager
+        .createQueryBuilder(LeaveRequest, 'request')
+        .setLock('pessimistic_write')
+        .where('request.id = :id', { id })
+        .getOne();
       if (!request) throw new NotFoundException('Solicitud de licencia no encontrada.');
+      request.employee = await runner.manager.findOneByOrFail(Employee, { id: request.employeeId });
       if (request.stage !== LeaveRequestStage.HR_REVIEW || request.status !== LeaveRequestStatus.PENDING) {
         throw new BadRequestException('La solicitud ya no está pendiente de Recursos Humanos.');
       }
@@ -385,12 +386,13 @@ export class LeaveRequestsService {
     await runner.connect();
     await runner.startTransaction();
     try {
-      const request = await runner.manager.findOne(LeaveRequest, {
-        where: { id },
-        relations: { employee: true },
-        lock: { mode: 'pessimistic_write' },
-      });
+      const request = await runner.manager
+        .createQueryBuilder(LeaveRequest, 'request')
+        .setLock('pessimistic_write')
+        .where('request.id = :id', { id })
+        .getOne();
       if (!request) throw new NotFoundException('Solicitud de licencia no encontrada.');
+      request.employee = await runner.manager.findOneByOrFail(Employee, { id: request.employeeId });
       if (
         request.stage !== LeaveRequestStage.DIRECTOR_REVIEW ||
         request.status !== LeaveRequestStatus.PENDING ||
