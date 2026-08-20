@@ -369,6 +369,39 @@ export class UsersService {
     return await this._userRepo.save(user);
   }
 
+  async getAccountByEmployeeId(employeeId: string) {
+    const user = await this._userRepo.findOne({
+      where: { employeeId },
+      select: ['id', 'employeeId', 'username', 'email', 'isActive', 'mustChangePassword'],
+    });
+    if (!user) {
+      return { exists: false, username: null, email: null, isActive: false, mustChangePassword: false };
+    }
+    return {
+      exists: true,
+      username: user.username,
+      email: user.email,
+      isActive: user.isActive,
+      mustChangePassword: user.mustChangePassword,
+    };
+  }
+
+  async resetPasswordByEmployeeId(
+    employeeId: string,
+    password: string,
+    mustChangePassword = true,
+  ) {
+    const user = await this._userRepo.findOne({ where: { employeeId } });
+    if (!user) throw new BadRequestException(['El empleado no tiene un usuario asociado.']);
+    user.password = hashPassword(password);
+    user.mustChangePassword = mustChangePassword;
+    user.passwordResetOtpHash = null;
+    user.passwordResetOtpExpiresAt = null;
+    user.passwordResetOtpRequestedAt = null;
+    await this._userRepo.save(user);
+    return { message: 'Contraseña actualizada correctamente.', username: user.username, mustChangePassword: user.mustChangePassword };
+  }
+
   async findByUsernameOrEmail(identifier: string) {
     const normalized = String(identifier || '')
       .trim()

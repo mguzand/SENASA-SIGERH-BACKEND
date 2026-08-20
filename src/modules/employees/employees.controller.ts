@@ -16,6 +16,7 @@ import { CreateEmployeeDto } from './dtos/create-employees.dto';
 import { UpdateEmployeeEditableDto } from './dtos/update-employee-editable.dto';
 import type { Response } from 'express';
 import { PublicCriminalRecordUpdateDto } from './dtos/public-criminal-record.dto';
+import { ResetEmployeePasswordDto } from './dtos/reset-employee-password.dto';
 
 @Controller('employees')
 export class EmployeesController {
@@ -85,6 +86,19 @@ export class EmployeesController {
     @Body() dto: UpdateEmployeeEditableDto,
   ) {
     return this.employeesService.updateEditableData(id, dto);
+  }
+
+  @Get(':id/account')
+  getEmployeeAccount(@Param('id') id: string) {
+    return this.employeesService.getEmployeeAccount(id);
+  }
+
+  @Patch(':id/account/password')
+  resetEmployeePassword(
+    @Param('id') id: string,
+    @Body() dto: ResetEmployeePasswordDto,
+  ) {
+    return this.employeesService.resetEmployeePassword(id, dto);
   }
 
   @Public()

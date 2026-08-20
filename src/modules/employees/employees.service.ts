@@ -41,6 +41,7 @@ import { AreaManager } from '../area-manager/entities/area-manager.entity';
 import { AreaManagerRole } from '../area-manager/interfaces/area-manager-role.enum';
 import { PublicCriminalRecordUpdateDto } from './dtos/public-criminal-record.dto';
 import { WatchUsersService } from '../watch-users/watch-users.service';
+import { ResetEmployeePasswordDto } from './dtos/reset-employee-password.dto';
 interface FindAllEmployeesParams {
   search?: string;
   departmentId?: string;
@@ -68,6 +69,18 @@ export class EmployeesService {
     private readonly _usersService: UsersService,
     private readonly watchUsersService: WatchUsersService,
   ) {}
+
+  getEmployeeAccount(employeeId: string) {
+    return this._usersService.getAccountByEmployeeId(employeeId);
+  }
+
+  resetEmployeePassword(employeeId: string, dto: ResetEmployeePasswordDto) {
+    return this._usersService.resetPasswordByEmployeeId(
+      employeeId,
+      dto.password,
+      dto.mustChangePassword !== false,
+    );
+  }
 
   async initializeBiometricIdSequence() {
     await this.dataSource.query(`
