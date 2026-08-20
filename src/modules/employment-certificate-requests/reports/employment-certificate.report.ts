@@ -18,7 +18,7 @@ export async function EmploymentCertificateReport(
 
   return {
     ...defaultPdfConfig,
-    pageMargins: [80, 30, 80, 70],
+    pageMargins: [80, 30, 80, 112],
     pageSize: 'LETTER',
     defaultStyle: {
       font: 'Georgias',
@@ -26,37 +26,63 @@ export async function EmploymentCertificateReport(
       lineHeight: 1.35,
     },
 
-    content: [header(data), ...body, signature(data)],
+    content: [header(data), ...body],
     footer: (currentPage, pageCount) => ({
-      margin: [42, 0, 42, 14],
+      margin: [42, 0, 42, 10],
       columns: [
-        { width: 54, image: qr, fit: [48, 48], margin: [0, -20, 0, 0] },
         {
-          width: '*',
-          margin: [8, -10, 0, 0],
+          width: 145,
           stack: [
+            { image: qr, fit: [46, 46], alignment: 'left' },
             {
               text: 'Documento verificable mediante código QR',
               bold: true,
-              fontSize: 7,
+              fontSize: 6,
             },
             {
               text: `Emitido por SIGERH · ${data.printedAt}`,
-              fontSize: 7,
+              fontSize: 5.5,
               color: '#475569',
             },
             {
               text: `Código: ${data.documentNumber}`,
-              fontSize: 7,
+              fontSize: 5.5,
               color: '#475569',
             },
           ],
         },
         {
-          width: 70,
+          width: '*',
+          alignment: 'center',
+          stack: [
+            {
+              image: join(__dirname, '../../leave-requests/assets/hr-signature.png'),
+              width: 155,
+              alignment: 'center',
+              margin: [0, 0, 0, 0],
+            },
+            {
+              text: data.signerName,
+              bold: true,
+              fontSize: 7.5,
+              alignment: 'center',
+              margin: [0, -9, 0, 0],
+            },
+            { text: data.signerTitle, fontSize: 7, alignment: 'center' },
+            {
+              text: data.delegationMemo,
+              fontSize: 5.5,
+              color: '#475569',
+              alignment: 'center',
+              margin: [0, 1, 0, 0],
+            },
+          ],
+        },
+        {
+          width: 45,
           text: `${currentPage}/${pageCount}`,
           alignment: 'right',
-          fontSize: 7,
+          fontSize: 6,
         },
       ],
     }),
@@ -132,34 +158,6 @@ function header(data: any): Content {
         ],
       },
     ],
-    margin: [0, 0, 0, 28],
-  };
-}
-
-function signature(data: any): Content {
-  return {
-    stack: [
-      {
-        image: join(__dirname, '../../leave-requests/assets/hr-signature.png'),
-        width: 230,
-        alignment: 'center',
-      },
-      {
-        text: data.signerName,
-        alignment: 'center',
-        bold: true,
-        fontSize: 11,
-        margin: [0, -12, 0, 0],
-      },
-      { text: data.signerTitle, alignment: 'center', fontSize: 11 },
-      {
-        text: data.delegationMemo,
-        alignment: 'center',
-        fontSize: 7,
-        color: '#475569',
-        margin: [0, 2, 0, 0],
-      },
-    ],
-    margin: [0, 42, 0, 0],
+    margin: [0, 0, 0, 12],
   };
 }
