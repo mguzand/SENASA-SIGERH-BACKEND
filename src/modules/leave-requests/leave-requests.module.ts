@@ -10,6 +10,7 @@ import { RolUser } from '../rol-user/entities/rol-user.entity';
 import { User } from '../users/entities/user.entity';
 import { LeaveRequest } from './entities/leave-request.entity';
 import { LeaveVacationImpact } from './entities/leave-vacation-impact.entity';
+import { LeaveRequestDocument } from './entities/leave-request-document.entity';
 import { LeaveRequestsController } from './leave-requests.controller';
 import { LeaveRequestsService } from './leave-requests.service';
 
@@ -18,6 +19,7 @@ import { LeaveRequestsService } from './leave-requests.service';
     TypeOrmModule.forFeature([
       LeaveRequest,
       LeaveVacationImpact,
+      LeaveRequestDocument,
       User,
       Holiday,
       Components,

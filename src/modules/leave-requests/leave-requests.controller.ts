@@ -25,6 +25,16 @@ export class LeaveRequestsController {
     return this.service.findHrInbox(this.userId(req), query);
   }
 
+  @Get('manager/inbox')
+  findManagerInbox(@Req() req: AuthenticatedRequest, @Query() query: ListLeaveRequestsDto) {
+    return this.service.findManagerInbox(this.userId(req), query);
+  }
+
+  @Patch(':id/manager-review')
+  reviewByManager(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() dto: ReviewLeaveRequestDto) {
+    return this.service.reviewByManager(this.userId(req), id, dto);
+  }
+
   @Get('director/inbox')
   findDirectorInbox(@Req() req: AuthenticatedRequest, @Query() query: ListLeaveRequestsDto) {
     return this.service.findDirectorInbox(this.userId(req), query);
@@ -62,6 +72,19 @@ export class LeaveRequestsController {
     response.setHeader('Content-Disposition', `inline; filename="licencia-${result.requestNumber}.pdf"`);
     result.pdf.pipe(response);
     result.pdf.end();
+  }
+
+  @Get(':id/documents/:documentId')
+  async document(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Param('documentId') documentId: string,
+    @Res() response: Response,
+  ) {
+    const document = await this.service.getDocument(this.userId(req), id, documentId);
+    response.setHeader('Content-Type', document.mimeType);
+    response.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(document.originalName)}"`);
+    response.sendFile(document.absolutePath);
   }
 
   private userId(request: AuthenticatedRequest) {

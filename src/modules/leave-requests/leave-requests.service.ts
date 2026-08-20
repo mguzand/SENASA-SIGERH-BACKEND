@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Brackets, DataSource, In, Not, Repository } from 'typeorm';
+import { Brackets, DataSource, In, Repository } from 'typeorm';
 import { PrinterService } from '../../common/printer/printer.service';
 import { sendRequestNotification } from '../../common/helpers/send-email.helper';
 import { VacationPeriodStatus } from '../../common/enums/vacation.enums';
@@ -16,6 +16,9 @@ import { EmployeeUnpaidLeave } from '../employees/entities/employee-unpaid-leave
 import { Employee } from '../employees/entities/employee.entity';
 import { Holiday } from '../holiday/entities/holiday.entity';
 import { RegionalManagerService } from '../area-manager/regional-manager.service';
+import { AreaManagerService } from '../area-manager/area-manager.service';
+import { AreaManagerRole } from '../area-manager/interfaces/area-manager-role.enum';
+import { StorageService } from '../../common/services/storage.service';
 import { RolUser } from '../rol-user/entities/rol-user.entity';
 import { User } from '../users/entities/user.entity';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
@@ -23,10 +26,13 @@ import { ListLeaveRequestsDto } from './dto/list-leave-requests.dto';
 import { ReviewLeaveRequestDto } from './dto/review-leave-request.dto';
 import { LeaveRequest } from './entities/leave-request.entity';
 import { LeaveVacationImpact } from './entities/leave-vacation-impact.entity';
+import { LeaveRequestDocument } from './entities/leave-request-document.entity';
 import {
   LeaveRequestStage,
   LeaveRequestStatus,
   LeaveRequestType,
+  LeaveReasonType,
+  LeaveRelationship,
 } from './enums/leave-request.enums';
 import { buildLeaveRequestReport } from './reports/leave-request.report';
 
@@ -44,9 +50,13 @@ export class LeaveRequestsService {
     private readonly componentRepository: Repository<Components>,
     @InjectRepository(RolUser)
     private readonly roleUserRepository: Repository<RolUser>,
+    @InjectRepository(LeaveRequestDocument)
+    private readonly documentRepository: Repository<LeaveRequestDocument>,
     private readonly regionalManagerService: RegionalManagerService,
+    private readonly areaManagerService: AreaManagerService,
     private readonly configService: ConfigService,
     private readonly printerService: PrinterService,
+    private readonly storageService: StorageService,
   ) {}
 
   async initializeModule() {
@@ -117,7 +127,23 @@ export class LeaveRequestsService {
       `SELECT nextval('leave_request_number_seq') AS value`,
     );
     const requestNumber = `SOL-${String(sequence[0].value).padStart(6, '0')}`;
-    const type = businessDays <= 3 ? LeaveRequestType.PAID : LeaveRequestType.UNPAID;
+    const type = dto.reasonType === LeaveReasonType.PERSONAL
+      ? LeaveRequestType.UNPAID
+      : LeaveRequestType.PAID;
+    this.validateLegalRequest(dto, businessDays);
+
+    const regionalManager = await this.regionalManagerService.findActiveByRegional(employee.regional_id);
+    const areaManager = await this.areaManagerService.findActiveManagerByAreaAndRole(
+      activeJob.area_id,
+      AreaManagerRole.BOSS,
+    );
+    if (!areaManager) {
+      throw new BadRequestException('No existe un jefe o delegado activo para el área del empleado.');
+    }
+    const isMainOffice = Boolean(employee.regional?.is_main_office);
+    if (!isMainOffice && !regionalManager) {
+      throw new BadRequestException('No existe un jefe regional activo para la regional del empleado.');
+    }
 
     const saved = await this.requestRepository.save(
       this.requestRepository.create({
@@ -129,9 +155,22 @@ export class LeaveRequestsService {
         endDate,
         businessDays,
         type,
+        reasonType: dto.reasonType,
+        relationship: dto.relationship || null,
+        differentDomicile: Boolean(dto.differentDomicile),
         reason: dto.reason.trim(),
-        stage: LeaveRequestStage.HR_REVIEW,
+        stage: isMainOffice
+          ? LeaveRequestStage.AREA_REVIEW
+          : LeaveRequestStage.REGIONAL_REVIEW,
         status: LeaveRequestStatus.PENDING,
+        regionalManagerEmployeeId: isMainOffice ? null : regionalManager!.employee_id,
+        regionalStatus: LeaveRequestStatus.PENDING,
+        regionalObservation: null,
+        regionalReviewedAt: null,
+        areaManagerEmployeeId: areaManager.employee_id,
+        areaStatus: LeaveRequestStatus.PENDING,
+        areaObservation: null,
+        areaReviewedAt: null,
         hrEmployeeId: null,
         hrStatus: LeaveRequestStatus.PENDING,
         hrObservation: null,
@@ -145,11 +184,28 @@ export class LeaveRequestsService {
       }),
     );
 
+    const documents = dto.documents || [];
+    for (const document of documents) {
+      const extension = this.extensionForMime(document.mimeType);
+      const filePath = this.storageService.saveBase64File(
+        document.base64,
+        `leave-requests/${saved.id}`,
+        `${document.code}-${saved.id}.${extension}`,
+      );
+      await this.documentRepository.save(this.documentRepository.create({
+        leaveRequestId: saved.id,
+        code: document.code,
+        originalName: document.name,
+        mimeType: document.mimeType,
+        filePath,
+      }));
+    }
+
     await sendRequestNotification(
       employee.email,
       `Solicitud ${requestNumber} registrada`,
       this.employeeName(employee),
-      `Su solicitud de licencia ${type === LeaveRequestType.PAID ? 'remunerada' : 'no remunerada'} fue enviada a Recursos Humanos.`,
+      `Su solicitud de licencia ${type === LeaveRequestType.PAID ? 'remunerada' : 'no remunerada'} fue enviada al primer nivel de aprobación.`,
       [`Días laborales: ${businessDays}`, `Período: ${startDate} al ${endDate}`],
     );
 
@@ -168,6 +224,87 @@ export class LeaveRequestsService {
   async findHrInbox(requesterId: string, query: ListLeaveRequestsDto) {
     await this.assertHrAccess(requesterId);
     return this.findInbox(query, 'HR', null);
+  }
+
+  async findManagerInbox(requesterId: string, query: ListLeaveRequestsDto) {
+    const employee = await this.resolveEmployee(requesterId);
+    const page = Math.max(Number(query.page) || 1, 1);
+    const limit = Math.min(Math.max(Number(query.limit) || 8, 1), 50);
+    const builder = this.requestRepository
+      .createQueryBuilder('request')
+      .innerJoinAndSelect('request.employee', 'employee')
+      .innerJoinAndSelect('request.area', 'area')
+      .innerJoinAndSelect('request.regional', 'regional')
+      .leftJoinAndSelect('request.documents', 'documents');
+    if (query.status === 'approved') {
+      builder.where(`(
+        (request.regionalManagerEmployeeId = :employeeId AND request.regionalStatus = :approved)
+        OR (request.areaManagerEmployeeId = :employeeId AND request.areaStatus = :approved)
+      )`, { employeeId: employee.id, approved: LeaveRequestStatus.APPROVED });
+    } else if (query.status === 'rejected') {
+      builder.where(`(
+        (request.regionalManagerEmployeeId = :employeeId AND request.regionalStatus = :rejected)
+        OR (request.areaManagerEmployeeId = :employeeId AND request.areaStatus = :rejected)
+      )`, { employeeId: employee.id, rejected: LeaveRequestStatus.REJECTED });
+    } else if ((query.status || 'pending') === 'pending') {
+      builder.where(`(
+        (request.stage = :regionalStage AND request.regionalManagerEmployeeId = :employeeId)
+        OR (request.stage = :areaStage AND request.areaManagerEmployeeId = :employeeId)
+      )`, {
+        regionalStage: LeaveRequestStage.REGIONAL_REVIEW,
+        areaStage: LeaveRequestStage.AREA_REVIEW,
+        employeeId: employee.id,
+      }).andWhere('request.status = :pending', { pending: LeaveRequestStatus.PENDING });
+    }
+    builder.orderBy('request.createdAt', 'DESC');
+    const [data, total] = await builder.skip((page - 1) * limit).take(limit).getManyAndCount();
+    return { data, meta: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) } };
+  }
+
+  async reviewByManager(requesterId: string, id: string, dto: ReviewLeaveRequestDto) {
+    const reviewer = await this.resolveEmployee(requesterId);
+    this.assertDecision(dto.status);
+    const request = await this.requestRepository.findOne({ where: { id }, relations: { employee: true, regional: true } });
+    if (!request) throw new NotFoundException('Solicitud de licencia no encontrada.');
+    if (request.status !== LeaveRequestStatus.PENDING) throw new BadRequestException('La solicitud ya fue procesada.');
+
+    const isRegionalStep = request.stage === LeaveRequestStage.REGIONAL_REVIEW;
+    const isAreaStep = request.stage === LeaveRequestStage.AREA_REVIEW;
+    const assignedId = isRegionalStep ? request.regionalManagerEmployeeId : request.areaManagerEmployeeId;
+    if ((!isRegionalStep && !isAreaStep) || assignedId !== reviewer.id) {
+      throw new ForbiddenException('No tiene autorización para revisar esta licencia.');
+    }
+
+    const now = new Date();
+    if (isRegionalStep) {
+      request.regionalStatus = dto.status;
+      request.regionalObservation = dto.observation?.trim() || null;
+      request.regionalReviewedAt = now;
+    } else {
+      request.areaStatus = dto.status;
+      request.areaObservation = dto.observation?.trim() || null;
+      request.areaReviewedAt = now;
+    }
+
+    if (dto.status === LeaveRequestStatus.REJECTED) {
+      request.status = LeaveRequestStatus.REJECTED;
+      request.stage = LeaveRequestStage.COMPLETED;
+    } else {
+      request.stage = isRegionalStep
+        ? LeaveRequestStage.AREA_REVIEW
+        : LeaveRequestStage.HR_REVIEW;
+    }
+    await this.requestRepository.save(request);
+    await sendRequestNotification(
+      request.employee.email,
+      `Licencia ${request.requestNumber} ${dto.status === LeaveRequestStatus.APPROVED ? 'aprobada' : 'denegada'}`,
+      this.employeeName(request.employee),
+      dto.status === LeaveRequestStatus.APPROVED
+        ? `La solicitud avanzó al siguiente nivel de aprobación.`
+        : 'La solicitud fue denegada.',
+      dto.observation ? [`Observación: ${dto.observation}`] : [],
+    );
+    return this.getById(id);
   }
 
   async findDirectorInbox(requesterId: string, query: ListLeaveRequestsDto) {
@@ -309,6 +446,22 @@ export class LeaveRequestsService {
     };
   }
 
+  async getDocument(requesterId: string, requestId: string, documentId: string) {
+    const request = await this.getById(requestId);
+    const employee = await this.resolveEmployee(requesterId);
+    const isAssignedManager = request.regionalManagerEmployeeId === employee.id || request.areaManagerEmployeeId === employee.id;
+    const isOwner = request.employeeId === employee.id;
+    const isDirector = request.directorEmployeeId === employee.id;
+    let isHr = false;
+    try { await this.assertHrAccess(requesterId); isHr = true; } catch {}
+    if (!isOwner && !isAssignedManager && !isDirector && !isHr) {
+      throw new ForbiddenException('No tiene permiso para consultar este documento.');
+    }
+    const document = request.documents?.find((item) => item.id === documentId);
+    if (!document) throw new NotFoundException('Documento adjunto no encontrado.');
+    return { ...document, absolutePath: this.storageService.getAbsolutePath(document.filePath) };
+  }
+
   async getById(id: string) {
     const request = await this.requestRepository.findOne({
       where: { id },
@@ -319,6 +472,7 @@ export class LeaveRequestsService {
         hrEmployee: true,
         directorEmployee: true,
         vacationImpacts: true,
+        documents: true,
       },
     });
     if (!request) throw new NotFoundException('Solicitud de licencia no encontrada.');
@@ -339,7 +493,8 @@ export class LeaveRequestsService {
       .createQueryBuilder('request')
       .innerJoinAndSelect('request.employee', 'employee')
       .innerJoinAndSelect('request.area', 'area')
-      .innerJoinAndSelect('request.regional', 'regional');
+      .innerJoinAndSelect('request.regional', 'regional')
+      .leftJoinAndSelect('request.documents', 'documents');
 
     if (directorId) builder.andWhere('request.directorEmployeeId = :directorId', { directorId });
     if (reviewer === 'DIRECTOR') builder.andWhere('request.type = :unpaid', { unpaid: LeaveRequestType.UNPAID });
@@ -427,6 +582,39 @@ export class LeaveRequestsService {
     }
     request.vacationImpactApplied = true;
     request.vacationImpactAppliedAt = new Date();
+  }
+
+  private validateLegalRequest(dto: CreateLeaveRequestDto, businessDays: number) {
+    const requiredCodes: Record<LeaveReasonType, string[]> = {
+      [LeaveReasonType.DEATH]: ['DEATH_CERTIFICATE', 'BIRTH_CERTIFICATE'],
+      [LeaveReasonType.PERSONAL]: [],
+      [LeaveReasonType.IHSS]: dto.relationship === LeaveRelationship.SELF
+        ? ['IHSS_CERTIFICATE']
+        : ['IHSS_CERTIFICATE', 'BIRTH_CERTIFICATE'],
+    };
+    const received = new Set((dto.documents || []).map((item) => item.code));
+    const missing = requiredCodes[dto.reasonType].filter((code) => !received.has(code));
+    if (missing.length) throw new BadRequestException('Debe adjuntar todos los documentos requeridos para este tipo de licencia.');
+    if (dto.reasonType === LeaveReasonType.DEATH) {
+      if (dto.relationship === LeaveRelationship.SELF) {
+        throw new BadRequestException('El parentesco "El empleado" no aplica para una licencia por fallecimiento.');
+      }
+      const maximum = dto.differentDomicile ? 9 : 5;
+      if (businessDays > maximum) throw new BadRequestException(`La licencia por fallecimiento permite hasta ${maximum} días hábiles.`);
+    }
+    for (const document of dto.documents || []) {
+      if (!['application/pdf', 'image/jpeg', 'image/png'].includes(document.mimeType)) {
+        throw new BadRequestException('Los documentos deben ser PDF, JPG o PNG.');
+      }
+      const payload = document.base64.split(',').pop() || '';
+      if (Buffer.byteLength(payload, 'base64') > 10 * 1024 * 1024) {
+        throw new BadRequestException('Cada documento debe pesar 10 MB o menos.');
+      }
+    }
+  }
+
+  private extensionForMime(mimeType: string) {
+    return mimeType === 'application/pdf' ? 'pdf' : mimeType === 'image/png' ? 'png' : 'jpg';
   }
 
   private async countBusinessDays(startDate: string, endDate: string) {

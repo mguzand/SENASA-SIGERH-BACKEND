@@ -15,8 +15,11 @@ import {
   LeaveRequestStage,
   LeaveRequestStatus,
   LeaveRequestType,
+  LeaveReasonType,
+  LeaveRelationship,
 } from '../enums/leave-request.enums';
 import { LeaveVacationImpact } from './leave-vacation-impact.entity';
+import { LeaveRequestDocument } from './leave-request-document.entity';
 
 @Entity('leave_requests')
 export class LeaveRequest {
@@ -59,6 +62,15 @@ export class LeaveRequest {
   @Column({ type: 'enum', enum: LeaveRequestType })
   type: LeaveRequestType;
 
+  @Column({ name: 'reason_type', type: 'enum', enum: LeaveReasonType, default: LeaveReasonType.PERSONAL })
+  reasonType: LeaveReasonType;
+
+  @Column({ type: 'enum', enum: LeaveRelationship, nullable: true })
+  relationship: LeaveRelationship | null;
+
+  @Column({ name: 'different_domicile', default: false })
+  differentDomicile: boolean;
+
   @Column({ type: 'text' })
   reason: string;
 
@@ -67,6 +79,30 @@ export class LeaveRequest {
 
   @Column({ type: 'enum', enum: LeaveRequestStatus })
   status: LeaveRequestStatus;
+
+  @Column({ name: 'regional_manager_employee_id', type: 'uuid', nullable: true })
+  regionalManagerEmployeeId: string | null;
+
+  @Column({ name: 'regional_status', type: 'enum', enum: LeaveRequestStatus, default: LeaveRequestStatus.PENDING })
+  regionalStatus: LeaveRequestStatus;
+
+  @Column({ name: 'regional_observation', type: 'text', nullable: true })
+  regionalObservation: string | null;
+
+  @Column({ name: 'regional_reviewed_at', type: 'timestamp', nullable: true })
+  regionalReviewedAt: Date | null;
+
+  @Column({ name: 'area_manager_employee_id', type: 'uuid', nullable: true })
+  areaManagerEmployeeId: string | null;
+
+  @Column({ name: 'area_status', type: 'enum', enum: LeaveRequestStatus, default: LeaveRequestStatus.PENDING })
+  areaStatus: LeaveRequestStatus;
+
+  @Column({ name: 'area_observation', type: 'text', nullable: true })
+  areaObservation: string | null;
+
+  @Column({ name: 'area_reviewed_at', type: 'timestamp', nullable: true })
+  areaReviewedAt: Date | null;
 
   @Column({ name: 'hr_employee_id', type: 'uuid', nullable: true })
   hrEmployeeId: string | null;
@@ -108,6 +144,9 @@ export class LeaveRequest {
 
   @OneToMany(() => LeaveVacationImpact, (impact) => impact.leaveRequest)
   vacationImpacts: LeaveVacationImpact[];
+
+  @OneToMany(() => LeaveRequestDocument, (document) => document.leaveRequest)
+  documents: LeaveRequestDocument[];
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
