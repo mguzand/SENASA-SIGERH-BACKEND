@@ -1,5 +1,6 @@
 import { Content, TDocumentDefinitions } from 'pdfmake/interfaces';
 import * as QRCode from 'qrcode';
+import { join } from 'path';
 
 import { defaultPdfConfig } from 'src/common/printer/pdf-theme';
 import { EmploymentCertificateType } from '../enums/employment-certificate-type.enum';
@@ -138,13 +139,17 @@ function header(data: any): Content {
 function signature(data: any): Content {
   return {
     stack: [
-      { text: '________________________________', alignment: 'center' },
+      {
+        image: join(__dirname, '../../leave-requests/assets/hr-signature.png'),
+        width: 230,
+        alignment: 'center',
+      },
       {
         text: data.signerName,
         alignment: 'center',
         bold: true,
         fontSize: 11,
-        margin: [0, 4, 0, 0],
+        margin: [0, -12, 0, 0],
       },
       { text: data.signerTitle, alignment: 'center', fontSize: 11 },
       {
@@ -155,6 +160,6 @@ function signature(data: any): Content {
         margin: [0, 2, 0, 0],
       },
     ],
-    margin: [0, 70, 0, 0],
+    margin: [0, 42, 0, 0],
   };
 }

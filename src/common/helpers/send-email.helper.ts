@@ -91,6 +91,7 @@ export const sendRequestNotification = async (
   message: string,
   detailLines: string[] = [],
   actionUrl?: string,
+  attachments: nodemailer.SendMailOptions['attachments'] = [],
 ) => {
   if (!to) return null;
 
@@ -107,6 +108,7 @@ export const sendRequestNotification = async (
       ),
       from: `"EMPLEADOS SENASA" <${process.env.EMAIL_USER}>`,
       to,
+      attachments,
     });
   } catch (error) {
     console.log(error);

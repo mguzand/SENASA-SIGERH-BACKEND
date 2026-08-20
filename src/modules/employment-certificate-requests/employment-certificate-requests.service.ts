@@ -16,6 +16,7 @@ import { PayrollItemType } from '../payroll-import/enum/payroll-item-type.enum';
 import { PrinterService } from 'src/common/printer/printer.service';
 import { EmploymentCertificateReport } from './reports/employment-certificate.report';
 import { numberToLempirasWords } from 'src/common/utils/number-to-spanish-words.util';
+import { sendRequestNotification } from 'src/common/helpers/send-email.helper';
 import { CreateEmploymentCertificateRequestDto } from './dto/create-employment-certificate-request.dto';
 import { ListEmploymentCertificateRequestsDto } from './dto/list-employment-certificate-requests.dto';
 import { UpdateEmploymentCertificateStatusDto } from './dto/update-employment-certificate-status.dto';
@@ -401,7 +402,10 @@ export class EmploymentCertificateRequestsService {
     dto: UpdateEmploymentCertificateStatusDto,
   ) {
     await this.assertHrAccess(requesterId);
-    const request = await this.requestRepository.findOne({ where: { id } });
+    const request = await this.requestRepository.findOne({
+      where: { id },
+      relations: { employee: true },
+    });
     if (!request) throw new NotFoundException('Solicitud de constancia no encontrada.');
 
     this.validateTransition(request.status, dto.status);
@@ -431,7 +435,48 @@ export class EmploymentCertificateRequestsService {
     if (dto.status === EmploymentCertificateStatus.READY) request.readyAt = now;
     if (dto.status === EmploymentCertificateStatus.DELIVERED) request.deliveredAt = now;
 
-    return this.requestRepository.save(request);
+    const saved = await this.requestRepository.save(request);
+
+    if (dto.status === EmploymentCertificateStatus.READY) {
+      const employeeName = [
+        request.employee?.firstName,
+        request.employee?.middleName,
+        request.employee?.lastName,
+        request.employee?.secondLastName,
+      ].filter(Boolean).join(' ') || 'Empleado';
+      const generatedDocument = await this.generatePdf(id, requesterId);
+      const pdfBuffer = await this.pdfStreamToBuffer(generatedDocument.pdf);
+      await sendRequestNotification(
+        request.employee?.email,
+        'Tu constancia laboral está lista',
+        employeeName,
+        'Tu solicitud de constancia fue preparada y ya está lista para ser retirada en Recursos Humanos.',
+        [
+          `Tipo: ${EMPLOYMENT_CERTIFICATE_TYPE_LABELS[request.type]}`,
+          request.documentNumber ? `Documento: ${request.documentNumber}` : '',
+        ].filter(Boolean),
+        undefined,
+        [
+          {
+            filename: `constancia-${generatedDocument.documentNumber}.pdf`,
+            content: pdfBuffer,
+            contentType: 'application/pdf',
+          },
+        ],
+      );
+    }
+
+    return saved;
+  }
+
+  private pdfStreamToBuffer(pdf: NodeJS.ReadableStream & { end: () => void }) {
+    return new Promise<Buffer>((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      pdf.on('data', (chunk: Buffer | Uint8Array) => chunks.push(Buffer.from(chunk)));
+      pdf.on('end', () => resolve(Buffer.concat(chunks)));
+      pdf.on('error', reject);
+      pdf.end();
+    });
   }
 
   private validateTransition(
