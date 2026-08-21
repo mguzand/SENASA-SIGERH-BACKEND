@@ -329,7 +329,7 @@ export class EmployeeExitPermitsService {
       bossStatus: permit.boss_status,
       hrStatus: permit.hr_status,
       hasSupport: Boolean(permit.support_file_path),
-      documentsComplete: permit.permit_type === 'Personal' || Boolean(permit.support_file_path),
+      documentsComplete: this.isPersonalPermit(permit.permit_type) || Boolean(permit.support_file_path),
       canCompleteDocuments: permit.stage !== ExitPermitStage.COMPLETED,
       createdAt: permit.created_at,
     }));
@@ -379,7 +379,7 @@ export class EmployeeExitPermitsService {
       );
     }
 
-    const isPersonal = dto.permit_type === 'Personal';
+    const isPersonal = this.isPersonalPermit(dto.permit_type);
     const endDate = dto.end_date || dto.exit_date;
     if (endDate < dto.exit_date) {
       throw new BadRequestException('La fecha final no puede ser anterior a la fecha de salida');
@@ -643,7 +643,7 @@ export class EmployeeExitPermitsService {
       );
     }
 
-    if (dto.status === ExitPermitStatus.APPROVED && exitPermit.permit_type !== 'Personal' && !exitPermit.support_file_path) {
+    if (dto.status === ExitPermitStatus.APPROVED && !this.isPersonalPermit(exitPermit.permit_type) && !exitPermit.support_file_path) {
       throw new BadRequestException('No puede aprobar el pase hasta que el empleado complete los documentos de respaldo');
     }
 
@@ -789,7 +789,7 @@ export class EmployeeExitPermitsService {
       withoutReturn: permit.without_return,
       personalDuration: permit.personal_duration,
       hasSupport: Boolean(permit.support_file_path),
-      documentsComplete: permit.permit_type === 'Personal' || Boolean(permit.support_file_path),
+      documentsComplete: this.isPersonalPermit(permit.permit_type) || Boolean(permit.support_file_path),
       description: permit.description,
       resolvedAt: reviewedAt,
       typeLabel: permit.permit_type || 'Personal',
@@ -798,6 +798,10 @@ export class EmployeeExitPermitsService {
         permit.return_time,
       ),
     };
+  }
+
+  private isPersonalPermit(permitType?: string | null) {
+    return String(permitType || '').trim().toLocaleLowerCase('es') === 'personal';
   }
 
   private getDurationInMinutes(exitTime: string, returnTime: string | null) {
