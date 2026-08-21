@@ -1,6 +1,6 @@
 import { Type } from 'class-transformer';
 import { IsArray, IsBoolean, IsDateString, IsEnum, IsNotEmpty, IsOptional, IsString, MaxLength, ValidateIf, ValidateNested } from 'class-validator';
-import { LeaveReasonType, LeaveRelationship } from '../enums/leave-request.enums';
+import { LeaveReasonType, LeaveRelationship, LeaveRequestType } from '../enums/leave-request.enums';
 
 export class LeaveDocumentDto {
   @IsString() code: string;
@@ -10,6 +10,9 @@ export class LeaveDocumentDto {
 }
 
 export class CreateLeaveRequestDto {
+  @IsEnum(LeaveRequestType)
+  type: LeaveRequestType;
+
   @IsEnum(LeaveReasonType)
   reasonType: LeaveReasonType;
 

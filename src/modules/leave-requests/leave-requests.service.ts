@@ -127,9 +127,7 @@ export class LeaveRequestsService {
       `SELECT nextval('leave_request_number_seq') AS value`,
     );
     const requestNumber = `SOL-${String(sequence[0].value).padStart(6, '0')}`;
-    const type = dto.reasonType === LeaveReasonType.PERSONAL
-      ? LeaveRequestType.UNPAID
-      : LeaveRequestType.PAID;
+    const type = dto.type;
     this.validateLegalRequest(dto, businessDays);
 
     const regionalManager = await this.regionalManagerService.findActiveByRegional(employee.regional_id);

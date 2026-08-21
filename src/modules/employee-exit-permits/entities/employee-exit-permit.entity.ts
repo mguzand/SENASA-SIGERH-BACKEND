@@ -59,6 +59,9 @@ export class EmployeeExitPermit {
   })
   exit_date: Date;
 
+  @Column({ type: 'date', nullable: true })
+  end_date: Date | null;
+
   @Column({
     type: 'time',
   })
@@ -74,6 +77,15 @@ export class EmployeeExitPermit {
     default: false,
   })
   without_return: boolean;
+
+  @Column({ type: 'varchar', length: 10, nullable: true })
+  personal_duration: 'HALF' | 'FULL' | null;
+
+  @Column({ type: 'text', nullable: true })
+  support_file_path: string | null;
+
+  @Column({ type: 'varchar', length: 80, nullable: true })
+  support_mime_type: string | null;
 
   // =========================
   // JEFE

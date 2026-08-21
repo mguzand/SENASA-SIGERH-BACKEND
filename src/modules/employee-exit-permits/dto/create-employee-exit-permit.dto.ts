@@ -6,6 +6,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  MaxLength,
 } from 'class-validator';
 
 export class CreateEmployeeExitPermitDto {
@@ -36,6 +37,10 @@ export class CreateEmployeeExitPermitDto {
   @IsNotEmpty()
   exit_date: string;
 
+  @IsDateString()
+  @IsOptional()
+  end_date?: string;
+
   @IsString()
   @IsNotEmpty()
   exit_time: string;
@@ -47,4 +52,9 @@ export class CreateEmployeeExitPermitDto {
   @IsBoolean()
   @IsOptional()
   without_return?: boolean;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(8_000_000)
+  base64FileFoto?: string;
 }

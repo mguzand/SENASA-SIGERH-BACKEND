@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Brackets, Repository } from 'typeorm';
+import { Brackets, Not, Repository } from 'typeorm';
 
 import { EmployeeExitPermit } from './entities/employee-exit-permit.entity';
 
@@ -20,6 +20,7 @@ import { ExitPermitStage } from './enums/exit-permit-stage.enum';
 import { ExitPermitStatus } from './enums/exit-permit-status.enum';
 import { Employee } from '../employees/entities/employee.entity';
 import { sendRequestNotification } from '../../common/helpers/send-email.helper';
+import { StorageService } from '../../common/services/storage.service';
 
 @Injectable()
 export class EmployeeExitPermitsService {
@@ -32,6 +33,7 @@ export class EmployeeExitPermitsService {
 
     private readonly areaManagersService: AreaManagerService,
     private readonly approvalRoutingService: ApprovalRoutingService,
+    private readonly storageService: StorageService,
   ) {}
 
   async findHrInbox(params: ListHrExitPermitsDto, currentEmployeeId: string) {
@@ -308,6 +310,31 @@ export class EmployeeExitPermitsService {
     };
   }
 
+  async findMine(currentEmployeeId: string) {
+    const permits = await this.exitPermitRepository.find({
+      where: { employee_id: currentEmployeeId },
+      order: { created_at: 'DESC' },
+    });
+    return permits.map((permit) => ({
+      id: permit.id,
+      permitType: permit.permit_type,
+      exitDate: permit.exit_date,
+      endDate: permit.end_date || permit.exit_date,
+      exitTime: permit.exit_time,
+      returnTime: permit.return_time,
+      withoutReturn: permit.without_return,
+      description: permit.description,
+      stage: permit.stage,
+      status: permit.status,
+      bossStatus: permit.boss_status,
+      hrStatus: permit.hr_status,
+      hasSupport: Boolean(permit.support_file_path),
+      documentsComplete: permit.permit_type === 'Personal' || Boolean(permit.support_file_path),
+      canCompleteDocuments: permit.stage !== ExitPermitStage.COMPLETED,
+      createdAt: permit.created_at,
+    }));
+  }
+
   async findBossDetail(id: string, currentEmployeeId: string) {
     const permit = await this.exitPermitRepository.findOne({
       where: { id },
@@ -352,6 +379,21 @@ export class EmployeeExitPermitsService {
       );
     }
 
+    const isPersonal = dto.permit_type === 'Personal';
+    const endDate = dto.end_date || dto.exit_date;
+    if (endDate < dto.exit_date) {
+      throw new BadRequestException('La fecha final no puede ser anterior a la fecha de salida');
+    }
+    if (isPersonal && endDate !== dto.exit_date) {
+      throw new BadRequestException('Los pases personales solo pueden solicitarse para un día');
+    }
+    const personalDuration = isPersonal
+      ? this.classifyPersonalPermit(dto.exit_time, dto.return_time, Boolean(dto.without_return))
+      : null;
+    if (isPersonal) await this.validatePersonalMonthlyQuota(dto.employee_id, dto.exit_date, personalDuration!);
+
+    const supportMimeType = this.validateSupportImage(dto.base64FileFoto);
+
     const exitPermit = this.exitPermitRepository.create({
       employee_id: dto.employee_id,
       area_id: dto.area_id,
@@ -360,9 +402,13 @@ export class EmployeeExitPermitsService {
       description: dto.description,
       permit_type: dto.permit_type,
       exit_date: dto.exit_date as any,
+      end_date: endDate as any,
       exit_time: dto.exit_time,
       return_time: dto.without_return ? null : dto.return_time,
       without_return: dto.without_return ?? false,
+      personal_duration: personalDuration,
+      support_file_path: null,
+      support_mime_type: null,
 
       stage: ExitPermitStage.BOSS_REVIEW,
       status: ExitPermitStatus.PENDING,
@@ -373,6 +419,16 @@ export class EmployeeExitPermitsService {
     });
 
     const savedPermit = await this.exitPermitRepository.save(exitPermit);
+    if (dto.base64FileFoto) {
+      const extension = supportMimeType === 'image/png' ? 'png' : supportMimeType === 'image/webp' ? 'webp' : 'jpg';
+      savedPermit.support_file_path = this.storageService.saveBase64File(
+        dto.base64FileFoto,
+        `exit-permits/${savedPermit.id}`,
+        `support.${extension}`,
+      );
+      savedPermit.support_mime_type = supportMimeType;
+      await this.exitPermitRepository.save(savedPermit);
+    }
     const requester = await this.employeeRepository.findOneBy({ id: dto.employee_id });
 
     await sendRequestNotification(
@@ -390,6 +446,54 @@ export class EmployeeExitPermitsService {
     );
 
     return savedPermit;
+  }
+
+  private classifyPersonalPermit(exitTime: string, returnTime?: string, withoutReturn = false): 'HALF' | 'FULL' {
+    if (withoutReturn || !returnTime) return 'FULL';
+    const exitMinutes = this.timeToMinutes(exitTime);
+    const returnMinutes = this.timeToMinutes(returnTime);
+    if (returnMinutes <= exitMinutes) throw new BadRequestException('La hora de retorno debe ser mayor a la hora de salida');
+    return exitMinutes >= 9 * 60 && returnMinutes <= 12 * 60 && returnMinutes - exitMinutes <= 3 * 60
+      ? 'HALF'
+      : 'FULL';
+  }
+
+  private async validatePersonalMonthlyQuota(employeeId: string, exitDate: string, requested: 'HALF' | 'FULL') {
+    const monthStart = `${exitDate.slice(0, 7)}-01`;
+    const date = new Date(`${monthStart}T12:00:00`);
+    date.setMonth(date.getMonth() + 1);
+    const nextMonth = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
+    const permits = await this.exitPermitRepository.find({
+      where: {
+        employee_id: employeeId,
+        permit_type: 'Personal',
+        status: Not(ExitPermitStatus.REJECTED),
+      },
+    });
+    const monthly = permits.filter((permit) => {
+      const value = String(permit.exit_date).slice(0, 10);
+      return value >= monthStart && value < nextMonth;
+    });
+    if (requested === 'FULL' && monthly.length) {
+      throw new BadRequestException('Ya utilizó parte del cupo personal de este mes. Solo se permite un pase completo o dos medios días.');
+    }
+    if (requested === 'HALF' && (monthly.some((permit) => permit.personal_duration !== 'HALF') || monthly.filter((permit) => permit.personal_duration === 'HALF').length >= 2)) {
+      throw new BadRequestException('Ya alcanzó el límite mensual de pases personales.');
+    }
+  }
+
+  private validateSupportImage(base64?: string) {
+    if (!base64) return null;
+    const match = base64.match(/^data:(image\/(?:jpeg|jpg|png|webp));base64,(.+)$/);
+    if (!match) throw new BadRequestException('El respaldo debe ser una imagen JPG, PNG o WEBP');
+    if (Buffer.byteLength(match[2], 'base64') > 5 * 1024 * 1024) throw new BadRequestException('La imagen de respaldo debe pesar 5 MB o menos');
+    return match[1] === 'image/jpg' ? 'image/jpeg' : match[1];
+  }
+
+  private timeToMinutes(value: string) {
+    const [hours, minutes] = String(value || '').split(':').map(Number);
+    if (!Number.isFinite(hours) || !Number.isFinite(minutes)) throw new BadRequestException('Horario inválido');
+    return hours * 60 + minutes;
   }
 
   async reviewByBoss(
@@ -471,6 +575,28 @@ export class EmployeeExitPermitsService {
     return savedPermit;
   }
 
+  async getSupport(id: string, currentEmployeeId: string) {
+    const permit = await this.exitPermitRepository.findOneBy({ id });
+    if (!permit?.support_file_path) throw new NotFoundException('Esta solicitud no tiene imagen de respaldo');
+    const canView = permit.employee_id === currentEmployeeId || permit.boss_employee_id === currentEmployeeId || permit.hr_employee_id === currentEmployeeId || permit.stage === ExitPermitStage.HR_REVIEW;
+    if (!canView) throw new ForbiddenException('No tiene permiso para consultar este respaldo');
+    return { mimeType: permit.support_mime_type || 'image/jpeg', absolutePath: this.storageService.getAbsolutePath(permit.support_file_path) };
+  }
+
+  async updateSupport(id: string, base64FileFoto: string, currentEmployeeId: string) {
+    const permit = await this.exitPermitRepository.findOneBy({ id });
+    if (!permit) throw new NotFoundException('Solicitud de salida no encontrada');
+    if (permit.employee_id !== currentEmployeeId) throw new ForbiddenException('Solo el empleado solicitante puede completar los documentos');
+    if (permit.stage === ExitPermitStage.COMPLETED) throw new BadRequestException('No puede modificar documentos de una solicitud finalizada');
+    const mimeType = this.validateSupportImage(base64FileFoto)!;
+    if (permit.support_file_path) this.storageService.deleteFile(permit.support_file_path);
+    const extension = mimeType === 'image/png' ? 'png' : mimeType === 'image/webp' ? 'webp' : 'jpg';
+    permit.support_file_path = this.storageService.saveBase64File(base64FileFoto, `exit-permits/${permit.id}`, `support.${extension}`);
+    permit.support_mime_type = mimeType;
+    await this.exitPermitRepository.save(permit);
+    return { id: permit.id, hasSupport: true, documentsComplete: true };
+  }
+
   private applyBossOwnershipFilter(
     query: any,
     currentEmployeeId: string,
@@ -515,6 +641,10 @@ export class EmployeeExitPermitsService {
       throw new BadRequestException(
         'Esta solicitud no está en etapa de revisión de RRHH',
       );
+    }
+
+    if (dto.status === ExitPermitStatus.APPROVED && exitPermit.permit_type !== 'Personal' && !exitPermit.support_file_path) {
+      throw new BadRequestException('No puede aprobar el pase hasta que el empleado complete los documentos de respaldo');
     }
 
     exitPermit.hr_status = dto.status;
@@ -653,9 +783,13 @@ export class EmployeeExitPermitsService {
       status: reviewer === 'boss' ? permit.boss_status : permit.hr_status,
       stage: permit.stage,
       exitDate: permit.exit_date,
+      endDate: permit.end_date || permit.exit_date,
       exitTime: permit.exit_time,
       returnTime: permit.return_time,
       withoutReturn: permit.without_return,
+      personalDuration: permit.personal_duration,
+      hasSupport: Boolean(permit.support_file_path),
+      documentsComplete: permit.permit_type === 'Personal' || Boolean(permit.support_file_path),
       description: permit.description,
       resolvedAt: reviewedAt,
       typeLabel: permit.permit_type || 'Personal',
