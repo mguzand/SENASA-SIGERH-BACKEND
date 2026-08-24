@@ -21,6 +21,7 @@ import { ExitPermitStatus } from './enums/exit-permit-status.enum';
 import { Employee } from '../employees/entities/employee.entity';
 import { sendRequestNotification } from '../../common/helpers/send-email.helper';
 import { StorageService } from '../../common/services/storage.service';
+import { RegionalManagerService } from '../area-manager/regional-manager.service';
 
 @Injectable()
 export class EmployeeExitPermitsService {
@@ -34,6 +35,7 @@ export class EmployeeExitPermitsService {
     private readonly areaManagersService: AreaManagerService,
     private readonly approvalRoutingService: ApprovalRoutingService,
     private readonly storageService: StorageService,
+    private readonly regionalManagerService: RegionalManagerService,
   ) {}
 
   async findHrInbox(params: ListHrExitPermitsDto, currentEmployeeId: string) {
@@ -58,6 +60,10 @@ export class EmployeeExitPermitsService {
       )
       .where('permit.boss_status = :bossApproved', {
         bossApproved: ExitPermitStatus.APPROVED,
+      })
+      .andWhere('(permit.liaison_review_required = false OR permit.liaison_status = :liaisonApproved OR permit.status <> :liaisonPending)', {
+        liaisonApproved: ExitPermitStatus.APPROVED,
+        liaisonPending: ExitPermitStatus.PENDING,
       });
 
     if (params.search?.trim()) {
@@ -123,6 +129,10 @@ export class EmployeeExitPermitsService {
       .createQueryBuilder('permit')
       .where('permit.boss_status = :bossApproved', {
         bossApproved: ExitPermitStatus.APPROVED,
+      })
+      .andWhere('(permit.liaison_review_required = false OR permit.liaison_status = :liaisonApproved OR permit.status <> :liaisonPending)', {
+        liaisonApproved: ExitPermitStatus.APPROVED,
+        liaisonPending: ExitPermitStatus.PENDING,
       });
 
     const [pending, approved, rejected] = await Promise.all([
@@ -554,6 +564,7 @@ export class EmployeeExitPermitsService {
     if (dto.status === ExitPermitStatus.APPROVED) {
       exitPermit.stage = ExitPermitStage.HR_REVIEW;
       exitPermit.status = ExitPermitStatus.PENDING;
+      await this.prepareLiaisonReview(exitPermit);
     }
 
     if (dto.status === ExitPermitStatus.REJECTED) {
@@ -573,6 +584,85 @@ export class EmployeeExitPermitsService {
     );
 
     return savedPermit;
+  }
+
+  async findLiaisonInbox(currentEmployeeId: string) {
+    const access = await this.regionalManagerService.getHrLiaisonAccess(currentEmployeeId);
+    const regionalIds = access.assignments.filter((item) => item.permissions.exitPermits).map((item) => item.regionalId);
+    if (!regionalIds.length) return [];
+    const permits = await this.exitPermitRepository.find({
+      where: regionalIds.map((regionalId) => ({
+        regional_id: regionalId,
+        stage: ExitPermitStage.HR_REVIEW,
+        status: ExitPermitStatus.PENDING,
+        liaison_review_required: true,
+        liaison_status: 'pending',
+      })),
+      relations: { employee: true, area: true },
+      order: { created_at: 'DESC' },
+    });
+    return permits.map((permit) => ({
+      id: permit.id,
+      requestType: 'exit_permit',
+      employeeName: this.employeeName(permit.employee),
+      areaName: permit.area?.name || 'Sin área',
+      regionalId: permit.regional_id,
+      startDate: permit.exit_date,
+      endDate: permit.end_date || permit.exit_date,
+      reason: permit.description,
+      permitType: permit.permit_type,
+      hasSupport: Boolean(permit.support_file_path),
+      documentsComplete: this.isPersonalPermit(permit.permit_type) || Boolean(permit.support_file_path),
+      canApproveFinally: !access.assignments.find((item) => item.regionalId === permit.regional_id)?.isMainOffice,
+      createdAt: permit.created_at,
+    }));
+  }
+
+  async liaisonReview(id: string, dto: ReviewEmployeeExitPermitDto, currentEmployeeId: string) {
+    const permit = await this.exitPermitRepository.findOne({ where: { id }, relations: { employee: true } });
+    if (!permit || permit.stage !== ExitPermitStage.HR_REVIEW || permit.liaison_status !== 'pending') {
+      throw new BadRequestException('El pase ya no está pendiente del enlace de RR. HH.');
+    }
+    const liaison = await this.assertLiaisonPermission(currentEmployeeId, permit.regional_id!);
+    if (dto.status === ExitPermitStatus.APPROVED && !this.isPersonalPermit(permit.permit_type) && !permit.support_file_path) {
+      throw new BadRequestException('No puede procesar el pase hasta que el empleado complete los documentos.');
+    }
+    permit.liaison_employee_id = currentEmployeeId;
+    permit.liaison_status = dto.status;
+    permit.liaison_observation = dto.observation ?? null;
+    permit.liaison_reviewed_at = new Date();
+    if (dto.status === ExitPermitStatus.REJECTED) {
+      permit.stage = ExitPermitStage.COMPLETED;
+      permit.status = ExitPermitStatus.REJECTED;
+    } else if (!liaison.regional?.is_main_office) {
+      permit.stage = ExitPermitStage.COMPLETED;
+      permit.status = ExitPermitStatus.APPROVED;
+      permit.hr_status = ExitPermitStatus.APPROVED;
+      permit.hr_employee_id = currentEmployeeId;
+      permit.hr_reviewed_at = new Date();
+    }
+    const saved = await this.exitPermitRepository.save(permit);
+    await this.notifyEmployeeOfStatus(permit.employee, 'pase de salida', dto.status,
+      dto.status === ExitPermitStatus.REJECTED
+        ? 'El enlace regional de Recursos Humanos denegó su pase de salida.'
+        : liaison.regional?.is_main_office
+          ? 'El enlace de Recursos Humanos revisó favorablemente su pase. Continúa a aprobación central.'
+          : 'El enlace regional de Recursos Humanos aprobó definitivamente su pase.', dto.observation);
+    return saved;
+  }
+
+  private async prepareLiaisonReview(permit: EmployeeExitPermit) {
+    if (!permit.regional_id) return;
+    const liaisons = await this.regionalManagerService.findActiveHrLiaisonsByPermission(permit.regional_id, 'exit_permits');
+    permit.liaison_review_required = liaisons.length > 0;
+    permit.liaison_status = liaisons.length ? 'pending' : null;
+  }
+
+  private async assertLiaisonPermission(employeeId: string, regionalId: string) {
+    const liaisons = await this.regionalManagerService.findActiveHrLiaisonsByPermission(regionalId, 'exit_permits');
+    const liaison = liaisons.find((item) => item.employee_id === employeeId);
+    if (!liaison) throw new ForbiddenException('No tiene permiso de enlace para revisar este pase.');
+    return liaison;
   }
 
   async getSupport(id: string, currentEmployeeId: string) {

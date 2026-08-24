@@ -1,10 +1,11 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { AreaManagerService } from './area-manager.service';
 import { CreateAreaManagerDto } from './dto/create-area-manager.dto';
 import { ListAreaManagersDto } from './dto/list-area-managers.dto';
 import { CheckAreaManagerAccessDto } from './dto/check-area-manager-access.dto';
 import { RegionalManagerService } from './regional-manager.service';
 import { CreateRegionalManagerDto } from './dto/create-regional-manager.dto';
+import { UpdateHrLiaisonPermissionsDto } from './dto/update-hr-liaison-permissions.dto';
 
 @Controller('area-manager')
 export class AreaManagerController {
@@ -39,5 +40,30 @@ export class AreaManagerController {
   @Post('regional')
   createRegionalManager(@Body() dto: CreateRegionalManagerDto) {
     return this.regionalManagerService.create(dto);
+  }
+
+  @Get('regional/hr-liaisons')
+  findRegionalHrLiaisons() {
+    return this.regionalManagerService.findHrLiaisons();
+  }
+
+  @Post('regional/hr-liaisons')
+  createRegionalHrLiaison(@Body() dto: CreateRegionalManagerDto) {
+    return this.regionalManagerService.createHrLiaison(dto);
+  }
+
+  @Patch('regional/hr-liaisons/:id/deactivate')
+  deactivateRegionalHrLiaison(@Param('id') id: string) {
+    return this.regionalManagerService.deactivateHrLiaison(id);
+  }
+
+  @Patch('regional/hr-liaisons/:id/permissions')
+  updateRegionalHrLiaisonPermissions(@Param('id') id: string, @Body() dto: UpdateHrLiaisonPermissionsDto) {
+    return this.regionalManagerService.updateHrLiaisonPermissions(id, dto);
+  }
+
+  @Get('regional/hr-liaisons/access/:employeeId')
+  getRegionalHrLiaisonAccess(@Param('employeeId') employeeId: string) {
+    return this.regionalManagerService.getHrLiaisonAccess(employeeId);
   }
 }

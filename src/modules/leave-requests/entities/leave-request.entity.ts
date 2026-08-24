@@ -120,6 +120,21 @@ export class LeaveRequest {
   @Column({ name: 'hr_reviewed_at', type: 'timestamp', nullable: true })
   hrReviewedAt: Date | null;
 
+  @Column({ name: 'liaison_review_required', default: false })
+  liaisonReviewRequired: boolean;
+
+  @Column({ name: 'liaison_employee_id', type: 'uuid', nullable: true })
+  liaisonEmployeeId: string | null;
+
+  @Column({ name: 'liaison_status', type: 'varchar', length: 20, nullable: true })
+  liaisonStatus: 'PENDING' | 'APPROVED' | 'REJECTED' | null;
+
+  @Column({ name: 'liaison_observation', type: 'text', nullable: true })
+  liaisonObservation: string | null;
+
+  @Column({ name: 'liaison_reviewed_at', type: 'timestamp', nullable: true })
+  liaisonReviewedAt: Date | null;
+
   @Column({ name: 'director_employee_id', type: 'uuid', nullable: true })
   directorEmployeeId: string | null;
 

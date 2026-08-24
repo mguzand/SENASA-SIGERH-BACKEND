@@ -77,6 +77,16 @@ export class VacationRequestController {
     );
   }
 
+  @Get('liaison/inbox')
+  liaisonInbox(@Req() req: any) {
+    return this.vacationRequestService.findLiaisonInbox(this.getEmployeeId(req));
+  }
+
+  @Patch(':id/liaison-review')
+  liaisonReview(@Param('id') id: string, @Body() dto: ReviewVacationRequestDto, @Req() req: any) {
+    return this.vacationRequestService.liaisonReview(id, dto, this.getEmployeeId(req));
+  }
+
   @Get('boss/inbox')
   bossInbox(@Query() query: ListHrVacationRequestsDto, @Req() req: any) {
     return this.vacationRequestService.findBossInbox(

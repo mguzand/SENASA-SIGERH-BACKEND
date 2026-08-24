@@ -6,6 +6,7 @@ import { Regional } from '../regional/entities/regional.entity';
 import { AreaManager } from './entities/area-manager.entity';
 import { RegionalManager } from './entities/regional-manager.entity';
 import { AreaManagerRole } from './interfaces/area-manager-role.enum';
+import { RegionalManagerRole } from './interfaces/regional-manager-role.enum';
 
 export type ApprovalScope = 'AREA' | 'REGIONAL';
 
@@ -153,7 +154,7 @@ export class ApprovalRoutingService {
 
   private async getRegionalManager(regionalId: string) {
     const manager = await this.regionalManagerRepository.findOne({
-      where: { regional_id: regionalId, is_active: true },
+      where: { regional_id: regionalId, is_active: true, role: RegionalManagerRole.REGIONAL_MANAGER },
       relations: { employee: true },
       order: { created_at: 'DESC' },
     });

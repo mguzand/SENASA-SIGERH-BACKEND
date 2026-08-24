@@ -12,6 +12,7 @@ import {
   serializeDateOnly,
 } from 'src/common/utils/date-only.util';
 import { RegionalManager } from './entities/regional-manager.entity';
+import { RegionalManagerRole } from './interfaces/regional-manager-role.enum';
 
 @Injectable()
 export class AreaManagerService {
@@ -351,6 +352,7 @@ export class AreaManagerService {
         where: {
           employee_id: employeeId,
           is_active: true,
+          role: RegionalManagerRole.REGIONAL_MANAGER,
         },
         relations: { regional: true },
       });

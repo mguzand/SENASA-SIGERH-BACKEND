@@ -33,6 +33,7 @@ import { ListHrVacationRequestsDto } from './dtos/list-hr-vacation-requests.dto'
 import { ReviewVacationRequestDto } from './dtos/review-vacation-request.dto';
 import { ApprovalRoutingService } from '../area-manager/approval-routing.service';
 import { Employee } from '../employees/entities/employee.entity';
+import { RegionalManagerService } from '../area-manager/regional-manager.service';
 
 @Injectable()
 export class VacationRequestService {
@@ -48,6 +49,7 @@ export class VacationRequestService {
     private readonly vacationMovementService: VacationMovementService,
     private readonly areaManagerService: AreaManagerService,
     private readonly approvalRoutingService: ApprovalRoutingService,
+    private readonly regionalManagerService: RegionalManagerService,
   ) {}
 
   async createManual(
@@ -194,6 +196,10 @@ export class VacationRequestService {
       //.where('request.area_id IN (:...areaIds)', { areaIds })
       .andWhere('request.boss_status = :bossApproved', {
         bossApproved: VacationRequestStatus.APPROVED,
+      })
+      .andWhere('(request.liaison_review_required = false OR request.liaison_status = :liaisonApproved OR request.status <> :liaisonPending)', {
+        liaisonApproved: VacationRequestStatus.APPROVED,
+        liaisonPending: VacationRequestStatus.PENDING,
       });
 
     if (params.search?.trim()) {
@@ -264,6 +270,10 @@ export class VacationRequestService {
       //.where('request.area_id IN (:...areaIds)', { areaIds })
       .andWhere('request.boss_status = :bossApproved', {
         bossApproved: VacationRequestStatus.APPROVED,
+      })
+      .andWhere('(request.liaison_review_required = false OR request.liaison_status = :liaisonApproved OR request.status <> :liaisonPending)', {
+        liaisonApproved: VacationRequestStatus.APPROVED,
+        liaisonPending: VacationRequestStatus.PENDING,
       });
 
     const pendingCount = await this.applyHrInboxStatusFilter(
@@ -701,6 +711,7 @@ export class VacationRequestService {
     if (dto.status === VacationRequestStatus.APPROVED) {
       request.stage = VacationRequestStage.HR_REVIEW;
       request.status = VacationRequestStatus.PENDING;
+      await this.prepareLiaisonReview(request);
     }
 
     if (dto.status === VacationRequestStatus.REJECTED) {
@@ -719,6 +730,74 @@ export class VacationRequestService {
     );
 
     return savedRequest;
+  }
+
+  async findLiaisonInbox(currentEmployeeId: string) {
+    const access = await this.regionalManagerService.getHrLiaisonAccess(currentEmployeeId);
+    const regionalIds = access.assignments.filter((item) => item.permissions.vacations).map((item) => item.regionalId);
+    if (!regionalIds.length) return [];
+    const requests = await this.vacationRequestRepository.find({
+      where: regionalIds.map((regionalId) => ({
+        regional_id: regionalId,
+        stage: VacationRequestStage.HR_REVIEW,
+        status: VacationRequestStatus.PENDING,
+        liaison_review_required: true,
+        liaison_status: 'PENDING',
+      })),
+      relations: { employee: true, area: true },
+      order: { created_at: 'DESC' },
+    });
+    return requests.map((request) => ({
+      id: request.id,
+      requestType: 'vacation',
+      employeeName: this.employeeName(request.employee),
+      areaName: request.area?.name || 'Sin área',
+      regionalId: request.regional_id,
+      startDate: request.start_date,
+      endDate: request.end_date,
+      days: Number(request.requested_days),
+      reason: request.employee_comment,
+      canApproveFinally: false,
+      createdAt: request.created_at,
+    }));
+  }
+
+  async liaisonReview(id: string, dto: ReviewVacationRequestDto, currentEmployeeId: string) {
+    const request = await this.vacationRequestRepository.findOne({ where: { id }, relations: { employee: true } });
+    if (!request || request.stage !== VacationRequestStage.HR_REVIEW || request.liaison_status !== 'PENDING') {
+      throw new BadRequestException('La solicitud ya no está pendiente del enlace de RR. HH.');
+    }
+    await this.assertLiaisonPermission(currentEmployeeId, request.regional_id!, 'vacations');
+    request.liaison_employee_id = currentEmployeeId;
+    request.liaison_status = dto.status;
+    request.liaison_observation = dto.observation ?? null;
+    request.liaison_reviewed_at = new Date();
+    if (dto.status === VacationRequestStatus.REJECTED) {
+      request.stage = VacationRequestStage.COMPLETED;
+      request.status = VacationRequestStatus.REJECTED;
+    }
+    const saved = await this.vacationRequestRepository.save(request);
+    await this.notifyVacationStatus(request.employee, dto.status,
+      dto.status === VacationRequestStatus.APPROVED
+        ? 'El enlace regional de Recursos Humanos revisó favorablemente su solicitud. Continúa a RR. HH. central.'
+        : 'El enlace regional de Recursos Humanos denegó su solicitud.', dto.observation);
+    return saved;
+  }
+
+  private async prepareLiaisonReview(request: VacationRequest) {
+    if (!request.regional_id) return;
+    const liaisons = await this.regionalManagerService.findActiveHrLiaisonsByPermission(request.regional_id, 'vacations');
+    request.liaison_review_required = liaisons.length > 0;
+    request.liaison_status = liaisons.length ? 'PENDING' : null;
+  }
+
+  private async assertLiaisonPermission(employeeId: string, regionalId: string, permission: 'vacations' | 'exit_permits' | 'leaves') {
+    const liaisons = await this.regionalManagerService.findActiveHrLiaisonsByPermission(regionalId, permission);
+    if (!liaisons.some((item) => item.employee_id === employeeId)) throw new ForbiddenException('No tiene permiso de enlace para revisar esta solicitud.');
+  }
+
+  private employeeName(employee?: Employee | null) {
+    return [employee?.firstName, employee?.middleName, employee?.lastName, employee?.secondLastName].filter(Boolean).join(' ') || 'Empleado';
   }
 
   private applyBossOwnershipFilter(

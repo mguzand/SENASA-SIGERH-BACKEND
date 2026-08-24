@@ -145,6 +145,21 @@ export class EmployeeExitPermit {
   })
   hr_reviewed_at: Date;
 
+  @Column({ default: false })
+  liaison_review_required: boolean;
+
+  @Column({ type: 'uuid', nullable: true })
+  liaison_employee_id: string | null;
+
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  liaison_status: 'pending' | 'approved' | 'rejected' | null;
+
+  @Column({ type: 'text', nullable: true })
+  liaison_observation: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  liaison_reviewed_at: Date | null;
+
   // =========================
   // RELACIONES
   // =========================

@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, OnModuleInit } from '@nestjs/common';
 import { AreaManagerService } from './area-manager.service';
 import { AreaManagerController } from './area-manager.controller';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -10,6 +10,7 @@ import { RegionalManagerService } from './regional-manager.service';
 import { ApprovalRoutingService } from './approval-routing.service';
 import { Employee } from '../employees/entities/employee.entity';
 import { Regional } from '../regional/entities/regional.entity';
+import { Components } from '../components/entities/components.entity';
 
 @Module({
   controllers: [AreaManagerController],
@@ -25,6 +26,7 @@ import { Regional } from '../regional/entities/regional.entity';
       RegionalManager,
       Employee,
       Regional,
+      Components,
     ]),
     CommonModule,
   ],
@@ -34,4 +36,9 @@ import { Regional } from '../regional/entities/regional.entity';
     ApprovalRoutingService,
   ],
 })
-export class AreaManagerModule {}
+export class AreaManagerModule implements OnModuleInit {
+  constructor(private readonly regionalManagerService: RegionalManagerService) {}
+  async onModuleInit() {
+    await this.regionalManagerService.ensureHrLiaisonPermissionComponent();
+  }
+}

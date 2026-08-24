@@ -30,6 +30,16 @@ export class LeaveRequestsController {
     return this.service.findManagerInbox(this.userId(req), query);
   }
 
+  @Get('liaison/inbox')
+  findLiaisonInbox(@Req() req: AuthenticatedRequest) {
+    return this.service.findLiaisonInbox(this.userId(req));
+  }
+
+  @Patch(':id/liaison-review')
+  reviewByLiaison(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() dto: ReviewLeaveRequestDto) {
+    return this.service.reviewByLiaison(this.userId(req), id, dto);
+  }
+
   @Patch(':id/manager-review')
   reviewByManager(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() dto: ReviewLeaveRequestDto) {
     return this.service.reviewByManager(this.userId(req), id, dto);

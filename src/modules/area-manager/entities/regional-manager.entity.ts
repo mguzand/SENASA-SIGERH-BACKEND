@@ -9,6 +9,7 @@ import {
 } from 'typeorm';
 import { Employee } from 'src/modules/employees/entities/employee.entity';
 import { Regional } from 'src/modules/regional/entities/regional.entity';
+import { RegionalManagerRole } from '../interfaces/regional-manager-role.enum';
 
 @Entity('regional_managers')
 export class RegionalManager {
@@ -23,6 +24,22 @@ export class RegionalManager {
 
   @Column({ default: true })
   is_active: boolean;
+
+  @Column({
+    type: 'varchar',
+    length: 30,
+    default: RegionalManagerRole.REGIONAL_MANAGER,
+  })
+  role: RegionalManagerRole;
+
+  @Column({ default: false })
+  can_review_vacations: boolean;
+
+  @Column({ default: false })
+  can_review_exit_permits: boolean;
+
+  @Column({ default: false })
+  can_review_leaves: boolean;
 
   @ManyToOne(() => Regional)
   @JoinColumn({ name: 'regional_id' })

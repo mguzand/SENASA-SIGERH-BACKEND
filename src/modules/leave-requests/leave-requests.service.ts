@@ -173,6 +173,11 @@ export class LeaveRequestsService {
         hrStatus: LeaveRequestStatus.PENDING,
         hrObservation: null,
         hrReviewedAt: null,
+        liaisonReviewRequired: false,
+        liaisonEmployeeId: null,
+        liaisonStatus: null,
+        liaisonObservation: null,
+        liaisonReviewedAt: null,
         directorEmployeeId: null,
         directorStatus: LeaveRequestStatus.PENDING,
         directorObservation: null,
@@ -291,6 +296,7 @@ export class LeaveRequestsService {
       request.stage = isRegionalStep
         ? LeaveRequestStage.AREA_REVIEW
         : LeaveRequestStage.HR_REVIEW;
+      if (!isRegionalStep) await this.prepareLiaisonReview(request);
     }
     await this.requestRepository.save(request);
     await sendRequestNotification(
@@ -309,6 +315,72 @@ export class LeaveRequestsService {
     const employee = await this.resolveEmployee(requesterId);
     await this.assertMainDirector(employee.id);
     return this.findInbox(query, 'DIRECTOR', employee.id);
+  }
+
+  async findLiaisonInbox(requesterId: string) {
+    const employee = await this.resolveEmployee(requesterId);
+    const access = await this.regionalManagerService.getHrLiaisonAccess(employee.id);
+    const regionalIds = access.assignments.filter((item) => item.permissions.leaves).map((item) => item.regionalId);
+    if (!regionalIds.length) return [];
+    const requests = await this.requestRepository.find({
+      where: regionalIds.map((regionalId) => ({
+        regionalId,
+        stage: LeaveRequestStage.HR_REVIEW,
+        status: LeaveRequestStatus.PENDING,
+        liaisonReviewRequired: true,
+        liaisonStatus: 'PENDING',
+      })),
+      relations: { employee: true, area: true, documents: true },
+      order: { createdAt: 'DESC' },
+    });
+    return requests.map((request) => ({
+      id: request.id,
+      requestType: 'leave',
+      requestNumber: request.requestNumber,
+      employeeName: this.employeeName(request.employee),
+      areaName: request.area?.name || 'Sin área',
+      regionalId: request.regionalId,
+      startDate: request.startDate,
+      endDate: request.endDate,
+      days: request.businessDays,
+      reason: request.reason,
+      leaveType: request.type,
+      reasonType: request.reasonType,
+      documents: request.documents,
+      canApproveFinally: false,
+      createdAt: request.createdAt,
+    }));
+  }
+
+  async reviewByLiaison(requesterId: string, id: string, dto: ReviewLeaveRequestDto) {
+    const reviewer = await this.resolveEmployee(requesterId);
+    this.assertDecision(dto.status);
+    const request = await this.requestRepository.findOne({ where: { id }, relations: { employee: true } });
+    if (!request || request.stage !== LeaveRequestStage.HR_REVIEW || request.liaisonStatus !== 'PENDING') {
+      throw new BadRequestException('La licencia ya no está pendiente del enlace de RR. HH.');
+    }
+    const liaisons = await this.regionalManagerService.findActiveHrLiaisonsByPermission(request.regionalId, 'leaves');
+    if (!liaisons.some((item) => item.employee_id === reviewer.id)) throw new ForbiddenException('No tiene permiso para revisar esta licencia.');
+    request.liaisonEmployeeId = reviewer.id;
+    request.liaisonStatus = dto.status;
+    request.liaisonObservation = dto.observation?.trim() || null;
+    request.liaisonReviewedAt = new Date();
+    if (dto.status === LeaveRequestStatus.REJECTED) {
+      request.stage = LeaveRequestStage.COMPLETED;
+      request.status = LeaveRequestStatus.REJECTED;
+    }
+    await this.requestRepository.save(request);
+    await sendRequestNotification(request.employee.email, `Licencia ${request.requestNumber} revisada`, this.employeeName(request.employee),
+      dto.status === LeaveRequestStatus.APPROVED
+        ? 'El enlace regional de Recursos Humanos emitió revisión favorable. La solicitud continúa a RR. HH. central.'
+        : 'El enlace regional de Recursos Humanos denegó su solicitud.', dto.observation ? [`Observación: ${dto.observation}`] : []);
+    return this.getById(id);
+  }
+
+  private async prepareLiaisonReview(request: LeaveRequest) {
+    const liaisons = await this.regionalManagerService.findActiveHrLiaisonsByPermission(request.regionalId, 'leaves');
+    request.liaisonReviewRequired = liaisons.length > 0;
+    request.liaisonStatus = liaisons.length ? 'PENDING' : null;
   }
 
   async getDirectorAccess(requesterId: string) {
@@ -496,6 +568,13 @@ export class LeaveRequestsService {
       .innerJoinAndSelect('request.regional', 'regional')
       .leftJoinAndSelect('request.documents', 'documents');
 
+    if (reviewer === 'HR') {
+      builder.andWhere('(request.liaisonReviewRequired = false OR request.liaisonStatus = :liaisonApproved OR request.status <> :liaisonPending)', {
+        liaisonApproved: LeaveRequestStatus.APPROVED,
+        liaisonPending: LeaveRequestStatus.PENDING,
+      });
+    }
+
     if (directorId) builder.andWhere('request.directorEmployeeId = :directorId', { directorId });
     if (reviewer === 'DIRECTOR') builder.andWhere('request.type = :unpaid', { unpaid: LeaveRequestType.UNPAID });
     this.applyInboxStatus(builder, query.status || 'pending', reviewer);
@@ -512,6 +591,12 @@ export class LeaveRequestsService {
     builder.orderBy('request.createdAt', 'DESC');
     const [data, total] = await builder.skip((page - 1) * limit).take(limit).getManyAndCount();
     const scope = this.requestRepository.createQueryBuilder('request');
+    if (reviewer === 'HR') {
+      scope.andWhere('(request.liaisonReviewRequired = false OR request.liaisonStatus = :liaisonApproved OR request.status <> :liaisonPending)', {
+        liaisonApproved: LeaveRequestStatus.APPROVED,
+        liaisonPending: LeaveRequestStatus.PENDING,
+      });
+    }
     if (directorId) scope.where('request.directorEmployeeId = :directorId', { directorId });
     const pendingStageForReviewer = reviewer === 'HR'
       ? LeaveRequestStage.HR_REVIEW

@@ -56,6 +56,16 @@ export class EmployeeExitPermitsController {
     return this.employeeExitPermitsService.findMine(this.getEmployeeId(req));
   }
 
+  @Get('liaison/inbox')
+  findLiaisonInbox(@Req() req: any) {
+    return this.employeeExitPermitsService.findLiaisonInbox(this.getEmployeeId(req));
+  }
+
+  @Patch(':id/liaison-review')
+  liaisonReview(@Param('id') id: string, @Body() dto: ReviewEmployeeExitPermitDto, @Req() req: any) {
+    return this.employeeExitPermitsService.liaisonReview(id, dto, this.getEmployeeId(req));
+  }
+
   @Get('boss/:id')
   findBossDetail(@Param('id') id: string, @Req() req: any) {
     return this.employeeExitPermitsService.findBossDetail(
