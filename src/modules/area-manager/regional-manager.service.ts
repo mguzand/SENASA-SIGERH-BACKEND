@@ -213,9 +213,17 @@ export class RegionalManagerService {
   }
 
   async getHrLiaisonAccess(employeeId: string) {
+    const userRepository = this.componentsRepository.manager.getRepository(User);
+    const account = await userRepository
+      .createQueryBuilder('appUser')
+      .where('appUser.employee_id = :identifier', { identifier: employeeId })
+      .orWhere('appUser.id = :identifier', { identifier: employeeId })
+      .getOne();
+    const resolvedEmployeeId = account?.employeeId || employeeId;
+
     const records = await this.regionalManagerRepository.find({
       where: {
-        employee_id: employeeId,
+        employee_id: resolvedEmployeeId,
         role: RegionalManagerRole.HR_LIAISON,
         is_active: true,
       },
@@ -227,8 +235,8 @@ export class RegionalManagerService {
     // an old/duplicated component row was the one assigned to the user.
     const hasModulePermission = await this.regionalManagerRepository
       .createQueryBuilder('liaison')
-      .innerJoin(User, 'appUser', 'appUser.employee_id = :employeeId', {
-        employeeId,
+      .innerJoin(User, 'appUser', 'appUser.employee_id = :resolvedEmployeeId', {
+        resolvedEmployeeId,
       })
       .innerJoin(RolUser, 'permission', 'permission.user_id = appUser.id')
       .innerJoin(
@@ -236,7 +244,9 @@ export class RegionalManagerService {
         'component',
         'component.components_id = permission.component_id',
       )
-      .where('liaison.employee_id = :employeeId', { employeeId })
+      .where('liaison.employee_id = :resolvedEmployeeId', {
+        resolvedEmployeeId,
+      })
       .andWhere('liaison.role = :role', {
         role: RegionalManagerRole.HR_LIAISON,
       })
@@ -251,7 +261,8 @@ export class RegionalManagerService {
       hasAccess: hasModulePermission && records.length > 0,
       hasModulePermission,
       hasActiveAssignment: records.length > 0,
-      employeeId,
+      employeeId: resolvedEmployeeId,
+      requestedIdentifier: employeeId,
       assignments: (hasModulePermission ? records : []).map((record) => ({
         id: record.id,
         regionalId: record.regional_id,
