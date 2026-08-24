@@ -253,7 +253,7 @@ export class RegionalManagerService {
       .andWhere('liaison.is_active = true')
       .andWhere(
         `LOWER(REGEXP_REPLACE(TRIM(component.description), '[^a-zA-Z0-9]+', '', 'g')) = :componentKey`,
-        { componentKey: 'enlacederhh' },
+        { componentKey: 'enlacederrhh' },
       )
       .getExists();
 
