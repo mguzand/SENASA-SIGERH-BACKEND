@@ -213,25 +213,46 @@ export class RegionalManagerService {
   }
 
   async getHrLiaisonAccess(employeeId: string) {
-    const hasModulePermission = await this.regionalManagerRepository.createQueryBuilder('liaison')
-      .innerJoin(User, 'appUser', 'appUser.employeeId = liaison.employee_id')
+    const records = await this.regionalManagerRepository.find({
+      where: {
+        employee_id: employeeId,
+        role: RegionalManagerRole.HR_LIAISON,
+        is_active: true,
+      },
+      relations: { regional: true },
+    });
+
+    // Validate the menu permission independently from the liaison assignment.
+    // Joining both checks in one query made a valid assignment disappear whenever
+    // an old/duplicated component row was the one assigned to the user.
+    const hasModulePermission = await this.regionalManagerRepository
+      .createQueryBuilder('liaison')
+      .innerJoin(User, 'appUser', 'appUser.employee_id = :employeeId', {
+        employeeId,
+      })
       .innerJoin(RolUser, 'permission', 'permission.user_id = appUser.id')
-      .innerJoin('permission.components', 'component')
+      .innerJoin(
+        Components,
+        'component',
+        'component.components_id = permission.component_id',
+      )
       .where('liaison.employee_id = :employeeId', { employeeId })
-      .andWhere('liaison.role = :role', { role: RegionalManagerRole.HR_LIAISON })
+      .andWhere('liaison.role = :role', {
+        role: RegionalManagerRole.HR_LIAISON,
+      })
       .andWhere('liaison.is_active = true')
-      .andWhere('component.description = :component', { component: 'Enlace de RRHH' })
+      .andWhere(
+        `LOWER(REGEXP_REPLACE(TRIM(component.description), '[^a-zA-Z0-9]+', '', 'g')) = :componentKey`,
+        { componentKey: 'enlacederhh' },
+      )
       .getExists();
-    const records = hasModulePermission
-      ? await this.regionalManagerRepository.find({
-          where: { employee_id: employeeId, role: RegionalManagerRole.HR_LIAISON, is_active: true },
-          relations: { regional: true },
-        })
-      : [];
+
     return {
-      hasAccess: records.length > 0,
+      hasAccess: hasModulePermission && records.length > 0,
+      hasModulePermission,
+      hasActiveAssignment: records.length > 0,
       employeeId,
-      assignments: records.map((record) => ({
+      assignments: (hasModulePermission ? records : []).map((record) => ({
         id: record.id,
         regionalId: record.regional_id,
         regionalName: record.regional?.name || 'Regional',
