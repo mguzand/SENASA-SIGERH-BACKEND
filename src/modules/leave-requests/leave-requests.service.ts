@@ -18,6 +18,7 @@ import { Holiday } from '../holiday/entities/holiday.entity';
 import { RegionalManagerService } from '../area-manager/regional-manager.service';
 import { AreaManagerService } from '../area-manager/area-manager.service';
 import { AreaManagerRole } from '../area-manager/interfaces/area-manager-role.enum';
+import { ApprovalRoutingService } from '../area-manager/approval-routing.service';
 import { StorageService } from '../../common/services/storage.service';
 import { RolUser } from '../rol-user/entities/rol-user.entity';
 import { User } from '../users/entities/user.entity';
@@ -54,6 +55,7 @@ export class LeaveRequestsService {
     private readonly documentRepository: Repository<LeaveRequestDocument>,
     private readonly regionalManagerService: RegionalManagerService,
     private readonly areaManagerService: AreaManagerService,
+    private readonly approvalRoutingService: ApprovalRoutingService,
     private readonly configService: ConfigService,
     private readonly printerService: PrinterService,
     private readonly storageService: StorageService,
@@ -131,13 +133,11 @@ export class LeaveRequestsService {
     this.validateLegalRequest(dto, businessDays);
 
     const regionalManager = await this.regionalManagerService.findActiveByRegional(employee.regional_id);
-    const areaManager = await this.areaManagerService.findActiveManagerByAreaAndRole(
+    const areaApproval = await this.approvalRoutingService.resolveAreaOrMainManager(
+      employee.id,
       activeJob.area_id,
-      AreaManagerRole.BOSS,
+      employee.regional_id,
     );
-    if (!areaManager) {
-      throw new BadRequestException('No existe un jefe o delegado activo para el área del empleado.');
-    }
     const isMainOffice = Boolean(employee.regional?.is_main_office);
     if (!isMainOffice && !regionalManager) {
       throw new BadRequestException('No existe un jefe regional activo para la regional del empleado.');
@@ -165,7 +165,7 @@ export class LeaveRequestsService {
         regionalStatus: LeaveRequestStatus.PENDING,
         regionalObservation: null,
         regionalReviewedAt: null,
-        areaManagerEmployeeId: areaManager.employee_id,
+        areaManagerEmployeeId: areaApproval.employeeId,
         areaStatus: LeaveRequestStatus.PENDING,
         areaObservation: null,
         areaReviewedAt: null,

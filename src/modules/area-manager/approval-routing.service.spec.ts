@@ -13,6 +13,7 @@ describe('ApprovalRoutingService', () => {
     is_active: true,
   };
   const areaManagerEmployee = { id: 'area-boss', firstName: 'Jefe' };
+  const parentManagerEmployee = { id: 'parent-boss', firstName: 'Superior' };
   const mainManagerEmployee = { id: 'director', firstName: 'Director' };
   const secondaryManagerEmployee = {
     id: 'regional-boss',
@@ -20,8 +21,8 @@ describe('ApprovalRoutingService', () => {
   };
 
   let employee: any;
-  let employeeIsAreaManager = false;
-  let areaManager: any;
+  let areaManagers: Record<string, any>;
+  let areaParents: Record<string, string | null>;
   let regionalManagers: Record<string, any>;
   let service: ApprovalRoutingService;
 
@@ -37,11 +38,13 @@ describe('ApprovalRoutingService', () => {
         },
       ],
     };
-    employeeIsAreaManager = false;
-    areaManager = {
-      employee_id: areaManagerEmployee.id,
-      employee: areaManagerEmployee,
+    areaManagers = {
+      'area-1': {
+        employee_id: areaManagerEmployee.id,
+        employee: areaManagerEmployee,
+      },
     };
+    areaParents = { 'area-1': 'area-parent', 'area-parent': null };
     regionalManagers = {
       [mainRegional.id]: {
         employee_id: mainManagerEmployee.id,
@@ -60,15 +63,14 @@ describe('ApprovalRoutingService', () => {
       findOne: jest.fn().mockResolvedValue(mainRegional),
     };
     const areaManagerRepository = {
-      findOne: jest.fn().mockImplementation(() => Promise.resolve(areaManager)),
-      createQueryBuilder: jest.fn().mockReturnValue({
-        leftJoin: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
-        getExists: jest
-          .fn()
-          .mockImplementation(() => Promise.resolve(employeeIsAreaManager)),
-      }),
+      findOne: jest.fn().mockImplementation(({ where }: any) =>
+        Promise.resolve(areaManagers[where.area_id] || null),
+      ),
+      manager: {
+        query: jest.fn().mockImplementation((_sql: string, [areaId]: string[]) =>
+          Promise.resolve([{ parent_id: areaParents[areaId] || null }]),
+        ),
+      },
     };
     const regionalManagerRepository = {
       findOne: jest.fn().mockImplementation(({ where }: any) =>
@@ -111,18 +113,23 @@ describe('ApprovalRoutingService', () => {
     expect(result.scope).toBe('AREA');
   });
 
-  it('routes a main-office boss or delegate to the main regional manager', async () => {
-    employeeIsAreaManager = true;
+  it('escalates a main-office boss or delegate to the parent unit manager', async () => {
+    areaManagers['area-1'] = { employee_id: employee.id, employee };
+    areaManagers['area-parent'] = {
+      employee_id: parentManagerEmployee.id,
+      employee: parentManagerEmployee,
+    };
 
     const result = await service.resolve(employee.id, 'area-1');
 
-    expect(result.employeeId).toBe(mainManagerEmployee.id);
-    expect(result.scope).toBe('REGIONAL');
+    expect(result.employeeId).toBe(parentManagerEmployee.id);
+    expect(result.areaId).toBe('area-parent');
+    expect(result.scope).toBe('AREA');
   });
 
-  it('prevents the main regional manager from approving their own request', async () => {
+  it('prevents self-approval when no different area or regional manager exists', async () => {
     employee.id = mainManagerEmployee.id;
-    employeeIsAreaManager = true;
+    areaManagers = {};
 
     await expect(service.resolve(employee.id, 'area-1')).rejects.toBeInstanceOf(
       BadRequestException,

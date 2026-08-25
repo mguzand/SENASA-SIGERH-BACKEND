@@ -68,27 +68,6 @@ export class ApprovalRoutingService {
       );
     }
 
-    const employeeIsAreaManager = await this.areaManagerRepository
-      .createQueryBuilder('manager')
-      .leftJoin(
-        AreaManager,
-        'active_delegate',
-        `active_delegate.suspended_boss_id = manager.id
-         AND active_delegate.is_active = :delegateIsActive`,
-        { delegateIsActive: true },
-      )
-      .where('manager.employee_id = :employeeId', {
-        employeeId: employee.id,
-      })
-      .andWhere('manager.role = :managerRole', {
-        managerRole: AreaManagerRole.BOSS,
-      })
-      .andWhere(
-        '(manager.is_active = :managerIsActive OR active_delegate.id IS NOT NULL)',
-        { managerIsActive: true },
-      )
-      .getExists();
-
     if (!employee.regional.is_main_office) {
       const regionalManager = await this.getRegionalManager(
         employee.regional.id,
@@ -116,10 +95,32 @@ export class ApprovalRoutingService {
       );
     }
 
-    if (!employeeIsAreaManager) {
-      const areaManager = await this.areaManagerRepository.findOne({
+    return this.resolveAreaOrMainManager(
+      employee.id,
+      activeJob.area_id,
+      employee.regional.id,
+    );
+  }
+
+  /**
+   * Finds the nearest active boss/delegate in the organizational hierarchy.
+   * The requester is always excluded, preventing self-approval. If the active
+   * manager of the current unit is the requester, traversal continues at its
+   * parent and repeats until a different manager is found.
+   */
+  async resolveAreaOrMainManager(
+    employeeId: string,
+    areaId: string,
+    regionalId: string,
+  ): Promise<ResolvedApprovalManager> {
+    let currentAreaId: string | null = areaId;
+    const visited = new Set<string>();
+
+    while (currentAreaId && !visited.has(currentAreaId)) {
+      visited.add(currentAreaId);
+      const manager = await this.areaManagerRepository.findOne({
         where: {
-          area_id: activeJob.area_id,
+          area_id: currentAreaId,
           role: AreaManagerRole.BOSS,
           is_active: true,
         },
@@ -127,29 +128,42 @@ export class ApprovalRoutingService {
         order: { created_at: 'DESC' },
       });
 
-      if (areaManager && areaManager.employee_id !== employee.id) {
+      if (manager?.employee && manager.employee_id !== employeeId) {
         return {
-          employeeId: areaManager.employee_id,
-          employee: areaManager.employee,
-          areaId: activeJob.area_id,
-          regionalId: employee.regional.id,
+          employeeId: manager.employee_id,
+          employee: manager.employee,
+          areaId: currentAreaId,
+          regionalId,
           scope: 'AREA',
         };
       }
+
+      const rows = await this.areaManagerRepository.manager.query(
+        `SELECT parent_id
+           FROM organizational_units
+          WHERE id = $1
+            AND is_active = true
+          LIMIT 1`,
+        [currentAreaId],
+      );
+      currentAreaId = rows[0]?.parent_id || null;
     }
 
-    const mainManager = await this.getRegionalManager(mainRegional.id);
-    if (mainManager.employee_id === employee.id) {
+    const mainRegional = await this.regionalRepository.findOne({
+      where: { is_main_office: true, is_active: true },
+    });
+    if (!mainRegional) {
       throw new BadRequestException(
-        'El Director General no puede autorizar su propia solicitud.',
+        'No existe una regional principal activa configurada.',
       );
     }
-
-    return this.mapRegionalManager(
-      mainManager,
-      activeJob.area_id,
-      employee.regional.id,
-    );
+    const mainManager = await this.getRegionalManager(mainRegional.id);
+    if (mainManager.employee_id === employeeId) {
+      throw new BadRequestException(
+        'No existe un aprobador superior diferente al empleado solicitante.',
+      );
+    }
+    return this.mapRegionalManager(mainManager, areaId, regionalId);
   }
 
   private async getRegionalManager(regionalId: string) {
