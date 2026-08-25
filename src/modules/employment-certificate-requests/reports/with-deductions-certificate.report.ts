@@ -25,12 +25,12 @@ export function withDeductionsContent(data: any): Content[] {
     introductoryParagraph(data),
     {
       text: [
-        {
-          text: ` labora para esta institución desde el ${data.entryDate}, bajo la modalidad de `,
-          fontSize: 11,
-        },
-        { text: data.modality, bold: true, fontSize: 11 },
-        { text: ', desempeñando el cargo de ', fontSize: 11 },
+       // {
+       //   text: ` labora para esta institución desde el ${data.entryDate}, bajo la modalidad de `,
+       //   fontSize: 11,
+       // },
+       // { text: data.modality, bold: true, fontSize: 11 },
+        { text: 'Desempeñando el cargo de ', fontSize: 11 },
         { text: data.position.toUpperCase(), bold: true, fontSize: 11 },
         { text: ', con un salario mensual de ', fontSize: 11 },
         { text: money(data.grossSalary), bold: true, fontSize: 11 },

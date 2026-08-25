@@ -15,7 +15,10 @@ import { EmployeePaymentReceipt } from '../payroll-import/entities/employee-paym
 import { PayrollItemType } from '../payroll-import/enum/payroll-item-type.enum';
 import { PrinterService } from 'src/common/printer/printer.service';
 import { EmploymentCertificateReport } from './reports/employment-certificate.report';
-import { numberToLempirasWords } from 'src/common/utils/number-to-spanish-words.util';
+import {
+  numberToLempirasWords,
+  numberToSpanishWords,
+} from 'src/common/utils/number-to-spanish-words.util';
 import { sendRequestNotification } from 'src/common/helpers/send-email.helper';
 import { CreateEmploymentCertificateRequestDto } from './dto/create-employment-certificate-request.dto';
 import { ListEmploymentCertificateRequestsDto } from './dto/list-employment-certificate-requests.dto';
@@ -240,6 +243,7 @@ export class EmploymentCertificateRequestsService {
     if (
       ![
         EmploymentCertificateType.WITH_DEDUCTIONS,
+        EmploymentCertificateType.WITHOUT_DEDUCTIONS,
         EmploymentCertificateType.IHSS_AFFILIATION,
         EmploymentCertificateType.INJUPEMP_AFFILIATION,
         EmploymentCertificateType.EMBASSY,
@@ -343,6 +347,7 @@ export class EmploymentCertificateRequestsService {
       netSalary: payrollData ? Number(payrollData.netSalary || grossSalary - totalDeductions) : grossSalary,
       employerNumber: '101201607261',
       issueDate: this.formatIssueDate(now),
+      issueDateInWords: this.formatIssueDateInWords(now),
       signerName: 'ING. KEVIN ERNESTO MENDOZA LIRA',
       signerTitle:
         [
@@ -413,6 +418,7 @@ export class EmploymentCertificateRequestsService {
       dto.status === EmploymentCertificateStatus.READY &&
       [
         EmploymentCertificateType.WITH_DEDUCTIONS,
+        EmploymentCertificateType.WITHOUT_DEDUCTIONS,
         EmploymentCertificateType.IHSS_AFFILIATION,
         EmploymentCertificateType.INJUPEMP_AFFILIATION,
         EmploymentCertificateType.EMBASSY,
@@ -564,6 +570,17 @@ export class EmploymentCertificateRequestsService {
     return `a los ${value.getDate()} días del mes de ${new Intl.DateTimeFormat('es-HN', {
       month: 'long', timeZone: 'America/Tegucigalpa',
     }).format(value)} del año ${value.getFullYear()}`;
+  }
+
+  private formatIssueDateInWords(value: Date) {
+    const day = numberToSpanishWords(value.getDate()).toLocaleLowerCase('es-HN');
+    const year = numberToSpanishWords(value.getFullYear()).toLocaleLowerCase('es-HN');
+    const month = new Intl.DateTimeFormat('es-HN', {
+      month: 'long',
+      timeZone: 'America/Tegucigalpa',
+    }).format(value);
+
+    return `${day} días del mes de ${month} del año ${year}`;
   }
 
   private formatInboxItem(request: EmploymentCertificateRequest) {

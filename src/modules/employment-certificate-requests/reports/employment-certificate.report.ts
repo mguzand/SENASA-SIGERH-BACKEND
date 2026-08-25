@@ -9,6 +9,7 @@ import { ihssAffiliationContent } from './ihss-affiliation-certificate.report';
 import { injupempAffiliationContent } from './injupemp-affiliation-certificate.report';
 import { siafiPinContent } from './siafi-pin-certificate.report';
 import { withDeductionsContent } from './with-deductions-certificate.report';
+import { withoutDeductionsContent } from './without-deductions-certificate.report';
 
 export async function EmploymentCertificateReport(
   data: any,
@@ -93,6 +94,8 @@ function certificateContent(data: any): Content[] {
   switch (data.type) {
     case EmploymentCertificateType.WITH_DEDUCTIONS:
       return withDeductionsContent(data);
+    case EmploymentCertificateType.WITHOUT_DEDUCTIONS:
+      return withoutDeductionsContent(data);
     case EmploymentCertificateType.IHSS_AFFILIATION:
       return ihssAffiliationContent(data);
     case EmploymentCertificateType.INJUPEMP_AFFILIATION:
