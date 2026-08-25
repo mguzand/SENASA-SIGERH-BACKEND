@@ -527,7 +527,9 @@ export class VacationRequestService {
     try {
       const request = queryRunner.manager.create(VacationRequest, {
         employee_id: dto.employee_id,
-        area_id: dto.area_id,
+        // Persist the area resolved from the current active job record, not the
+        // potentially stale area carried by the app session/JWT.
+        area_id: approval.areaId,
         regional_id: approval.regionalId,
         approval_scope: approval.scope,
         start_date: sortedDays[0],

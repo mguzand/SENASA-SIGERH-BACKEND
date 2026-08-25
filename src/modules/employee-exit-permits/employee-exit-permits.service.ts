@@ -396,7 +396,9 @@ export class EmployeeExitPermitsService {
 
     const exitPermit = this.exitPermitRepository.create({
       employee_id: dto.employee_id,
-      area_id: dto.area_id,
+      // The JWT/app may contain an old department after a job transfer. Always
+      // persist the authoritative area from the active job record resolution.
+      area_id: approval.areaId,
       regional_id: approval.regionalId,
       approval_scope: approval.scope,
       description: dto.description,

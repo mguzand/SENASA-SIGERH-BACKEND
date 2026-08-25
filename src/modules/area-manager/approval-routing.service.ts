@@ -33,7 +33,7 @@ export class ApprovalRoutingService {
 
   async resolve(
     employeeId: string,
-    requestedAreaId: string,
+    _requestedAreaId: string,
   ): Promise<ResolvedApprovalManager> {
     const employee = await this.employeeRepository.findOne({
       where: { id: employeeId },
@@ -49,12 +49,18 @@ export class ApprovalRoutingService {
       );
     }
 
-    const activeJob = employee.jobRecords?.find(
-      (record) => String(record.status || '').toLowerCase() === 'active',
-    );
-    if (!activeJob?.area_id || activeJob.area_id !== requestedAreaId) {
+    const activeJob = employee.jobRecords
+      ?.filter(
+        (record) => String(record.status || '').toLowerCase() === 'active',
+      )
+      .sort((left, right) => {
+        const currentDifference = Number(Boolean(right.isCurrent)) - Number(Boolean(left.isCurrent));
+        if (currentDifference) return currentDifference;
+        return new Date(right.startDate || 0).getTime() - new Date(left.startDate || 0).getTime();
+      })[0];
+    if (!activeJob?.area_id) {
       throw new BadRequestException(
-        'El área enviada no coincide con el registro laboral activo del empleado.',
+        'El empleado no tiene una unidad organizacional activa configurada.',
       );
     }
 
@@ -68,7 +74,15 @@ export class ApprovalRoutingService {
       );
     }
 
-    if (!employee.regional.is_main_office) {
+    // Use both sources. The regional_id comparison is authoritative and avoids
+    // routing a main-office employee as regional when an ORM relation/cache
+    // carries a stale is_main_office value.
+    const isMainOffice =
+      employee.regional_id === mainRegional.id ||
+      employee.regional.id === mainRegional.id ||
+      Boolean(employee.regional.is_main_office);
+
+    if (!isMainOffice) {
       const regionalManager = await this.getRegionalManager(
         employee.regional.id,
       );

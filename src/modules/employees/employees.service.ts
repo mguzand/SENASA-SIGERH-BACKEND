@@ -37,8 +37,7 @@ import { EmployeeUnpaidLeave } from './entities/employee-unpaid-leave.entity';
 import { User } from '../users/entities/user.entity';
 import { AcademicHistory } from '../academic-history/entities/academic-history.entity';
 import { OrganizationalUnit } from '../department/entities/organizational-unit.entity';
-import { AreaManager } from '../area-manager/entities/area-manager.entity';
-import { AreaManagerRole } from '../area-manager/interfaces/area-manager-role.enum';
+import { ApprovalRoutingService } from '../area-manager/approval-routing.service';
 import { PublicCriminalRecordUpdateDto } from './dtos/public-criminal-record.dto';
 import { WatchUsersService } from '../watch-users/watch-users.service';
 import { ResetEmployeePasswordDto } from './dtos/reset-employee-password.dto';
@@ -68,6 +67,7 @@ export class EmployeesService {
     private readonly employeeVacationPeriodService: EmployeeVacationPeriodService,
     private readonly _usersService: UsersService,
     private readonly watchUsersService: WatchUsersService,
+    private readonly approvalRoutingService: ApprovalRoutingService,
   ) {}
 
   getEmployeeAccount(employeeId: string) {
@@ -487,23 +487,23 @@ export class EmployeesService {
       throw new NotFoundException('Empleado no encontrado.');
     }
 
-    const currentRecord = employee.jobRecords?.find(
-      (record) => String(record.status || '').toLowerCase() === 'active',
-    );
-    const directBoss = currentRecord?.area?.id
-      ? await this.dataSource.getRepository(AreaManager).findOne({
-          where: {
-            area_id: currentRecord.area.id,
-            role: AreaManagerRole.BOSS,
-            is_active: true,
-          },
-          relations: {
-            employee: true,
-          },
-          order: {
-            created_at: 'DESC',
-          },
-        })
+    const currentRecord = employee.jobRecords
+      ?.filter(
+        (record) => String(record.status || '').toLowerCase() === 'active',
+      )
+      .sort((left, right) => {
+        const currentDifference = Number(Boolean(right.isCurrent)) - Number(Boolean(left.isCurrent));
+        if (currentDifference) return currentDifference;
+        return new Date(right.startDate || 0).getTime() - new Date(left.startDate || 0).getTime();
+      })[0];
+    const directBoss = currentRecord?.area?.id && employee.regional_id
+      ? await this.approvalRoutingService
+          .resolveAreaOrMainManager(
+            employee.id,
+            currentRecord.area.id,
+            employee.regional_id,
+          )
+          .catch(() => null)
       : null;
     const directBossName = directBoss?.employee
       ? [
@@ -568,6 +568,8 @@ export class EmployeesService {
       organizationalTypeId: currentRecord?.area?.unitType?.id || null,
       organizationalTypeName: currentRecord?.area?.unitType?.name || null,
       directBossName,
+      directBossEmployeeId: directBoss?.employeeId || null,
+      directBossScope: directBoss?.scope || null,
       salary:
         currentRecord?.salary !== null && currentRecord?.salary !== undefined
           ? Number(currentRecord.salary)

@@ -15,6 +15,7 @@ import { EmployeeIntakeRequest } from '../employee-intake/entities/employee-inta
 import { EmployeeJobRecord } from '../employee-job-record/entities/employee-job-record.entity';
 import { EmployeeUnpaidLeave } from './entities/employee-unpaid-leave.entity';
 import { WatchUsersModule } from '../watch-users/watch-users.module';
+import { AreaManagerModule } from '../area-manager/area-manager.module';
 
 @Module({
   controllers: [EmployeesController],
@@ -35,6 +36,7 @@ import { WatchUsersModule } from '../watch-users/watch-users.module';
     EmployeeVacationPeriodModule,
     UsersModule,
     WatchUsersModule,
+    AreaManagerModule,
   ],
   exports: [EmployeesService],
 })

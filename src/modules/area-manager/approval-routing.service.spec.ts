@@ -136,9 +136,10 @@ describe('ApprovalRoutingService', () => {
     );
   });
 
-  it('rejects an area that differs from the active job record', async () => {
-    await expect(service.resolve(employee.id, 'another-area')).rejects.toThrow(
-      'El área enviada no coincide con el registro laboral activo del empleado.',
-    );
+  it('ignores a stale submitted area and routes with the active job area', async () => {
+    const result = await service.resolve(employee.id, 'old-area-from-token');
+
+    expect(result.areaId).toBe('area-1');
+    expect(result.employeeId).toBe(areaManagerEmployee.id);
   });
 });
