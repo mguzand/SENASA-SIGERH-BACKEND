@@ -91,7 +91,14 @@ export class EmployeeExitPermitsController {
   async support(@Param('id') id: string, @Req() req: any, @Res() response: Response) {
     const support = await this.employeeExitPermitsService.getSupport(id, this.getEmployeeId(req));
     response.setHeader('Content-Type', support.mimeType);
-    response.setHeader('Content-Disposition', 'inline; filename="respaldo-pase.jpg"');
+    const extension = support.mimeType === 'application/pdf'
+      ? 'pdf'
+      : support.mimeType === 'image/png'
+        ? 'png'
+        : support.mimeType === 'image/webp'
+          ? 'webp'
+          : 'jpg';
+    response.setHeader('Content-Disposition', `inline; filename="respaldo-pase.${extension}"`);
     response.sendFile(support.absolutePath);
   }
 
