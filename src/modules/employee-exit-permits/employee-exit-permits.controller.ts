@@ -95,6 +95,18 @@ export class EmployeeExitPermitsController {
     response.sendFile(support.absolutePath);
   }
 
+  @Get(':id/pdf')
+  async pdf(@Param('id') id: string, @Req() req: any, @Res() response: Response) {
+    const document = await this.employeeExitPermitsService.generatePdf(
+      id,
+      this.getEmployeeId(req),
+    );
+    response.setHeader('Content-Type', 'application/pdf');
+    response.setHeader('Content-Disposition', `inline; filename="${document.fileName}"`);
+    document.pdf.pipe(response);
+    document.pdf.end();
+  }
+
   @Patch(':id/support')
   updateSupport(@Param('id') id: string, @Body() dto: UpdateExitPermitSupportDto, @Req() req: any) {
     return this.employeeExitPermitsService.updateSupport(id, dto.base64FileFoto, this.getEmployeeId(req));

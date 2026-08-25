@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Brackets, Not, Repository } from 'typeorm';
+import { Brackets, Repository } from 'typeorm';
 
 import { EmployeeExitPermit } from './entities/employee-exit-permit.entity';
 
@@ -22,6 +22,8 @@ import { Employee } from '../employees/entities/employee.entity';
 import { sendRequestNotification } from '../../common/helpers/send-email.helper';
 import { StorageService } from '../../common/services/storage.service';
 import { RegionalManagerService } from '../area-manager/regional-manager.service';
+import { PrinterService } from '../../common/printer/printer.service';
+import { buildEmployeeExitPermitReport } from './reports/employee-exit-permit.report';
 
 @Injectable()
 export class EmployeeExitPermitsService {
@@ -36,7 +38,23 @@ export class EmployeeExitPermitsService {
     private readonly approvalRoutingService: ApprovalRoutingService,
     private readonly storageService: StorageService,
     private readonly regionalManagerService: RegionalManagerService,
+    private readonly printerService: PrinterService,
   ) {}
+
+  async generatePdf(id: string, currentEmployeeId: string) {
+    const permit = await this.exitPermitRepository.findOne({
+      where: { id },
+      relations: { employee: true, area: true, boss_employee: true, hr_employee: true },
+    });
+
+    if (!permit) throw new NotFoundException('Solicitud de salida no encontrada');
+    if (!currentEmployeeId) throw new ForbiddenException('No fue posible identificar al usuario');
+
+    return {
+      pdf: this.printerService.createPdf(buildEmployeeExitPermitReport(permit)),
+      fileName: `pase-salida-${permit.id.slice(0, 8)}.pdf`,
+    };
+  }
 
   async findHrInbox(params: ListHrExitPermitsDto, currentEmployeeId: string) {
     const page = Math.max(Number(params.page) || 1, 1);
@@ -177,6 +195,7 @@ export class EmployeeExitPermitsService {
           status: permit.hr_status,
           stage: permit.stage,
           exitDate: permit.exit_date,
+          endDate: permit.end_date,
           exitTime: permit.exit_time,
           returnTime: permit.return_time,
           withoutReturn: permit.without_return,
@@ -187,6 +206,11 @@ export class EmployeeExitPermitsService {
             permit.exit_time,
             permit.return_time,
           ),
+          personalDuration: permit.personal_duration,
+          hasSupport: Boolean(permit.support_file_path),
+          documentsComplete:
+            this.isPersonalPermit(permit.permit_type) ||
+            Boolean(permit.support_file_path),
         };
       }),
       meta: {
@@ -465,17 +489,31 @@ export class EmployeeExitPermitsService {
     const date = new Date(`${monthStart}T12:00:00`);
     date.setMonth(date.getMonth() + 1);
     const nextMonth = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
-    const permits = await this.exitPermitRepository.find({
-      where: {
-        employee_id: employeeId,
-        permit_type: 'Personal',
-        status: Not(ExitPermitStatus.REJECTED),
-      },
-    });
-    const monthly = permits.filter((permit) => {
-      const value = String(permit.exit_date).slice(0, 10);
-      return value >= monthStart && value < nextMonth;
-    });
+    const monthly = await this.exitPermitRepository
+      .createQueryBuilder('permit')
+      .where('permit.employee_id = :employeeId', { employeeId })
+      .andWhere('LOWER(TRIM(permit.permit_type)) = :personalType', {
+        personalType: 'personal',
+      })
+      .andWhere('permit.exit_date >= :monthStart', { monthStart })
+      .andWhere('permit.exit_date < :nextMonth', { nextMonth })
+      // A denial at any approval level releases the employee's monthly quota.
+      // The individual checks also cover old rows where the global status was
+      // left pending although boss/HR/liaison had already rejected the permit.
+      .andWhere('permit.status <> :rejected', {
+        rejected: ExitPermitStatus.REJECTED,
+      })
+      .andWhere('permit.boss_status <> :rejected', {
+        rejected: ExitPermitStatus.REJECTED,
+      })
+      .andWhere('permit.hr_status <> :rejected', {
+        rejected: ExitPermitStatus.REJECTED,
+      })
+      .andWhere(
+        `(permit.liaison_status IS NULL OR LOWER(permit.liaison_status) <> :rejected)`,
+        { rejected: ExitPermitStatus.REJECTED },
+      )
+      .getMany();
     if (requested === 'FULL' && monthly.length) {
       throw new BadRequestException('Ya utilizó parte del cupo personal de este mes. Solo se permite un pase completo o dos medios días.');
     }
@@ -505,7 +543,7 @@ export class EmployeeExitPermitsService {
   ) {
     const exitPermit = await this.exitPermitRepository.findOne({
       where: { id },
-      relations: { employee: true },
+      relations: { employee: true, area: true, boss_employee: true },
     });
 
     if (!exitPermit) {
@@ -572,10 +610,21 @@ export class EmployeeExitPermitsService {
       id: permit.id,
       requestType: 'exit_permit',
       employeeName: this.employeeName(permit.employee),
+      employeeCode: permit.employee?.biometric_id
+        ? `EMP-${String(permit.employee.biometric_id).padStart(4, '0')}`
+        : `EMP-${permit.employee_id.slice(0, 4).toUpperCase()}`,
+      employeeInitials: `${permit.employee?.firstName?.[0] || ''}${permit.employee?.lastName?.[0] || ''}`.toUpperCase(),
       areaName: permit.area?.name || 'Sin área',
       regionalId: permit.regional_id,
       startDate: permit.exit_date,
       endDate: permit.end_date || permit.exit_date,
+      exitTime: permit.exit_time,
+      returnTime: permit.return_time,
+      withoutReturn: permit.without_return,
+      durationMinutes: this.getDurationInMinutes(
+        permit.exit_time,
+        permit.return_time,
+      ),
       reason: permit.description,
       permitType: permit.permit_type,
       hasSupport: Boolean(permit.support_file_path),
@@ -670,7 +719,7 @@ export class EmployeeExitPermitsService {
   ) {
     const exitPermit = await this.exitPermitRepository.findOne({
       where: { id },
-      relations: { employee: true },
+      relations: { employee: true, area: true, boss_employee: true },
     });
 
     if (!exitPermit) {
@@ -703,6 +752,17 @@ export class EmployeeExitPermitsService {
     }
 
     const savedPermit = await this.exitPermitRepository.save(exitPermit);
+    const attachments = dto.status === ExitPermitStatus.APPROVED
+      ? [
+          {
+            filename: `pase-salida-${savedPermit.id.slice(0, 8)}.pdf`,
+            content: await this.pdfStreamToBuffer(
+              this.printerService.createPdf(buildEmployeeExitPermitReport(savedPermit)),
+            ),
+            contentType: 'application/pdf',
+          },
+        ]
+      : [];
     await this.notifyEmployeeOfStatus(
       savedPermit.employee,
       'pase de salida',
@@ -711,6 +771,7 @@ export class EmployeeExitPermitsService {
         ? 'Recursos Humanos aprobó definitivamente su solicitud.'
         : 'Recursos Humanos denegó su solicitud.',
       dto.observation,
+      attachments,
     );
 
     return savedPermit;
@@ -879,6 +940,7 @@ export class EmployeeExitPermitsService {
     status: ExitPermitStatus,
     message: string,
     observation?: string,
+    attachments: Array<{ filename: string; content: Buffer; contentType: string }> = [],
   ) {
     await sendRequestNotification(
       employee?.email,
@@ -888,6 +950,18 @@ export class EmployeeExitPermitsService {
       this.employeeName(employee),
       message,
       observation ? [`Observación: ${observation}`] : [],
+      undefined,
+      attachments,
     );
+  }
+
+  private pdfStreamToBuffer(pdf: NodeJS.ReadableStream & { end: () => void }) {
+    return new Promise<Buffer>((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      pdf.on('data', (chunk: Buffer | Uint8Array) => chunks.push(Buffer.from(chunk)));
+      pdf.on('end', () => resolve(Buffer.concat(chunks)));
+      pdf.on('error', reject);
+      pdf.end();
+    });
   }
 }
