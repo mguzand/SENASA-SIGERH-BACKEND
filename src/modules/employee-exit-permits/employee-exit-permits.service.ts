@@ -500,18 +500,18 @@ export class EmployeeExitPermitsService {
       // A denial at any approval level releases the employee's monthly quota.
       // The individual checks also cover old rows where the global status was
       // left pending although boss/HR/liaison had already rejected the permit.
-      .andWhere('permit.status <> :rejected', {
-        rejected: ExitPermitStatus.REJECTED,
+      .andWhere('permit.status <> :globalRejected', {
+        globalRejected: ExitPermitStatus.REJECTED,
       })
-      .andWhere('permit.boss_status <> :rejected', {
-        rejected: ExitPermitStatus.REJECTED,
+      .andWhere('permit.boss_status <> :bossRejected', {
+        bossRejected: ExitPermitStatus.REJECTED,
       })
-      .andWhere('permit.hr_status <> :rejected', {
-        rejected: ExitPermitStatus.REJECTED,
+      .andWhere('permit.hr_status <> :hrRejected', {
+        hrRejected: ExitPermitStatus.REJECTED,
       })
       .andWhere(
-        `(permit.liaison_status IS NULL OR LOWER(permit.liaison_status) <> :rejected)`,
-        { rejected: ExitPermitStatus.REJECTED },
+        `(permit.liaison_status IS NULL OR LOWER(permit.liaison_status) <> :liaisonRejected)`,
+        { liaisonRejected: ExitPermitStatus.REJECTED },
       )
       .getMany();
     if (requested === 'FULL' && monthly.length) {
