@@ -205,10 +205,6 @@ export class EmployeeExitPermitsService {
   }
 
   async findBossInbox(params: ListHrExitPermitsDto, currentEmployeeId: string) {
-    const areaIds = await this.areaManagersService.findAreaIdsByEmployeeAndRole(
-      currentEmployeeId,
-      AreaManagerRole.BOSS,
-    );
     const page = Math.max(Number(params.page) || 1, 1);
     const limit = Math.min(Math.max(Number(params.limit) || 6, 1), 24);
     const status = params.status || 'pending';
@@ -229,7 +225,7 @@ export class EmployeeExitPermitsService {
         'jobRecordFunctionalPosition',
       );
 
-    this.applyBossOwnershipFilter(query, currentEmployeeId, areaIds);
+    this.applyBossOwnershipFilter(query, currentEmployeeId);
 
     if (params.search?.trim()) {
       const search = `%${params.search.trim().toLowerCase()}%`;
@@ -293,7 +289,7 @@ export class EmployeeExitPermitsService {
     const statsBaseQuery =
       this.exitPermitRepository.createQueryBuilder('permit');
 
-    this.applyBossOwnershipFilter(statsBaseQuery, currentEmployeeId, areaIds);
+    this.applyBossOwnershipFilter(statsBaseQuery, currentEmployeeId);
 
     const [pending, approved, rejected] = await Promise.all([
       this.applyBossStatusFilter(statsBaseQuery.clone(), 'pending').getCount(),
@@ -357,14 +353,8 @@ export class EmployeeExitPermitsService {
       throw new NotFoundException('Solicitud de salida no encontrada');
     }
 
-    const areaIds = await this.areaManagersService.findAreaIdsByEmployeeAndRole(
-      currentEmployeeId,
-      AreaManagerRole.BOSS,
-    );
     const ownsAssignedRequest = permit.boss_employee_id === currentEmployeeId;
-    const canTakeOverAreaRequest =
-      permit.approval_scope !== 'REGIONAL' && areaIds.includes(permit.area_id);
-    if (!ownsAssignedRequest && !canTakeOverAreaRequest) {
+    if (!ownsAssignedRequest) {
       throw new ForbiddenException('No tienes permiso para consultar esta solicitud');
     }
 
@@ -526,35 +516,10 @@ export class EmployeeExitPermitsService {
       );
     }
 
-    if (exitPermit.boss_employee_id) {
-      if (exitPermit.boss_employee_id !== currentEmployeeId) {
-        const delegatedAreaIds =
-          await this.areaManagersService.findAreaIdsByEmployeeAndRole(
-            currentEmployeeId,
-            AreaManagerRole.BOSS,
-          );
-        const canTakeOverAreaRequest =
-          exitPermit.approval_scope !== 'REGIONAL' &&
-          delegatedAreaIds.includes(exitPermit.area_id);
-
-        if (!canTakeOverAreaRequest) {
-          throw new ForbiddenException(
-            'No tienes permiso para revisar esta solicitud',
-          );
-        }
-      }
-    } else {
-      const areaIds =
-        await this.areaManagersService.findAreaIdsByEmployeeAndRole(
-          currentEmployeeId,
-          AreaManagerRole.BOSS,
-        );
-
-      if (!areaIds.includes(exitPermit.area_id)) {
-        throw new ForbiddenException(
-          'No tienes permiso para revisar esta solicitud',
-        );
-      }
+    if (exitPermit.boss_employee_id !== currentEmployeeId) {
+      throw new ForbiddenException(
+        'No tienes permiso para revisar esta solicitud',
+      );
     }
 
     exitPermit.boss_status = dto.status;
@@ -690,24 +655,7 @@ export class EmployeeExitPermitsService {
   private applyBossOwnershipFilter(
     query: any,
     currentEmployeeId: string,
-    areaIds: string[],
   ) {
-    if (areaIds.length) {
-      return query.andWhere(
-        `(permit.boss_employee_id = :currentEmployeeId
-          OR (
-            permit.approval_scope IS DISTINCT FROM 'REGIONAL'
-            AND permit.area_id IN (:...legacyAreaIds)
-            AND permit.stage = :delegableBossStage
-          ))`,
-        {
-          currentEmployeeId,
-          legacyAreaIds: areaIds,
-          delegableBossStage: ExitPermitStage.BOSS_REVIEW,
-        },
-      );
-    }
-
     return query.andWhere('permit.boss_employee_id = :currentEmployeeId', {
       currentEmployeeId,
     });

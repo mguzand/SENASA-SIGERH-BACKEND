@@ -362,10 +362,6 @@ export class VacationRequestService {
     params: ListHrVacationRequestsDto,
     currentEmployeeId: string,
   ) {
-    const areaIds = await this.areaManagerService.findAreaIdsByEmployeeAndRole(
-      currentEmployeeId,
-      AreaManagerRole.BOSS,
-    );
     const page = Math.max(Number(params.page) || 1, 1);
     const limit = Math.min(Math.max(Number(params.limit) || 6, 1), 24);
     const status = params.status || 'pending';
@@ -375,7 +371,7 @@ export class VacationRequestService {
       .leftJoinAndSelect('request.employee', 'employee')
       .leftJoinAndSelect('request.area', 'area');
 
-    this.applyBossOwnershipFilter(query, currentEmployeeId, areaIds);
+    this.applyBossOwnershipFilter(query, currentEmployeeId);
 
     if (params.search?.trim()) {
       const search = `%${params.search.trim().toLowerCase()}%`;
@@ -436,7 +432,6 @@ export class VacationRequestService {
     this.applyBossOwnershipFilter(
       statsBaseQuery,
       currentEmployeeId,
-      areaIds,
     );
 
     const pendingCount = await this.applyBossInboxStatusFilter(
@@ -655,35 +650,10 @@ export class VacationRequestService {
       throw new NotFoundException('Solicitud de vacaciones no encontrada');
     }
 
-    if (request.boss_employee_id) {
-      if (request.boss_employee_id !== bossEmployeeId) {
-        const delegatedAreaIds =
-          await this.areaManagerService.findAreaIdsByEmployeeAndRole(
-            bossEmployeeId,
-            AreaManagerRole.BOSS,
-          );
-        const canTakeOverAreaRequest =
-          request.approval_scope !== 'REGIONAL' &&
-          delegatedAreaIds.includes(request.area_id);
-
-        if (!canTakeOverAreaRequest) {
-          throw new ForbiddenException(
-            'No tienes autorización para revisar esta solicitud',
-          );
-        }
-      }
-    } else {
-      const areaIds =
-        await this.areaManagerService.findAreaIdsByEmployeeAndRole(
-          bossEmployeeId,
-          AreaManagerRole.BOSS,
-        );
-
-      if (!areaIds.includes(request.area_id)) {
-        throw new ForbiddenException(
-          'No tienes autorización para revisar solicitudes de esta área',
-        );
-      }
+    if (request.boss_employee_id !== bossEmployeeId) {
+      throw new ForbiddenException(
+        'No tienes autorización para revisar esta solicitud',
+      );
     }
 
     if (request.stage !== VacationRequestStage.BOSS_REVIEW) {
@@ -803,24 +773,7 @@ export class VacationRequestService {
   private applyBossOwnershipFilter(
     query: any,
     currentEmployeeId: string,
-    areaIds: string[],
   ) {
-    if (areaIds.length) {
-      return query.andWhere(
-        `(request.boss_employee_id = :currentEmployeeId
-          OR (
-            request.approval_scope IS DISTINCT FROM 'REGIONAL'
-            AND request.area_id IN (:...legacyAreaIds)
-            AND request.stage = :delegableBossStage
-          ))`,
-        {
-          currentEmployeeId,
-          legacyAreaIds: areaIds,
-          delegableBossStage: VacationRequestStage.BOSS_REVIEW,
-        },
-      );
-    }
-
     return query.andWhere(
       'request.boss_employee_id = :currentEmployeeId',
       { currentEmployeeId },
