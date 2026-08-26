@@ -84,9 +84,7 @@ function introductoryParagraph(data: any): Content {
     margin: [0, 30, 0, 12],
   };
 }
-
-
-//cambio
+ 
 
 function closingParagraph(data: any): Content {
   return {
