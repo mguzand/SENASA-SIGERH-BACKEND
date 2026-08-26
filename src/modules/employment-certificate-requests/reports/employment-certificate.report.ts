@@ -97,7 +97,7 @@ function certificateContent(data: any): Content[] {
       return withDeductionsContent(data);
     case EmploymentCertificateType.WITHOUT_DEDUCTIONS:
       return withoutDeductionsContent(data);
-    case EmploymentCertificateType.SWORN_STATEMENT:
+    case EmploymentCertificateType.BOND:
       return financeCertificateContent(data);
     case EmploymentCertificateType.IHSS_AFFILIATION:
       return ihssAffiliationContent(data);
@@ -124,7 +124,7 @@ function header(data: any): Content {
             EmploymentCertificateType.INJUPEMP_AFFILIATION,
             EmploymentCertificateType.EMBASSY,
             EmploymentCertificateType.SIAFI_PIN,
-            EmploymentCertificateType.SWORN_STATEMENT,
+            EmploymentCertificateType.BOND,
           ].includes(data.type)
             ? []
             : [
@@ -142,7 +142,7 @@ function header(data: any): Content {
                 EmploymentCertificateType.INJUPEMP_AFFILIATION,
                 EmploymentCertificateType.EMBASSY,
                 EmploymentCertificateType.SIAFI_PIN,
-                EmploymentCertificateType.SWORN_STATEMENT,
+                EmploymentCertificateType.BOND,
               ].includes(data.type)
                 ? 'Nº'
                 : 'No.'
@@ -156,7 +156,7 @@ function header(data: any): Content {
                 EmploymentCertificateType.INJUPEMP_AFFILIATION,
                 EmploymentCertificateType.EMBASSY,
                 EmploymentCertificateType.SIAFI_PIN,
-                EmploymentCertificateType.SWORN_STATEMENT,
+                EmploymentCertificateType.BOND,
               ].includes(data.type)
                 ? 28
                 : 5,

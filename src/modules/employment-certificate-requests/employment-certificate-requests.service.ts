@@ -244,7 +244,7 @@ export class EmploymentCertificateRequestsService {
       ![
         EmploymentCertificateType.WITH_DEDUCTIONS,
         EmploymentCertificateType.WITHOUT_DEDUCTIONS,
-        EmploymentCertificateType.SWORN_STATEMENT,
+        EmploymentCertificateType.BOND,
         EmploymentCertificateType.IHSS_AFFILIATION,
         EmploymentCertificateType.INJUPEMP_AFFILIATION,
         EmploymentCertificateType.EMBASSY,
@@ -367,7 +367,7 @@ export class EmploymentCertificateRequestsService {
           EmploymentCertificateType.INJUPEMP_AFFILIATION,
           EmploymentCertificateType.EMBASSY,
           EmploymentCertificateType.SIAFI_PIN,
-          EmploymentCertificateType.SWORN_STATEMENT,
+          EmploymentCertificateType.BOND,
         ].includes(request.type)
           ? 'DIRECTOR DE RECURSOS HUMANOS Y CAPACITACIONES DEL SENASA'
           : 'JEFE DEL DEPARTAMENTO DE PERSONAL POR DELEGACIÓN',
@@ -378,7 +378,7 @@ export class EmploymentCertificateRequestsService {
           EmploymentCertificateType.INJUPEMP_AFFILIATION,
           EmploymentCertificateType.EMBASSY,
           EmploymentCertificateType.SIAFI_PIN,
-          EmploymentCertificateType.SWORN_STATEMENT,
+          EmploymentCertificateType.BOND,
         ].includes(request.type)
           ? ''
           : request.type === EmploymentCertificateType.IHSS_AFFILIATION
@@ -436,7 +436,7 @@ export class EmploymentCertificateRequestsService {
       [
         EmploymentCertificateType.WITH_DEDUCTIONS,
         EmploymentCertificateType.WITHOUT_DEDUCTIONS,
-        EmploymentCertificateType.SWORN_STATEMENT,
+        EmploymentCertificateType.BOND,
         EmploymentCertificateType.IHSS_AFFILIATION,
         EmploymentCertificateType.INJUPEMP_AFFILIATION,
         EmploymentCertificateType.EMBASSY,
