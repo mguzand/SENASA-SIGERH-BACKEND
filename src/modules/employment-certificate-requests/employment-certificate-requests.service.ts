@@ -301,9 +301,11 @@ export class EmploymentCertificateRequestsService {
     const grossSalary = payrollData
       ? Number(payrollData.integralSalary || payrollData.ordinarySalary || activeJob?.salary || 0)
       : Number(activeJob?.salary || 0);
-    const totalDeductions = payrollData
-      ? Number(payrollData.deductionsTotal || 0) + Number(payrollData.withholdingsTotal || 0)
-      : 0;
+    const totalDeductions = deductions.reduce(
+      (total, deduction) => total + Number(deduction.amount || 0),
+      0,
+    );
+    const netSalary = Math.max(grossSalary - totalDeductions, 0);
     const modality =
       activeJob?.modality?.name?.trim().toLocaleLowerCase('es') === 'contrato'
         ? 'Contrato'
@@ -344,7 +346,7 @@ export class EmploymentCertificateRequestsService {
       amountInWords: numberToLempirasWords(grossSalary),
       deductions,
       totalDeductions,
-      netSalary: payrollData ? Number(payrollData.netSalary || grossSalary - totalDeductions) : grossSalary,
+      netSalary,
       employerNumber: '101201607261',
       issueDate: this.formatIssueDate(now),
       issueDateInWords: this.formatIssueDateInWords(now),
