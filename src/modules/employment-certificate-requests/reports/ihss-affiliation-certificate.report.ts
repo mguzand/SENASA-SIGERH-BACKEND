@@ -85,6 +85,9 @@ function introductoryParagraph(data: any): Content {
   };
 }
 
+
+//cambio
+
 function closingParagraph(data: any): Content {
   return {
     text: `Y para los fines que estime convenientes, se extiende la presente en Tegucigalpa, Municipio del Distrito Central, ${data.issueDate}.`,
