@@ -479,7 +479,10 @@ export class EmployeeExitPermitsService {
     const exitMinutes = this.timeToMinutes(exitTime);
     const returnMinutes = this.timeToMinutes(returnTime);
     if (returnMinutes <= exitMinutes) throw new BadRequestException('La hora de retorno debe ser mayor a la hora de salida');
-    return exitMinutes >= 9 * 60 && returnMinutes <= 12 * 60 && returnMinutes - exitMinutes <= 3 * 60
+    const duration = returnMinutes - exitMinutes;
+    const staysInMorning = returnMinutes <= 12 * 60;
+    const staysInAfternoon = exitMinutes >= 12 * 60;
+    return duration <= 4 * 60 && (staysInMorning || staysInAfternoon)
       ? 'HALF'
       : 'FULL';
   }
@@ -514,10 +517,31 @@ export class EmployeeExitPermitsService {
         { liaisonRejected: ExitPermitStatus.REJECTED },
       )
       .getMany();
-    if (requested === 'FULL' && monthly.length) {
+
+    // Recalculate legacy rows using their actual schedule. Older versions only
+    // recognized the morning window and stored afternoon half-days as FULL.
+    const monthlyDurations = monthly.map((permit) =>
+      this.classifyPersonalPermit(
+        permit.exit_time,
+        permit.return_time ?? undefined,
+        permit.without_return,
+      ),
+    );
+    const correctedPermits = monthly.filter(
+      (permit, index) => permit.personal_duration !== monthlyDurations[index],
+    );
+    if (correctedPermits.length) {
+      correctedPermits.forEach((permit) => {
+        const index = monthly.indexOf(permit);
+        permit.personal_duration = monthlyDurations[index];
+      });
+      await this.exitPermitRepository.save(correctedPermits);
+    }
+
+    if (requested === 'FULL' && monthlyDurations.length) {
       throw new BadRequestException('Ya utilizó parte del cupo personal de este mes. Solo se permite un pase completo o dos medios días.');
     }
-    if (requested === 'HALF' && (monthly.some((permit) => permit.personal_duration !== 'HALF') || monthly.filter((permit) => permit.personal_duration === 'HALF').length >= 2)) {
+    if (requested === 'HALF' && (monthlyDurations.some((duration) => duration !== 'HALF') || monthlyDurations.filter((duration) => duration === 'HALF').length >= 2)) {
       throw new BadRequestException('Ya alcanzó el límite mensual de pases personales.');
     }
   }
