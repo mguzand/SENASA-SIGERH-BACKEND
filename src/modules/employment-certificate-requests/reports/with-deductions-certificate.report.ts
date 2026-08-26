@@ -107,15 +107,15 @@ function introductoryParagraph(data: any): Content {
       {
         text: [
           {
-            text: 'En mi condición de Jefe del Departamento de Personal por delegación del ',
+            text: 'En Carácter de Director de Recursos Humanos y Capacitación del ',
             fontSize: 11,
           },
           {
-            text: 'SERVICIO NACIONAL DE SANIDAD E INOCUIDAD AGROALIMENTARIA (SENASA)',
+            text: 'SERVICIO NACIONAL DE SANIDAD E INOCUIDAD AGROALIMENTARIA (SENASA),',
             bold: true,
             fontSize: 11,
           },
-          { text: ', por medio de la presente ', fontSize: 11 },
+          { text: ' por medio de la presente ', fontSize: 11 },
           { text: 'HAGO CONSTAR QUE: ', bold: true, fontSize: 11 },
           {
             text: data.employeeName.toUpperCase(),

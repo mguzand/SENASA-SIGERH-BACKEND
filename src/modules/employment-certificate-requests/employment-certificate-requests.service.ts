@@ -353,6 +353,12 @@ export class EmploymentCertificateRequestsService {
       signerName: 'ING. KEVIN ERNESTO MENDOZA LIRA',
       signerTitle:
         [
+          EmploymentCertificateType.WITH_DEDUCTIONS,
+          EmploymentCertificateType.WITHOUT_DEDUCTIONS,
+        ].includes(request.type)
+          ? 'DIRECTOR DE RECURSOS HUMANOS Y CAPACITACIÓN DEL SENASA'
+          :
+        [
           EmploymentCertificateType.INJUPEMP_AFFILIATION,
           EmploymentCertificateType.EMBASSY,
           EmploymentCertificateType.SIAFI_PIN,
@@ -361,6 +367,8 @@ export class EmploymentCertificateRequestsService {
           : 'JEFE DEL DEPARTAMENTO DE PERSONAL POR DELEGACIÓN',
       delegationMemo:
         [
+          EmploymentCertificateType.WITH_DEDUCTIONS,
+          EmploymentCertificateType.WITHOUT_DEDUCTIONS,
           EmploymentCertificateType.INJUPEMP_AFFILIATION,
           EmploymentCertificateType.EMBASSY,
           EmploymentCertificateType.SIAFI_PIN,

@@ -18,7 +18,7 @@ export function withoutDeductionsContent(data: any): Content[] {
     {
       text: [
         {
-          text: 'En mi condición de Jefe del Departamento de Personal por delegación del ',
+          text: 'En Carácter de Director de Recursos Humanos y Capacitación del ',
           fontSize: 11,
         },
         {
