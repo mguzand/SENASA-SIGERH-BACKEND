@@ -41,6 +41,7 @@ import { ApprovalRoutingService } from '../area-manager/approval-routing.service
 import { PublicCriminalRecordUpdateDto } from './dtos/public-criminal-record.dto';
 import { WatchUsersService } from '../watch-users/watch-users.service';
 import { ResetEmployeePasswordDto } from './dtos/reset-employee-password.dto';
+import { Schedule } from '../schedules/entities/schedule.entity';
 interface FindAllEmployeesParams {
   search?: string;
   departmentId?: string;
@@ -557,6 +558,7 @@ export class EmployeesService {
         : null,
       regionalName: employee.regional?.name || null,
       regionalAddress: employee.regional?.address || null,
+      scheduleId: employee.schedule?.id || employee.schedule_id || null,
       scheduleDescription: employee.schedule?.description || null,
       scheduleStartTime: employee.schedule?.startTime || null,
       scheduleEndTime: employee.schedule?.endTime || null,
@@ -654,6 +656,20 @@ export class EmployeesService {
 
       if (dto.biometric_id !== undefined) {
         (employee as any).biometric_id = dto.biometric_id?.trim() || null;
+      }
+
+      if (dto.schedule_id !== undefined) {
+        if (!dto.schedule_id) {
+          throw new BadRequestException(['Debes seleccionar un horario para el empleado.']);
+        }
+
+        const schedule = await qr.manager.findOne(Schedule, {
+          where: { id: dto.schedule_id },
+        });
+        if (!schedule) {
+          throw new BadRequestException(['El horario seleccionado no existe.']);
+        }
+        employee.schedule_id = schedule.id;
       }
 
       if (dto.profile_photo_base64) {

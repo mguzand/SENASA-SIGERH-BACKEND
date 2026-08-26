@@ -30,6 +30,10 @@ export class UpdateEmployeeEditableDto {
 
   @IsOptional()
   @IsUUID()
+  schedule_id?: string | null;
+
+  @IsOptional()
+  @IsUUID()
   nominal_position?: string | null;
 
   @IsOptional()
