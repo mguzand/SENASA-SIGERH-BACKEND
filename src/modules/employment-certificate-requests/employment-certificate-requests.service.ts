@@ -453,7 +453,7 @@ export class EmploymentCertificateRequestsService {
 
     const saved = await this.requestRepository.save(request);
 
-    if (dto.status === EmploymentCertificateStatus.READY) {
+    if (dto.status === EmploymentCertificateStatus.DELIVERED) {
       const employeeName = [
         request.employee?.firstName,
         request.employee?.middleName,
@@ -464,9 +464,9 @@ export class EmploymentCertificateRequestsService {
       const pdfBuffer = await this.pdfStreamToBuffer(generatedDocument.pdf);
       await sendRequestNotification(
         request.employee?.email,
-        'Tu constancia laboral está lista',
+        'Tu constancia laboral fue entregada',
         employeeName,
-        'Tu solicitud de constancia fue preparada y ya está lista para ser retirada en Recursos Humanos.',
+        'Tu constancia laboral fue marcada como entregada por Recursos Humanos. Encontrarás el documento PDF adjunto en este correo.',
         [
           `Tipo: ${EMPLOYMENT_CERTIFICATE_TYPE_LABELS[request.type]}`,
           request.documentNumber ? `Documento: ${request.documentNumber}` : '',

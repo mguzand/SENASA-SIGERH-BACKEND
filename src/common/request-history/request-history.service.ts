@@ -90,8 +90,8 @@ export class RequestHistoryService {
       if (request.generated_at) {
         events.push(this.reviewEvent('generated', 'PDF generado', 'COMPLETED', request.generated_at, actor(request.generated_by_employee_id), request.document_number ? `Documento ${request.document_number}` : null));
       }
-      events.push(this.reviewEvent('ready', 'Constancia lista y enviada', request.ready_at ? 'COMPLETED' : request.status === 'REJECTED' ? 'SKIPPED' : 'PENDING', request.ready_at, actor(request.processed_by_employee_id), null));
-      events.push(this.reviewEvent('delivered', 'Constancia entregada', request.delivered_at ? 'COMPLETED' : request.status === 'REJECTED' ? 'SKIPPED' : 'PENDING', request.delivered_at, actor(request.processed_by_employee_id), null));
+      events.push(this.reviewEvent('ready', 'Constancia lista', request.ready_at ? 'COMPLETED' : request.status === 'REJECTED' ? 'SKIPPED' : 'PENDING', request.ready_at, actor(request.processed_by_employee_id), null));
+      events.push(this.reviewEvent('delivered', 'Constancia entregada y enviada por correo', request.delivered_at ? 'COMPLETED' : request.status === 'REJECTED' ? 'SKIPPED' : 'PENDING', request.delivered_at, actor(request.processed_by_employee_id), null));
     }
 
     return {
