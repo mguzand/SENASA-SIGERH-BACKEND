@@ -128,7 +128,7 @@ function introductoryParagraph(data: any): Content {
           },
           { text: data.modality, bold: true, fontSize: 11 },
           {
-            text: ` desde el ${data.entryDate} y cotiza al I.H.S.S., encontrándose activo en esta institución.`,
+            text: ` desde el ${data.entryDate}, encontrándose activo en esta institución.`,
             fontSize: 11,
           },
         ],
