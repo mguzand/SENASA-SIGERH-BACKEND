@@ -10,6 +10,7 @@ import { injupempAffiliationContent } from './injupemp-affiliation-certificate.r
 import { siafiPinContent } from './siafi-pin-certificate.report';
 import { withDeductionsContent } from './with-deductions-certificate.report';
 import { withoutDeductionsContent } from './without-deductions-certificate.report';
+import { financeCertificateContent } from './finance-certificate.report';
 
 export async function EmploymentCertificateReport(
   data: any,
@@ -96,6 +97,8 @@ function certificateContent(data: any): Content[] {
       return withDeductionsContent(data);
     case EmploymentCertificateType.WITHOUT_DEDUCTIONS:
       return withoutDeductionsContent(data);
+    case EmploymentCertificateType.SWORN_STATEMENT:
+      return financeCertificateContent(data);
     case EmploymentCertificateType.IHSS_AFFILIATION:
       return ihssAffiliationContent(data);
     case EmploymentCertificateType.INJUPEMP_AFFILIATION:
@@ -121,6 +124,7 @@ function header(data: any): Content {
             EmploymentCertificateType.INJUPEMP_AFFILIATION,
             EmploymentCertificateType.EMBASSY,
             EmploymentCertificateType.SIAFI_PIN,
+            EmploymentCertificateType.SWORN_STATEMENT,
           ].includes(data.type)
             ? []
             : [
@@ -138,6 +142,7 @@ function header(data: any): Content {
                 EmploymentCertificateType.INJUPEMP_AFFILIATION,
                 EmploymentCertificateType.EMBASSY,
                 EmploymentCertificateType.SIAFI_PIN,
+                EmploymentCertificateType.SWORN_STATEMENT,
               ].includes(data.type)
                 ? 'Nº'
                 : 'No.'
@@ -151,6 +156,7 @@ function header(data: any): Content {
                 EmploymentCertificateType.INJUPEMP_AFFILIATION,
                 EmploymentCertificateType.EMBASSY,
                 EmploymentCertificateType.SIAFI_PIN,
+                EmploymentCertificateType.SWORN_STATEMENT,
               ].includes(data.type)
                 ? 28
                 : 5,

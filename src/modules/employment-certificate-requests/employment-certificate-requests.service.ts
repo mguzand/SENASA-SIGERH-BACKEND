@@ -244,6 +244,7 @@ export class EmploymentCertificateRequestsService {
       ![
         EmploymentCertificateType.WITH_DEDUCTIONS,
         EmploymentCertificateType.WITHOUT_DEDUCTIONS,
+        EmploymentCertificateType.SWORN_STATEMENT,
         EmploymentCertificateType.IHSS_AFFILIATION,
         EmploymentCertificateType.INJUPEMP_AFFILIATION,
         EmploymentCertificateType.EMBASSY,
@@ -331,6 +332,7 @@ export class EmploymentCertificateRequestsService {
       employeeName,
       identity: this.formatIdentity(request.employee.dni),
       entryDate: this.formatLongDate(request.employee.entryDate),
+      financeEntryDate: this.formatFinanceDate(request.employee.entryDate),
       modality,
       embassyName: request.embassyName,
       appointmentDate: request.appointmentDate
@@ -342,6 +344,9 @@ export class EmploymentCertificateRequestsService {
       hasContractToAgreementTransition,
       position:
         activeJob?.position?.name || 'No registrado',
+      nominalPosition: activeJob?.position?.name || 'No registrado',
+      functionalPosition: activeJob?.functionalPosition?.name || 'No registrado',
+      financeModality: activeJob?.modality?.name?.trim().toLocaleLowerCase('es-HN') || 'no registrada',
       grossSalary,
       amountInWords: numberToLempirasWords(grossSalary),
       deductions,
@@ -362,6 +367,7 @@ export class EmploymentCertificateRequestsService {
           EmploymentCertificateType.INJUPEMP_AFFILIATION,
           EmploymentCertificateType.EMBASSY,
           EmploymentCertificateType.SIAFI_PIN,
+          EmploymentCertificateType.SWORN_STATEMENT,
         ].includes(request.type)
           ? 'DIRECTOR DE RECURSOS HUMANOS Y CAPACITACIONES DEL SENASA'
           : 'JEFE DEL DEPARTAMENTO DE PERSONAL POR DELEGACIÓN',
@@ -372,6 +378,7 @@ export class EmploymentCertificateRequestsService {
           EmploymentCertificateType.INJUPEMP_AFFILIATION,
           EmploymentCertificateType.EMBASSY,
           EmploymentCertificateType.SIAFI_PIN,
+          EmploymentCertificateType.SWORN_STATEMENT,
         ].includes(request.type)
           ? ''
           : request.type === EmploymentCertificateType.IHSS_AFFILIATION
@@ -429,6 +436,7 @@ export class EmploymentCertificateRequestsService {
       [
         EmploymentCertificateType.WITH_DEDUCTIONS,
         EmploymentCertificateType.WITHOUT_DEDUCTIONS,
+        EmploymentCertificateType.SWORN_STATEMENT,
         EmploymentCertificateType.IHSS_AFFILIATION,
         EmploymentCertificateType.INJUPEMP_AFFILIATION,
         EmploymentCertificateType.EMBASSY,
@@ -580,6 +588,12 @@ export class EmploymentCertificateRequestsService {
     return `a los ${value.getDate()} días del mes de ${new Intl.DateTimeFormat('es-HN', {
       month: 'long', timeZone: 'America/Tegucigalpa',
     }).format(value)} del año ${value.getFullYear()}`;
+  }
+
+  private formatFinanceDate(value: Date | string) {
+    const longDate = this.formatLongDate(value);
+    const [day, ...rest] = longDate.split(' de ');
+    return `${day.padStart(2, '0')} de ${rest.join(' del ')}`;
   }
 
   private formatIssueDateInWords(value: Date) {

@@ -15,7 +15,7 @@ export const EMPLOYMENT_CERTIFICATE_TYPE_LABELS: Record<
   string
 > = {
   [EmploymentCertificateType.WITH_DEDUCTIONS]: 'Con deducciones',
-  [EmploymentCertificateType.SWORN_STATEMENT]: 'Declaración jurada',
+  [EmploymentCertificateType.SWORN_STATEMENT]: 'Finanzas / Tribunal Superior de Cuentas',
   [EmploymentCertificateType.WITHOUT_DEDUCTIONS]: 'Sin deducciones',
   [EmploymentCertificateType.SIAFI_PIN]: 'Para solicitud de PIN SIAFI',
   [EmploymentCertificateType.IHSS_AFFILIATION]: 'Para afiliación al IHSS',
