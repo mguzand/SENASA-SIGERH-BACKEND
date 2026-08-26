@@ -341,7 +341,7 @@ export class EmploymentCertificateRequestsService {
         : null,
       hasContractToAgreementTransition,
       position:
-        activeJob?.functionalPosition?.name || activeJob?.position?.name || 'No registrado',
+        activeJob?.position?.name || 'No registrado',
       grossSalary,
       amountInWords: numberToLempirasWords(grossSalary),
       deductions,
