@@ -492,7 +492,7 @@ export class EmployeeExitPermitsService {
     const date = new Date(`${monthStart}T12:00:00`);
     date.setMonth(date.getMonth() + 1);
     const nextMonth = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
-    const monthly = await this.exitPermitRepository
+    const monthlyRecords = await this.exitPermitRepository
       .createQueryBuilder('permit')
       .where('permit.employee_id = :employeeId', { employeeId })
       .andWhere('LOWER(TRIM(permit.permit_type)) = :personalType', {
@@ -500,23 +500,27 @@ export class EmployeeExitPermitsService {
       })
       .andWhere('permit.exit_date >= :monthStart', { monthStart })
       .andWhere('permit.exit_date < :nextMonth', { nextMonth })
-      // A denial at any approval level releases the employee's monthly quota.
-      // The individual checks also cover old rows where the global status was
-      // left pending although boss/HR/liaison had already rejected the permit.
-      .andWhere('permit.status <> :globalRejected', {
-        globalRejected: ExitPermitStatus.REJECTED,
-      })
-      .andWhere('permit.boss_status <> :bossRejected', {
-        bossRejected: ExitPermitStatus.REJECTED,
-      })
-      .andWhere('permit.hr_status <> :hrRejected', {
-        hrRejected: ExitPermitStatus.REJECTED,
-      })
-      .andWhere(
-        `(permit.liaison_status IS NULL OR LOWER(permit.liaison_status) <> :liaisonRejected)`,
-        { liaisonRejected: ExitPermitStatus.REJECTED },
-      )
       .getMany();
+
+    // A denial at any level releases the monthly quota. Filter in application
+    // code because PostgreSQL stores every status column as a different ENUM,
+    // and old rows may have a rejected reviewer while the global status stayed
+    // pending. Legacy cancellation spellings are accepted as well.
+    const rejectedValues = new Set([
+      ExitPermitStatus.REJECTED,
+      'cancelled',
+      'canceled',
+      'cancelado',
+      'denied',
+    ]);
+    const monthly = monthlyRecords.filter((permit) =>
+      ![
+        permit.status,
+        permit.boss_status,
+        permit.hr_status,
+        permit.liaison_status,
+      ].some((status) => rejectedValues.has(String(status || '').toLowerCase())),
+    );
 
     // Recalculate legacy rows using their actual schedule. Older versions only
     // recognized the morning window and stored afternoon half-days as FULL.
@@ -527,13 +531,20 @@ export class EmployeeExitPermitsService {
         permit.without_return,
       ),
     );
-    const correctedPermits = monthly.filter(
-      (permit, index) => permit.personal_duration !== monthlyDurations[index],
+    const allCalculatedDurations = monthlyRecords.map((permit) =>
+      this.classifyPersonalPermit(
+        permit.exit_time,
+        permit.return_time ?? undefined,
+        permit.without_return,
+      ),
+    );
+    const correctedPermits = monthlyRecords.filter(
+      (permit, index) => permit.personal_duration !== allCalculatedDurations[index],
     );
     if (correctedPermits.length) {
       correctedPermits.forEach((permit) => {
-        const index = monthly.indexOf(permit);
-        permit.personal_duration = monthlyDurations[index];
+        const index = monthlyRecords.indexOf(permit);
+        permit.personal_duration = allCalculatedDurations[index];
       });
       await this.exitPermitRepository.save(correctedPermits);
     }
