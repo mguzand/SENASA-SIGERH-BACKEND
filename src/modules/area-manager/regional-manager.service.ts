@@ -212,6 +212,29 @@ export class RegionalManagerService {
       .getMany();
   }
 
+  findMainOfficeHrLiaisonsByPermission(
+    permission: 'vacations' | 'exit_permits' | 'leaves',
+  ) {
+    const column = permission === 'vacations'
+      ? 'can_review_vacations'
+      : permission === 'exit_permits'
+        ? 'can_review_exit_permits'
+        : 'can_review_leaves';
+    return this.regionalManagerRepository.createQueryBuilder('liaison')
+      .innerJoinAndSelect('liaison.employee', 'employee')
+      .innerJoinAndSelect('liaison.regional', 'regional')
+      .innerJoin(User, 'appUser', 'appUser.employeeId = liaison.employee_id')
+      .innerJoin(RolUser, 'permission', 'permission.user_id = appUser.id')
+      .innerJoin('permission.components', 'component')
+      .where('regional.is_main_office = true')
+      .andWhere('regional.is_active = true')
+      .andWhere('liaison.role = :role', { role: RegionalManagerRole.HR_LIAISON })
+      .andWhere('liaison.is_active = true')
+      .andWhere(`liaison.${column} = true`)
+      .andWhere('component.description = :component', { component: 'Enlace de RRHH' })
+      .getMany();
+  }
+
   async getHrLiaisonAccess(employeeId: string) {
     const userRepository = this.componentsRepository.manager.getRepository(User);
     const account = await userRepository

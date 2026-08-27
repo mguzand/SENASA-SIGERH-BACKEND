@@ -95,6 +95,22 @@ export class VacationRequest {
   })
   boss_reviewed_at: Date | null;
 
+  // Primera revisión para empleados de regionales secundarias.
+  @Column({ type: 'uuid', nullable: true })
+  regional_manager_employee_id: string | null;
+
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  regional_status: 'PENDING' | 'APPROVED' | 'REJECTED' | null;
+
+  @Column({ type: 'text', nullable: true })
+  regional_observation: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  regional_reviewed_at: Date | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  area_manager_employee_id: string | null;
+
   // =========================
   // RRHH
   // =========================
@@ -138,6 +154,9 @@ export class VacationRequest {
 
   @Column({ type: 'timestamp', nullable: true })
   liaison_reviewed_at: Date | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  liaison_regional_id: string | null;
 
   // =========================
   // PROCESAMIENTO DE SALDO
