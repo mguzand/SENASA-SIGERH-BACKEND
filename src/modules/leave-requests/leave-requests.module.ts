@@ -13,6 +13,7 @@ import { LeaveVacationImpact } from './entities/leave-vacation-impact.entity';
 import { LeaveRequestDocument } from './entities/leave-request-document.entity';
 import { LeaveRequestsController } from './leave-requests.controller';
 import { LeaveRequestsService } from './leave-requests.service';
+import { PushNotificationsModule } from '../push-notifications/push-notifications.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { LeaveRequestsService } from './leave-requests.service';
     ]),
     AreaManagerModule,
     CommonModule,
+    PushNotificationsModule,
   ],
   controllers: [LeaveRequestsController],
   providers: [LeaveRequestsService],

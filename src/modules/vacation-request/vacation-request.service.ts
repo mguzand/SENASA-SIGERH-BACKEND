@@ -34,6 +34,7 @@ import { ReviewVacationRequestDto } from './dtos/review-vacation-request.dto';
 import { ApprovalRoutingService } from '../area-manager/approval-routing.service';
 import { Employee } from '../employees/entities/employee.entity';
 import { RegionalManagerService } from '../area-manager/regional-manager.service';
+import { PushNotificationsService } from '../push-notifications/push-notifications.service';
 
 @Injectable()
 export class VacationRequestService {
@@ -50,6 +51,7 @@ export class VacationRequestService {
     private readonly areaManagerService: AreaManagerService,
     private readonly approvalRoutingService: ApprovalRoutingService,
     private readonly regionalManagerService: RegionalManagerService,
+    private readonly pushNotifications: PushNotificationsService,
   ) {}
 
   async createManual(
@@ -61,6 +63,12 @@ export class VacationRequestService {
     }
 
     const sortedDays = [...new Set(dto.days)].sort();
+    const minimumRequestDate = this.minimumRetroactiveDate();
+    if (sortedDays.some((day) => day < minimumRequestDate)) {
+      throw new BadRequestException(
+        'Las vacaciones solo pueden solicitarse hasta 10 días calendario hacia atrás',
+      );
+    }
     const validDays = sortedDays.length;
 
     const queryRunner = this.dataSource.createQueryRunner();
@@ -588,6 +596,12 @@ export class VacationRequestService {
         dto.employee_comment,
         savedRequest.id,
       );
+      await this.pushNotifications.sendToEmployee(
+        approval.employeeId,
+        'Nueva solicitud de vacaciones',
+        'Tienes una solicitud pendiente de revisión.',
+        `/private/autorizations/boos/${savedRequest.id}/approved`,
+      );
 
       return this.findOne(savedRequest.id);
     } catch (error) {
@@ -1044,6 +1058,13 @@ export class VacationRequestService {
       employeeName,
       message,
       observation ? [`Observación: ${observation}`] : [],
+      'https://sigerh.senasa.gob.hn/vacations/history',
+    );
+    await this.pushNotifications.sendToEmployee(
+      employee?.id,
+      `Vacaciones ${status === VacationRequestStatus.APPROVED ? 'aprobadas' : 'denegadas'}`,
+      message,
+      '/vacations/history',
     );
   }
 
@@ -1134,5 +1155,12 @@ export class VacationRequestService {
     }
 
     return `En ${diffDays} días`;
+  }
+
+  private minimumRetroactiveDate() {
+    const date = new Date();
+    date.setHours(12, 0, 0, 0);
+    date.setDate(date.getDate() - 10);
+    return this.formatDate(date);
   }
 }

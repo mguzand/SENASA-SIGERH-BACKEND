@@ -35,6 +35,7 @@ import { EmploymentCertificateRequestsModule } from './employment-certificate-re
 import { LeaveRequestsModule } from './leave-requests/leave-requests.module';
 import { AttendanceModule } from './attendance/attendance.module';
 import { WatchUsersModule } from './watch-users/watch-users.module';
+import { PushNotificationsModule } from './push-notifications/push-notifications.module';
 
 @Module({
   imports: [
@@ -74,6 +75,7 @@ import { WatchUsersModule } from './watch-users/watch-users.module';
     LeaveRequestsModule,
     AttendanceModule,
     WatchUsersModule,
+    PushNotificationsModule,
   ],
   exports: [],
 })

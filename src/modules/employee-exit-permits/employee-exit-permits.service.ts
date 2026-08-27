@@ -24,6 +24,7 @@ import { StorageService } from '../../common/services/storage.service';
 import { RegionalManagerService } from '../area-manager/regional-manager.service';
 import { PrinterService } from '../../common/printer/printer.service';
 import { buildEmployeeExitPermitReport } from './reports/employee-exit-permit.report';
+import { PushNotificationsService } from '../push-notifications/push-notifications.service';
 
 @Injectable()
 export class EmployeeExitPermitsService {
@@ -39,6 +40,7 @@ export class EmployeeExitPermitsService {
     private readonly storageService: StorageService,
     private readonly regionalManagerService: RegionalManagerService,
     private readonly printerService: PrinterService,
+    private readonly pushNotifications: PushNotificationsService,
   ) {}
 
   async generatePdf(id: string, currentEmployeeId: string) {
@@ -386,6 +388,12 @@ export class EmployeeExitPermitsService {
   }
 
   async create(dto: CreateEmployeeExitPermitDto) {
+    const minimumRequestDate = this.minimumRetroactiveDate();
+    if (dto.exit_date < minimumRequestDate) {
+      throw new BadRequestException(
+        'Los pases de salida solo pueden solicitarse hasta 10 días calendario hacia atrás',
+      );
+    }
     const approval = await this.approvalRoutingService.resolve(
       dto.employee_id,
       dto.area_id,
@@ -470,6 +478,12 @@ export class EmployeeExitPermitsService {
       ],
       'https://sigerh.senasa.gob.hn/exit-permit-requests/pending',
     );
+    await this.pushNotifications.sendToEmployee(
+      approval.employeeId,
+      'Nuevo pase de salida',
+      `${this.employeeName(requester)} envió un pase pendiente de revisión.`,
+      `/exit-permit-detail/${savedPermit.id}/approved`,
+    );
 
     return savedPermit;
   }
@@ -485,6 +499,13 @@ export class EmployeeExitPermitsService {
     return duration <= 4 * 60 && (staysInMorning || staysInAfternoon)
       ? 'HALF'
       : 'FULL';
+  }
+
+  private minimumRetroactiveDate() {
+    const date = new Date();
+    date.setHours(12, 0, 0, 0);
+    date.setDate(date.getDate() - 10);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   }
 
   private async validatePersonalMonthlyQuota(employeeId: string, exitDate: string, requested: 'HALF' | 'FULL') {
@@ -985,8 +1006,14 @@ export class EmployeeExitPermitsService {
       this.employeeName(employee),
       message,
       observation ? [`Observación: ${observation}`] : [],
-      undefined,
+      'https://sigerh.senasa.gob.hn/exit-permits/history',
       attachments,
+    );
+    await this.pushNotifications.sendToEmployee(
+      employee?.id,
+      `Pase de salida ${status === ExitPermitStatus.APPROVED ? 'aprobado' : 'denegado'}`,
+      message,
+      '/exit-permits/history',
     );
   }
 

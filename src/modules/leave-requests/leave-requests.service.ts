@@ -36,6 +36,7 @@ import {
   LeaveRelationship,
 } from './enums/leave-request.enums';
 import { buildLeaveRequestReport } from './reports/leave-request.report';
+import { PushNotificationsService } from '../push-notifications/push-notifications.service';
 
 @Injectable()
 export class LeaveRequestsService {
@@ -59,6 +60,7 @@ export class LeaveRequestsService {
     private readonly configService: ConfigService,
     private readonly printerService: PrinterService,
     private readonly storageService: StorageService,
+    private readonly pushNotifications: PushNotificationsService,
   ) {}
 
   async initializeModule() {
@@ -96,6 +98,11 @@ export class LeaveRequestsService {
     const employee = await this.resolveEmployee(requesterId);
     const startDate = this.normalizeDate(dto.startDate);
     const endDate = this.normalizeDate(dto.endDate);
+    if (startDate < this.minimumRetroactiveDate()) {
+      throw new BadRequestException(
+        'Las licencias solo pueden solicitarse hasta 10 días calendario hacia atrás.',
+      );
+    }
     if (endDate < startDate) {
       throw new BadRequestException('La fecha final no puede ser anterior a la fecha inicial.');
     }
@@ -211,6 +218,12 @@ export class LeaveRequestsService {
       `Su solicitud de licencia ${type === LeaveRequestType.PAID ? 'remunerada' : 'no remunerada'} fue enviada al primer nivel de aprobación.`,
       [`Días laborales: ${businessDays}`, `Período: ${startDate} al ${endDate}`],
     );
+    await this.pushNotifications.sendToEmployee(
+      isMainOffice ? areaApproval.employeeId : regionalManager!.employee_id,
+      `Nueva licencia ${requestNumber}`,
+      `${this.employeeName(employee)} envió una solicitud pendiente de revisión.`,
+      '/leave-manager-requests/pending',
+    );
 
     return this.findOneForEmployee(saved.id, requesterId);
   }
@@ -308,6 +321,22 @@ export class LeaveRequestsService {
         : 'La solicitud fue denegada.',
       dto.observation ? [`Observación: ${dto.observation}`] : [],
     );
+    await this.pushNotifications.sendToEmployee(
+      request.employee.id,
+      `Licencia ${request.requestNumber} ${dto.status === LeaveRequestStatus.APPROVED ? 'aprobada' : 'denegada'}`,
+      dto.status === LeaveRequestStatus.APPROVED
+        ? 'La solicitud avanzó al siguiente nivel de aprobación.'
+        : 'La solicitud fue denegada.',
+      '/leave-requests/history',
+    );
+    if (dto.status === LeaveRequestStatus.APPROVED && isRegionalStep) {
+      await this.pushNotifications.sendToEmployee(
+        request.areaManagerEmployeeId,
+        `Licencia ${request.requestNumber} pendiente`,
+        'Tienes una licencia pendiente de revisión de jefatura.',
+        '/leave-manager-requests/pending',
+      );
+    }
     return this.getById(id);
   }
 
@@ -374,6 +403,14 @@ export class LeaveRequestsService {
       dto.status === LeaveRequestStatus.APPROVED
         ? 'El enlace regional de Recursos Humanos emitió revisión favorable. La solicitud continúa a RR. HH. central.'
         : 'El enlace regional de Recursos Humanos denegó su solicitud.', dto.observation ? [`Observación: ${dto.observation}`] : []);
+    await this.pushNotifications.sendToEmployee(
+      request.employee.id,
+      `Licencia ${request.requestNumber} revisada`,
+      dto.status === LeaveRequestStatus.APPROVED
+        ? 'El enlace de RR. HH. emitió revisión favorable.'
+        : 'El enlace de RR. HH. denegó su solicitud.',
+      '/leave-requests/history',
+    );
     return this.getById(id);
   }
 
@@ -718,6 +755,13 @@ export class LeaveRequestsService {
     return count;
   }
 
+  private minimumRetroactiveDate() {
+    const date = new Date();
+    date.setHours(12, 0, 0, 0);
+    date.setDate(date.getDate() - 10);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  }
+
   private async resolveEmployee(requesterId: string) {
     const user = await this.userRepository.findOne({
       where: { id: requesterId },
@@ -761,12 +805,21 @@ export class LeaveRequestsService {
   }
 
   private async notifyFinalDecision(request: LeaveRequest) {
-    return sendRequestNotification(
+    await sendRequestNotification(
       request.employee.email,
       `Licencia ${request.requestNumber} ${request.status === LeaveRequestStatus.APPROVED ? 'aprobada' : 'denegada'}`,
       this.employeeName(request.employee),
       request.status === LeaveRequestStatus.APPROVED ? 'Su solicitud de licencia fue aprobada definitivamente.' : 'Su solicitud de licencia fue denegada.',
       [request.directorObservation || request.hrObservation].filter(Boolean) as string[],
+      'https://sigerh.senasa.gob.hn/leave-requests/history',
+    );
+    await this.pushNotifications.sendToEmployee(
+      request.employee.id,
+      `Licencia ${request.requestNumber} ${request.status === LeaveRequestStatus.APPROVED ? 'aprobada' : 'denegada'}`,
+      request.status === LeaveRequestStatus.APPROVED
+        ? 'Su solicitud fue aprobada definitivamente.'
+        : 'Su solicitud fue denegada.',
+      '/leave-requests/history',
     );
   }
 
