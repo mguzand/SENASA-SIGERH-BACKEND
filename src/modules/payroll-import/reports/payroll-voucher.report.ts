@@ -1,5 +1,6 @@
 import { TDocumentDefinitions, Content } from 'pdfmake/interfaces';
 import * as QRCode from 'qrcode';
+import { join } from 'path';
 import {
   noBorderLayout,
   simpleBorderLayout,
@@ -184,9 +185,10 @@ function signature(data: any): Content {
   return {
     stack: [
       {
-        text: '\n\n______________________________',
+        image: join(__dirname, '../../leave-requests/assets/hr-signature.png'),
+        width: 115,
         alignment: 'center',
-        margin: [0, 8, 0, 0],
+        margin: [0, 0, 0, -7],
       },
       {
         text: 'ING. KEVIN ERNESTO MENDOZA LIRA',
@@ -195,12 +197,12 @@ function signature(data: any): Content {
         fontSize: 7,
       },
       {
-        text: 'JEFE DEL DEPARTAMENTO DE PERSONAL',
+        text: 'DIRECTOR DE RECURSOS HUMANOS Y CAPACITACIÓN DEL SENASA',
         alignment: 'center',
-        fontSize: 7,
+        fontSize: 6.5,
       },
     ],
-    margin: [0, 120, 0, 20], // <-- aquí
+    margin: [0, 24, 0, 20],
   };
 }
 

@@ -52,7 +52,7 @@ export function resolveAttendanceCode(input: {
     if (incident.kind === 'UNPAID_LEAVE') return { ...base, code: 'LNR', status: 'UNPAID_LEAVE', description: incident.description };
     if (incident.kind === 'PAID_LEAVE') return { ...base, code: null, status: 'PAID_LEAVE', description: 'Licencia remunerada', requiresClassification: true };
     const permit = incident.permitType?.trim().toLowerCase();
-    const code = permit === 'personal' ? 'PP' : permit === 'oficial' ? 'PO' : null;
+    const code = permit === 'personal' ? 'PP' : permit === 'oficial' ? 'PO' : permit === 'otros permisos' ? 'OT' : null;
     return { ...base, code, status: 'PERMIT', description: incident.description, requiresClassification: !code };
   }
   const scheduled = { scheduledEntry: input.schedule?.startTime || null, scheduledExit: input.schedule?.endTime || null };

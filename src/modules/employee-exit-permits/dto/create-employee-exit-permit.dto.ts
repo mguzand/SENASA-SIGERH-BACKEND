@@ -26,6 +26,7 @@ export class CreateEmployeeExitPermitDto {
   @IsNotEmpty()
   @IsIn([
     'Oficial',
+    'Otros permisos',
     'Personal',
     'Médico IHSS',
     'Médico Privado',
