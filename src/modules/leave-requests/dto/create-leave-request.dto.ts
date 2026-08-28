@@ -16,7 +16,7 @@ export class CreateLeaveRequestDto {
   @IsEnum(LeaveReasonType)
   reasonType: LeaveReasonType;
 
-  @ValidateIf((value) => value.reasonType !== LeaveReasonType.PERSONAL)
+  @ValidateIf((value) => [LeaveReasonType.DEATH, LeaveReasonType.IHSS].includes(value.reasonType))
   @IsEnum(LeaveRelationship)
   relationship?: LeaveRelationship;
 

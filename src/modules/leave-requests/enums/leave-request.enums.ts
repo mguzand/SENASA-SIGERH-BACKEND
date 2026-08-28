@@ -15,6 +15,7 @@ export enum LeaveReasonType {
   DEATH = 'DEATH',
   PERSONAL = 'PERSONAL',
   IHSS = 'IHSS',
+  STUDY = 'STUDY',
 }
 
 export enum LeaveRelationship {

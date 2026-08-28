@@ -458,7 +458,7 @@ export class LeaveRequestsService {
       if (dto.status === LeaveRequestStatus.REJECTED) {
         request.stage = LeaveRequestStage.COMPLETED;
         request.status = LeaveRequestStatus.REJECTED;
-      } else if (request.type === LeaveRequestType.PAID) {
+      } else if (request.businessDays <= 3) {
         request.stage = LeaveRequestStage.COMPLETED;
         request.status = LeaveRequestStatus.APPROVED;
       } else {
@@ -613,7 +613,6 @@ export class LeaveRequestsService {
     }
 
     if (directorId) builder.andWhere('request.directorEmployeeId = :directorId', { directorId });
-    if (reviewer === 'DIRECTOR') builder.andWhere('request.type = :unpaid', { unpaid: LeaveRequestType.UNPAID });
     this.applyInboxStatus(builder, query.status || 'pending', reviewer);
 
     if (query.search?.trim()) {
@@ -713,6 +712,7 @@ export class LeaveRequestsService {
       [LeaveReasonType.IHSS]: dto.relationship === LeaveRelationship.SELF
         ? ['IHSS_CERTIFICATE']
         : ['IHSS_CERTIFICATE', 'BIRTH_CERTIFICATE'],
+      [LeaveReasonType.STUDY]: [],
     };
     const received = new Set((dto.documents || []).map((item) => item.code));
     const missing = requiredCodes[dto.reasonType].filter((code) => !received.has(code));
@@ -794,13 +794,13 @@ export class LeaveRequestsService {
   }
 
   private async notifyAfterHrReview(request: LeaveRequest) {
-    if (request.hrStatus === LeaveRequestStatus.REJECTED || request.type === LeaveRequestType.PAID) {
+    if (request.hrStatus === LeaveRequestStatus.REJECTED || request.businessDays <= 3) {
       return this.notifyFinalDecision(request);
     }
     const director = await this.getMainDirector();
     await Promise.all([
-      sendRequestNotification(request.employee.email, `${request.requestNumber} aprobada por RR. HH.`, this.employeeName(request.employee), 'Recursos Humanos aprobó su licencia no remunerada. Ahora está pendiente de la decisión del Director General.'),
-      sendRequestNotification(director.employee.email, `Licencia ${request.requestNumber} pendiente`, this.employeeName(director.employee), 'Tiene una solicitud de licencia no remunerada pendiente de revisión por Dirección General.', [`Empleado: ${this.employeeName(request.employee)}`, `Días laborales: ${request.businessDays}`], 'https://sigerh.senasa.gob.hn/leave-director-requests/pending'),
+      sendRequestNotification(request.employee.email, `${request.requestNumber} aprobada por RR. HH.`, this.employeeName(request.employee), 'Recursos Humanos aprobó su licencia de más de tres días laborales. Ahora está pendiente de la decisión del Director General.'),
+      sendRequestNotification(director.employee.email, `Licencia ${request.requestNumber} pendiente`, this.employeeName(director.employee), 'Tiene una solicitud de licencia de cuatro o más días laborales pendiente de revisión por Dirección General.', [`Empleado: ${this.employeeName(request.employee)}`, `Días laborales: ${request.businessDays}`], 'https://sigerh.senasa.gob.hn/leave-director-requests/pending'),
     ]);
   }
 
