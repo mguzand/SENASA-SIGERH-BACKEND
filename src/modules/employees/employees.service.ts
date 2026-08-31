@@ -42,6 +42,7 @@ import { PublicCriminalRecordUpdateDto } from './dtos/public-criminal-record.dto
 import { WatchUsersService } from '../watch-users/watch-users.service';
 import { ResetEmployeePasswordDto } from './dtos/reset-employee-password.dto';
 import { Schedule } from '../schedules/entities/schedule.entity';
+import { Regional } from '../regional/entities/regional.entity';
 interface FindAllEmployeesParams {
   search?: string;
   departmentId?: string;
@@ -556,6 +557,7 @@ export class EmployeesService {
               : Date.now()
           }`
         : null,
+      regionalId: employee.regional?.id || employee.regional_id || null,
       regionalName: employee.regional?.name || null,
       regionalAddress: employee.regional?.address || null,
       scheduleId: employee.schedule?.id || employee.schedule_id || null,
@@ -670,6 +672,20 @@ export class EmployeesService {
           throw new BadRequestException(['El horario seleccionado no existe.']);
         }
         employee.schedule_id = schedule.id;
+      }
+
+      if (dto.regional_id !== undefined) {
+        if (!dto.regional_id) {
+          throw new BadRequestException(['Debes seleccionar una regional para el empleado.']);
+        }
+
+        const regional = await qr.manager.findOne(Regional, {
+          where: { id: dto.regional_id, is_active: true },
+        });
+        if (!regional) {
+          throw new BadRequestException(['La regional seleccionada no existe o está inactiva.']);
+        }
+        employee.regional_id = regional.id;
       }
 
       if (dto.profile_photo_base64) {
