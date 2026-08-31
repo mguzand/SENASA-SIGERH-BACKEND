@@ -419,10 +419,13 @@ export class EmployeeExitPermitsService {
     if (isPersonal && endDate !== dto.exit_date) {
       throw new BadRequestException('Los pases personales solo pueden solicitarse para un día');
     }
+    const employeeScheduleEnd = isPersonal
+      ? await this.getEmployeeScheduleEnd(dto.employee_id)
+      : undefined;
     const personalDuration = isPersonal
-      ? this.classifyPersonalPermit(dto.exit_time, dto.return_time, Boolean(dto.without_return))
+      ? this.classifyPersonalPermit(dto.exit_time, dto.return_time, Boolean(dto.without_return), employeeScheduleEnd)
       : null;
-    if (isPersonal) await this.validatePersonalMonthlyQuota(dto.employee_id, dto.exit_date, personalDuration!);
+    if (isPersonal) await this.validatePersonalMonthlyQuota(dto.employee_id, dto.exit_date, personalDuration!, employeeScheduleEnd);
 
     const supportMimeType = this.validateSupportImage(dto.base64FileFoto);
 
@@ -488,10 +491,16 @@ export class EmployeeExitPermitsService {
     return savedPermit;
   }
 
-  private classifyPersonalPermit(exitTime: string, returnTime?: string, withoutReturn = false): 'HALF' | 'FULL' {
-    if (withoutReturn || !returnTime) return 'FULL';
+  private classifyPersonalPermit(
+    exitTime: string,
+    returnTime?: string,
+    withoutReturn = false,
+    scheduleEndTime?: string,
+  ): 'HALF' | 'FULL' {
+    const effectiveReturnTime = withoutReturn ? scheduleEndTime : returnTime;
+    if (!effectiveReturnTime) return 'FULL';
     const exitMinutes = this.timeToMinutes(exitTime);
-    const returnMinutes = this.timeToMinutes(returnTime);
+    const returnMinutes = this.timeToMinutes(effectiveReturnTime);
     if (returnMinutes <= exitMinutes) throw new BadRequestException('La hora de retorno debe ser mayor a la hora de salida');
     const duration = returnMinutes - exitMinutes;
     const staysInMorning = returnMinutes <= 12 * 60;
@@ -508,7 +517,12 @@ export class EmployeeExitPermitsService {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   }
 
-  private async validatePersonalMonthlyQuota(employeeId: string, exitDate: string, requested: 'HALF' | 'FULL') {
+  private async validatePersonalMonthlyQuota(
+    employeeId: string,
+    exitDate: string,
+    requested: 'HALF' | 'FULL',
+    scheduleEndTime?: string,
+  ) {
     const monthStart = `${exitDate.slice(0, 7)}-01`;
     const date = new Date(`${monthStart}T12:00:00`);
     date.setMonth(date.getMonth() + 1);
@@ -550,6 +564,7 @@ export class EmployeeExitPermitsService {
         permit.exit_time,
         permit.return_time ?? undefined,
         permit.without_return,
+        scheduleEndTime,
       ),
     );
     const allCalculatedDurations = monthlyRecords.map((permit) =>
@@ -557,6 +572,7 @@ export class EmployeeExitPermitsService {
         permit.exit_time,
         permit.return_time ?? undefined,
         permit.without_return,
+        scheduleEndTime,
       ),
     );
     const correctedPermits = monthlyRecords.filter(
@@ -576,6 +592,15 @@ export class EmployeeExitPermitsService {
     if (requested === 'HALF' && (monthlyDurations.some((duration) => duration !== 'HALF') || monthlyDurations.filter((duration) => duration === 'HALF').length >= 2)) {
       throw new BadRequestException('Ya alcanzó el límite mensual de pases personales.');
     }
+  }
+
+  private async getEmployeeScheduleEnd(employeeId: string) {
+    const employee = await this.employeeRepository.findOne({
+      where: { id: employeeId },
+      relations: { schedule: true },
+    });
+    if (!employee) throw new NotFoundException('Empleado no encontrado');
+    return employee.schedule?.endTime || undefined;
   }
 
   private validateSupportImage(base64?: string) {
