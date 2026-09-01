@@ -56,6 +56,6 @@ export class CreateEmployeeExitPermitDto {
 
   @IsString()
   @IsOptional()
-  @MaxLength(8_000_000)
+  @MaxLength(14_500_000)
   base64FileFoto?: string;
 }

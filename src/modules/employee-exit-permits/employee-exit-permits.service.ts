@@ -457,7 +457,7 @@ export class EmployeeExitPermitsService {
 
     const savedPermit = await this.exitPermitRepository.save(exitPermit);
     if (dto.base64FileFoto) {
-      const extension = supportMimeType === 'image/png' ? 'png' : supportMimeType === 'image/webp' ? 'webp' : 'jpg';
+      const extension = supportMimeType === 'application/pdf' ? 'pdf' : supportMimeType === 'image/png' ? 'png' : supportMimeType === 'image/webp' ? 'webp' : 'jpg';
       savedPermit.support_file_path = this.storageService.saveBase64File(
         dto.base64FileFoto,
         `exit-permits/${savedPermit.id}`,
@@ -605,9 +605,9 @@ export class EmployeeExitPermitsService {
 
   private validateSupportImage(base64?: string) {
     if (!base64) return null;
-    const match = base64.match(/^data:(image\/(?:jpeg|jpg|png|webp));base64,(.+)$/);
-    if (!match) throw new BadRequestException('El respaldo debe ser una imagen JPG, PNG o WEBP');
-    if (Buffer.byteLength(match[2], 'base64') > 5 * 1024 * 1024) throw new BadRequestException('La imagen de respaldo debe pesar 5 MB o menos');
+    const match = base64.match(/^data:(application\/pdf|image\/(?:jpeg|jpg|png|webp));base64,(.+)$/);
+    if (!match) throw new BadRequestException('El respaldo debe ser un documento PDF o una imagen JPG, PNG o WEBP');
+    if (Buffer.byteLength(match[2], 'base64') > 10 * 1024 * 1024) throw new BadRequestException('El documento de respaldo debe pesar 10 MB o menos');
     return match[1] === 'image/jpg' ? 'image/jpeg' : match[1];
   }
 
@@ -777,7 +777,7 @@ export class EmployeeExitPermitsService {
     if (permit.stage === ExitPermitStage.COMPLETED) throw new BadRequestException('No puede modificar documentos de una solicitud finalizada');
     const mimeType = this.validateSupportImage(base64FileFoto)!;
     if (permit.support_file_path) this.storageService.deleteFile(permit.support_file_path);
-    const extension = mimeType === 'image/png' ? 'png' : mimeType === 'image/webp' ? 'webp' : 'jpg';
+    const extension = mimeType === 'application/pdf' ? 'pdf' : mimeType === 'image/png' ? 'png' : mimeType === 'image/webp' ? 'webp' : 'jpg';
     permit.support_file_path = this.storageService.saveBase64File(base64FileFoto, `exit-permits/${permit.id}`, `support.${extension}`);
     permit.support_mime_type = mimeType;
     await this.exitPermitRepository.save(permit);
