@@ -5,6 +5,7 @@ import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
 import { ListLeaveRequestsDto } from './dto/list-leave-requests.dto';
 import { ReviewLeaveRequestDto } from './dto/review-leave-request.dto';
 import { LeaveRequestsService } from './leave-requests.service';
+import { UpdateLeaveDocumentsDto } from './dto/update-leave-documents.dto';
 
 @Controller('leave-requests')
 export class LeaveRequestsController {
@@ -18,6 +19,11 @@ export class LeaveRequestsController {
   @Get('mine')
   findMine(@Req() req: AuthenticatedRequest) {
     return this.service.findMine(this.userId(req));
+  }
+
+  @Patch(':id/documents')
+  updateDocuments(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() dto: UpdateLeaveDocumentsDto) {
+    return this.service.updateDocuments(this.userId(req), id, dto);
   }
 
   @Get('hr/inbox')

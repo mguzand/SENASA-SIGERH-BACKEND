@@ -25,6 +25,7 @@ import { User } from '../users/entities/user.entity';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
 import { ListLeaveRequestsDto } from './dto/list-leave-requests.dto';
 import { ReviewLeaveRequestDto } from './dto/review-leave-request.dto';
+import { UpdateLeaveDocumentsDto } from './dto/update-leave-documents.dto';
 import { LeaveRequest } from './entities/leave-request.entity';
 import { LeaveVacationImpact } from './entities/leave-vacation-impact.entity';
 import { LeaveRequestDocument } from './entities/leave-request-document.entity';
@@ -230,11 +231,38 @@ export class LeaveRequestsService {
 
   async findMine(requesterId: string) {
     const employee = await this.resolveEmployee(requesterId);
-    return this.requestRepository.find({
+    const requests = await this.requestRepository.find({
       where: { employeeId: employee.id },
-      relations: { area: true, vacationImpacts: true },
+      relations: { area: true, vacationImpacts: true, documents: true },
       order: { createdAt: 'DESC' },
     });
+    return requests.map((request) => this.withDocumentStatus(request));
+  }
+
+  async updateDocuments(requesterId: string, id: string, dto: UpdateLeaveDocumentsDto) {
+    const employee = await this.resolveEmployee(requesterId);
+    const request = await this.requestRepository.findOne({ where: { id }, relations: { documents: true } });
+    if (!request) throw new NotFoundException('Solicitud de licencia no encontrada.');
+    if (request.employeeId !== employee.id) throw new ForbiddenException('Solo el empleado solicitante puede completar los documentos.');
+    if (request.status !== LeaveRequestStatus.PENDING || request.stage === LeaveRequestStage.COMPLETED) {
+      throw new BadRequestException('No puede modificar documentos de una licencia finalizada.');
+    }
+    this.validateDocuments(dto.documents || []);
+    const allowed = new Set(this.requiredDocumentCodes(request.reasonType, request.relationship));
+    for (const document of dto.documents || []) {
+      if (!allowed.has(document.code)) throw new BadRequestException('El documento no corresponde a esta licencia.');
+      const previous = request.documents?.find((item) => item.code === document.code);
+      const extension = this.extensionForMime(document.mimeType);
+      const filePath = this.storageService.saveBase64File(document.base64, `leave-requests/${request.id}`, `${document.code}-${Date.now()}.${extension}`);
+      if (previous) {
+        this.storageService.deleteFile(previous.filePath);
+        previous.originalName = document.name; previous.mimeType = document.mimeType; previous.filePath = filePath;
+        await this.documentRepository.save(previous);
+      } else {
+        await this.documentRepository.save(this.documentRepository.create({ leaveRequestId: request.id, code: document.code, originalName: document.name, mimeType: document.mimeType, filePath }));
+      }
+    }
+    return this.withDocumentStatus(await this.getById(request.id));
   }
 
   async findHrInbox(requesterId: string, query: ListLeaveRequestsDto) {
@@ -274,13 +302,13 @@ export class LeaveRequestsService {
     }
     builder.orderBy('request.createdAt', 'DESC');
     const [data, total] = await builder.skip((page - 1) * limit).take(limit).getManyAndCount();
-    return { data, meta: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) } };
+    return { data: data.map((request) => this.withDocumentStatus(request)), meta: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) } };
   }
 
   async reviewByManager(requesterId: string, id: string, dto: ReviewLeaveRequestDto) {
     const reviewer = await this.resolveEmployee(requesterId);
     this.assertDecision(dto.status);
-    const request = await this.requestRepository.findOne({ where: { id }, relations: { employee: true, regional: true } });
+    const request = await this.requestRepository.findOne({ where: { id }, relations: { employee: true, regional: true, documents: true } });
     if (!request) throw new NotFoundException('Solicitud de licencia no encontrada.');
     if (request.status !== LeaveRequestStatus.PENDING) throw new BadRequestException('La solicitud ya fue procesada.');
 
@@ -290,6 +318,7 @@ export class LeaveRequestsService {
     if ((!isRegionalStep && !isAreaStep) || assignedId !== reviewer.id) {
       throw new ForbiddenException('No tiene autorización para revisar esta licencia.');
     }
+    if (dto.status === LeaveRequestStatus.APPROVED) this.assertDocumentsComplete(request);
 
     const now = new Date();
     if (isRegionalStep) {
@@ -376,6 +405,8 @@ export class LeaveRequestsService {
       leaveType: request.type,
       reasonType: request.reasonType,
       documents: request.documents,
+      documentsComplete: this.withDocumentStatus(request).documentsComplete,
+      missingDocumentCodes: this.withDocumentStatus(request).missingDocumentCodes,
       canApproveFinally: false,
       createdAt: request.createdAt,
     }));
@@ -384,12 +415,13 @@ export class LeaveRequestsService {
   async reviewByLiaison(requesterId: string, id: string, dto: ReviewLeaveRequestDto) {
     const reviewer = await this.resolveEmployee(requesterId);
     this.assertDecision(dto.status);
-    const request = await this.requestRepository.findOne({ where: { id }, relations: { employee: true } });
+    const request = await this.requestRepository.findOne({ where: { id }, relations: { employee: true, documents: true } });
     if (!request || request.stage !== LeaveRequestStage.HR_REVIEW || request.liaisonStatus !== 'PENDING') {
       throw new BadRequestException('La licencia ya no está pendiente del enlace de RR. HH.');
     }
     const liaisons = await this.regionalManagerService.findActiveHrLiaisonsByPermission(request.regionalId, 'leaves');
     if (!liaisons.some((item) => item.employee_id === reviewer.id)) throw new ForbiddenException('No tiene permiso para revisar esta licencia.');
+    if (dto.status === LeaveRequestStatus.APPROVED) this.assertDocumentsComplete(request);
     request.liaisonEmployeeId = reviewer.id;
     request.liaisonStatus = dto.status;
     request.liaisonObservation = dto.observation?.trim() || null;
@@ -446,9 +478,11 @@ export class LeaveRequestsService {
         .getOne();
       if (!request) throw new NotFoundException('Solicitud de licencia no encontrada.');
       request.employee = await runner.manager.findOneByOrFail(Employee, { id: request.employeeId });
+      request.documents = await runner.manager.find(LeaveRequestDocument, { where: { leaveRequestId: request.id } });
       if (request.stage !== LeaveRequestStage.HR_REVIEW || request.status !== LeaveRequestStatus.PENDING) {
         throw new BadRequestException('La solicitud ya no está pendiente de Recursos Humanos.');
       }
+      if (dto.status === LeaveRequestStatus.APPROVED) this.assertDocumentsComplete(request);
 
       request.hrEmployeeId = reviewer.id;
       request.hrStatus = dto.status;
@@ -500,6 +534,7 @@ export class LeaveRequestsService {
         .getOne();
       if (!request) throw new NotFoundException('Solicitud de licencia no encontrada.');
       request.employee = await runner.manager.findOneByOrFail(Employee, { id: request.employeeId });
+      request.documents = await runner.manager.find(LeaveRequestDocument, { where: { leaveRequestId: request.id } });
       if (
         request.stage !== LeaveRequestStage.DIRECTOR_REVIEW ||
         request.status !== LeaveRequestStatus.PENDING ||
@@ -507,6 +542,7 @@ export class LeaveRequestsService {
       ) {
         throw new ForbiddenException('No puede revisar esta solicitud de licencia.');
       }
+      if (dto.status === LeaveRequestStatus.APPROVED) this.assertDocumentsComplete(request);
 
       request.directorStatus = dto.status;
       request.directorObservation = dto.observation?.trim() || null;
@@ -563,7 +599,9 @@ export class LeaveRequestsService {
     const isDirector = request.directorEmployeeId === employee.id;
     let isHr = false;
     try { await this.assertHrAccess(requesterId); isHr = true; } catch {}
-    if (!isOwner && !isAssignedManager && !isDirector && !isHr) {
+    const activeLiaisons = await this.regionalManagerService.findActiveHrLiaisonsByPermission(request.regionalId, 'leaves');
+    const isLiaison = activeLiaisons.some((item) => item.employee_id === employee.id);
+    if (!isOwner && !isAssignedManager && !isDirector && !isHr && !isLiaison) {
       throw new ForbiddenException('No tiene permiso para consultar este documento.');
     }
     const document = request.documents?.find((item) => item.id === documentId);
@@ -645,7 +683,7 @@ export class LeaveRequestsService {
       scope.clone().andWhere('request.stage = :completedStage', { completedStage: LeaveRequestStage.COMPLETED }).getCount(),
     ]);
     return {
-      data,
+      data: data.map((request) => this.withDocumentStatus(request)),
       meta: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) },
       stats: { pending, approved, rejected, directorPending, completed, total: await scope.clone().getCount() },
     };
@@ -706,17 +744,6 @@ export class LeaveRequestsService {
   }
 
   private validateLegalRequest(dto: CreateLeaveRequestDto, businessDays: number) {
-    const requiredCodes: Record<LeaveReasonType, string[]> = {
-      [LeaveReasonType.DEATH]: ['DEATH_CERTIFICATE', 'BIRTH_CERTIFICATE'],
-      [LeaveReasonType.PERSONAL]: [],
-      [LeaveReasonType.IHSS]: dto.relationship === LeaveRelationship.SELF
-        ? ['IHSS_CERTIFICATE']
-        : ['IHSS_CERTIFICATE', 'BIRTH_CERTIFICATE'],
-      [LeaveReasonType.STUDY]: [],
-    };
-    const received = new Set((dto.documents || []).map((item) => item.code));
-    const missing = requiredCodes[dto.reasonType].filter((code) => !received.has(code));
-    if (missing.length) throw new BadRequestException('Debe adjuntar todos los documentos requeridos para este tipo de licencia.');
     if (dto.reasonType === LeaveReasonType.DEATH) {
       if (dto.relationship === LeaveRelationship.SELF) {
         throw new BadRequestException('El parentesco "El empleado" no aplica para una licencia por fallecimiento.');
@@ -724,7 +751,11 @@ export class LeaveRequestsService {
       const maximum = dto.differentDomicile ? 9 : 5;
       if (businessDays > maximum) throw new BadRequestException(`La licencia por fallecimiento permite hasta ${maximum} días hábiles.`);
     }
-    for (const document of dto.documents || []) {
+    this.validateDocuments(dto.documents || []);
+  }
+
+  private validateDocuments(documents: CreateLeaveRequestDto['documents']) {
+    for (const document of documents) {
       if (!['application/pdf', 'image/jpeg', 'image/png'].includes(document.mimeType)) {
         throw new BadRequestException('Los documentos deben ser PDF, JPG o PNG.');
       }
@@ -733,6 +764,26 @@ export class LeaveRequestsService {
         throw new BadRequestException('Cada documento debe pesar 10 MB o menos.');
       }
     }
+  }
+
+  private requiredDocumentCodes(reasonType: LeaveReasonType, relationship?: LeaveRelationship | null) {
+    if (reasonType === LeaveReasonType.DEATH) return ['DEATH_CERTIFICATE', 'BIRTH_CERTIFICATE'];
+    if (reasonType === LeaveReasonType.IHSS) return relationship === LeaveRelationship.SELF
+      ? ['IHSS_CERTIFICATE']
+      : ['IHSS_CERTIFICATE', 'BIRTH_CERTIFICATE'];
+    return ['SUPPORT_DOCUMENT'];
+  }
+
+  private withDocumentStatus(request: LeaveRequest) {
+    const requiredDocumentCodes = this.requiredDocumentCodes(request.reasonType, request.relationship);
+    const received = new Set((request.documents || []).map((item) => item.code));
+    const missingDocumentCodes = requiredDocumentCodes.filter((code) => !received.has(code));
+    return { ...request, requiredDocumentCodes, missingDocumentCodes, documentsComplete: missingDocumentCodes.length === 0, canCompleteDocuments: request.status === LeaveRequestStatus.PENDING && request.stage !== LeaveRequestStage.COMPLETED };
+  }
+
+  private assertDocumentsComplete(request: LeaveRequest) {
+    const status = this.withDocumentStatus(request);
+    if (!status.documentsComplete) throw new BadRequestException('El empleado debe completar los documentos de respaldo antes de aprobar la licencia.');
   }
 
   private extensionForMime(mimeType: string) {
