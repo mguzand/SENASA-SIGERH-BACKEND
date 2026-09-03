@@ -726,7 +726,7 @@ export class EmployeeExitPermitsService {
     }
     permit.liaison_employee_id = currentEmployeeId;
     permit.liaison_status = dto.status;
-    permit.liaison_observation = dto.observation ?? null;
+    permit.liaison_observation = [permit.liaison_observation, dto.observation?.trim()].filter(Boolean).join('\n') || null;
     permit.liaison_reviewed_at = new Date();
     if (dto.status === ExitPermitStatus.REJECTED) {
       permit.stage = ExitPermitStage.COMPLETED;
@@ -746,6 +746,44 @@ export class EmployeeExitPermitsService {
           ? 'El enlace de Recursos Humanos revisó favorablemente su pase. Continúa a aprobación central.'
           : 'El enlace regional de Recursos Humanos aprobó definitivamente su pase.', dto.observation);
     return saved;
+  }
+
+  async requestSupportChange(id: string, observation: string, currentEmployeeId: string) {
+    if (!currentEmployeeId) throw new ForbiddenException('No fue posible identificar al enlace.');
+    const reason = observation?.trim();
+    if (!reason || reason.length > 1000) throw new BadRequestException('Indique un motivo de entre 1 y 1000 caracteres.');
+    const permit = await this.exitPermitRepository.findOne({ where: { id }, relations: { employee: true } });
+    if (!permit) throw new NotFoundException('Solicitud de salida no encontrada.');
+    await this.assertLiaisonPermission(currentEmployeeId, permit.regional_id!);
+    if (permit.stage !== ExitPermitStage.HR_REVIEW || permit.status !== ExitPermitStatus.PENDING || !permit.liaison_review_required || permit.liaison_status !== 'pending') {
+      throw new BadRequestException('Solo puede solicitar cambios mientras el pase esté pendiente del enlace de RR. HH.');
+    }
+    if (!permit.support_file_path) throw new BadRequestException('El pase ya está pendiente de que el empleado adjunte un documento.');
+    const reviewer = await this.employeeRepository.findOneBy({ id: currentEmployeeId });
+    const note = `[${new Date().toISOString()}] Cambio de documento solicitado por ${this.employeeName(reviewer!)}: ${reason}`;
+    // Retain the old file for recovery; only detach it from the active request.
+    const updated = await this.exitPermitRepository.update({
+      id, support_file_path: permit.support_file_path, stage: ExitPermitStage.HR_REVIEW,
+      status: ExitPermitStatus.PENDING, liaison_status: 'pending', liaison_review_required: true,
+    }, {
+      support_file_path: null, support_mime_type: null,
+      liaison_observation: [permit.liaison_observation, note].filter(Boolean).join('\n'),
+      updated_at: new Date(),
+    });
+    if (updated.affected !== 1) throw new BadRequestException('El pase cambió durante la revisión. Actualice la bandeja.');
+    const title = 'Solicitud de cambio de documento del pase de salida';
+    const message = `El enlace de RR. HH. solicita que vuelva a adjuntar el respaldo de su pase de salida. Motivo: ${reason}`;
+    const [email, push] = await Promise.allSettled([
+      sendRequestNotification(permit.employee?.email, title, this.employeeName(permit.employee), message,
+        [`Pase: ${permit.id}`, 'La solicitud sigue pendiente de revisión; no ha sido denegada.'],
+        'https://sigerh.senasa.gob.hn/exit-permits/history'),
+      this.pushNotifications.sendToEmployee(permit.employee_id, title, message, '/exit-permits/history'),
+    ]);
+    return {
+      id, hasSupport: false,
+      documentsComplete: this.isPersonalPermit(permit.permit_type),
+      notificationWarning: email.status === 'rejected' || !email.value || push.status === 'rejected',
+    };
   }
 
   private async prepareLiaisonReview(permit: EmployeeExitPermit) {

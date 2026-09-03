@@ -16,6 +16,7 @@ import { CreateEmployeeExitPermitDto } from './dto/create-employee-exit-permit.d
 import { ReviewEmployeeExitPermitDto } from './dto/review-employee-exit-permit.dto';
 import { ListHrExitPermitsDto } from './dto/list-hr-exit-permits.dto';
 import { UpdateExitPermitSupportDto } from './dto/update-exit-permit-support.dto';
+import { RequestSupportChangeDto } from './dto/request-support-change.dto';
 
 @Controller('employee-exit-permits')
 export class EmployeeExitPermitsController {
@@ -64,6 +65,11 @@ export class EmployeeExitPermitsController {
   @Patch(':id/liaison-review')
   liaisonReview(@Param('id') id: string, @Body() dto: ReviewEmployeeExitPermitDto, @Req() req: any) {
     return this.employeeExitPermitsService.liaisonReview(id, dto, this.getEmployeeId(req));
+  }
+
+  @Patch(':id/liaison-support-change')
+  requestSupportChange(@Param('id') id: string, @Body() dto: RequestSupportChangeDto, @Req() req: any) {
+    return this.employeeExitPermitsService.requestSupportChange(id, dto.observation, this.getEmployeeId(req));
   }
 
   @Get('boss/:id')
