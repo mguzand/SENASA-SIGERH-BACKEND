@@ -17,7 +17,7 @@ import { MonthlyAttendanceFilterDto } from './dto/monthly-attendance-filter.dto'
 import { AttendanceDayResult, AttendanceIncident, BiometricMark, MonthlyAttendanceDay, MonthlyAttendanceReport } from './interfaces/monthly-attendance.interface';
 
 export const BIOMETRIC_BATCH_SIZE = 10;
-export const LATE_TOLERANCE_MINUTES = 0;
+export const LATE_TOLERANCE_MINUTES = 5;
 const MONTH_NAMES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 const WEEKDAYS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 const WEEKDAY_SHORT = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
