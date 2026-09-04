@@ -337,15 +337,25 @@ export class AreaManagerService {
   }
 
   async checkEmployeeAccess(areaId: string, employeeId: string) {
-    const manager = await this.areaManagerRepository.findOne({
-      where: {
-        area_id: areaId,
-        employee_id: employeeId,
-        role: AreaManagerRole.BOSS,
-        is_active: true,
-      },
-      relations: ['area'],
-    });
+    const [manager, leaveFinalApprover] = await Promise.all([
+      this.areaManagerRepository.findOne({
+        where: {
+          area_id: areaId,
+          employee_id: employeeId,
+          role: AreaManagerRole.BOSS,
+          is_active: true,
+        },
+        relations: ['area'],
+      }),
+      this.regionalManagerRepository.findOne({
+        where: {
+          employee_id: employeeId,
+          is_active: true,
+          role: RegionalManagerRole.LEAVE_FINAL_APPROVER,
+        },
+        relations: { regional: true },
+      }),
+    ]);
 
     if (!manager) {
       const regionalManager = await this.regionalManagerRepository.findOne({
@@ -360,8 +370,10 @@ export class AreaManagerService {
       if (regionalManager) {
         return {
           hasAccess: true,
+          hasAreaManagementAccess: true,
           isDelegate: false,
           isRegionalManager: true,
+          isLeaveFinalApprover: Boolean(leaveFinalApprover),
           roleLabel: regionalManager.regional?.is_main_office
             ? 'Director General'
             : 'Jefe regional',
@@ -370,10 +382,25 @@ export class AreaManagerService {
         };
       }
 
+      if (leaveFinalApprover) {
+        return {
+          hasAccess: true,
+          hasAreaManagementAccess: false,
+          isDelegate: false,
+          isRegionalManager: false,
+          isLeaveFinalApprover: true,
+          roleLabel: 'Aprobador de licencias',
+          areaId,
+          areaName: leaveFinalApprover.regional?.name || null,
+        };
+      }
+
       return {
         hasAccess: false,
+        hasAreaManagementAccess: false,
         isDelegate: false,
         isRegionalManager: false,
+        isLeaveFinalApprover: false,
         roleLabel: null,
         areaId,
         areaName: null,
@@ -382,8 +409,10 @@ export class AreaManagerService {
 
     return {
       hasAccess: true,
+      hasAreaManagementAccess: true,
       isDelegate: manager.is_a_delegate,
       isRegionalManager: false,
+      isLeaveFinalApprover: Boolean(leaveFinalApprover),
       roleLabel: manager.is_a_delegate ? 'Delegado' : 'Jefe',
       areaId: manager.area_id,
       areaName: manager.area?.name || null,
