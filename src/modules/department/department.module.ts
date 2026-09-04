@@ -4,11 +4,14 @@ import { DepartmentController } from './department.controller';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { OrganizationalUnit } from './entities/organizational-unit.entity';
 import { OrganizationalUnitType } from './entities/organizational_unit_types';
+import { ConfigModule } from '@nestjs/config';
+import { AreaHierarchyService } from './area-hierarchy.service';
 
 @Module({
   controllers: [DepartmentController],
-  providers: [DepartmentService],
+  providers: [DepartmentService, AreaHierarchyService],
   imports: [
+    ConfigModule,
     TypeOrmModule.forFeature([OrganizationalUnit, OrganizationalUnitType]),
   ],
 })
