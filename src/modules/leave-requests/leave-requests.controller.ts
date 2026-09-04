@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Req, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+  Res,
+} from '@nestjs/common';
 import type { Response } from 'express';
 import type { AuthenticatedRequest } from '../../common/auth/interfaces/authenticated-request.interface';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
@@ -22,17 +32,27 @@ export class LeaveRequestsController {
   }
 
   @Patch(':id/documents')
-  updateDocuments(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() dto: UpdateLeaveDocumentsDto) {
+  updateDocuments(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: UpdateLeaveDocumentsDto,
+  ) {
     return this.service.updateDocuments(this.userId(req), id, dto);
   }
 
   @Get('hr/inbox')
-  findHrInbox(@Req() req: AuthenticatedRequest, @Query() query: ListLeaveRequestsDto) {
+  findHrInbox(
+    @Req() req: AuthenticatedRequest,
+    @Query() query: ListLeaveRequestsDto,
+  ) {
     return this.service.findHrInbox(this.userId(req), query);
   }
 
   @Get('manager/inbox')
-  findManagerInbox(@Req() req: AuthenticatedRequest, @Query() query: ListLeaveRequestsDto) {
+  findManagerInbox(
+    @Req() req: AuthenticatedRequest,
+    @Query() query: ListLeaveRequestsDto,
+  ) {
     return this.service.findManagerInbox(this.userId(req), query);
   }
 
@@ -42,17 +62,28 @@ export class LeaveRequestsController {
   }
 
   @Patch(':id/liaison-review')
-  reviewByLiaison(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() dto: ReviewLeaveRequestDto) {
+  reviewByLiaison(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: ReviewLeaveRequestDto,
+  ) {
     return this.service.reviewByLiaison(this.userId(req), id, dto);
   }
 
   @Patch(':id/manager-review')
-  reviewByManager(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() dto: ReviewLeaveRequestDto) {
+  reviewByManager(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: ReviewLeaveRequestDto,
+  ) {
     return this.service.reviewByManager(this.userId(req), id, dto);
   }
 
   @Get('director/inbox')
-  findDirectorInbox(@Req() req: AuthenticatedRequest, @Query() query: ListLeaveRequestsDto) {
+  findDirectorInbox(
+    @Req() req: AuthenticatedRequest,
+    @Query() query: ListLeaveRequestsDto,
+  ) {
     return this.service.findDirectorInbox(this.userId(req), query);
   }
 
@@ -62,12 +93,20 @@ export class LeaveRequestsController {
   }
 
   @Patch(':id/hr-review')
-  reviewByHr(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() dto: ReviewLeaveRequestDto) {
+  reviewByHr(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: ReviewLeaveRequestDto,
+  ) {
     return this.service.reviewByHr(this.userId(req), id, dto);
   }
 
   @Patch(':id/director-review')
-  reviewByDirector(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() dto: ReviewLeaveRequestDto) {
+  reviewByDirector(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: ReviewLeaveRequestDto,
+  ) {
     return this.service.reviewByDirector(this.userId(req), id, dto);
   }
 
@@ -79,13 +118,24 @@ export class LeaveRequestsController {
     @Res() response: Response,
   ) {
     const destination = destinationRaw.toUpperCase();
-    if (destination !== 'HR' && destination !== 'DIRECTOR') {
+    if (
+      destination !== 'HR' &&
+      destination !== 'DIRECTOR' &&
+      destination !== 'FINAL'
+    ) {
       response.status(400).json({ message: 'Destino de documento inválido.' });
       return;
     }
-    const result = await this.service.generatePdf(this.userId(req), id, destination);
+    const result = await this.service.generatePdf(
+      this.userId(req),
+      id,
+      destination,
+    );
     response.setHeader('Content-Type', 'application/pdf');
-    response.setHeader('Content-Disposition', `inline; filename="licencia-${result.requestNumber}.pdf"`);
+    response.setHeader(
+      'Content-Disposition',
+      `inline; filename="${result.filename}"`,
+    );
     result.pdf.pipe(response);
     result.pdf.end();
   }
@@ -97,9 +147,16 @@ export class LeaveRequestsController {
     @Param('documentId') documentId: string,
     @Res() response: Response,
   ) {
-    const document = await this.service.getDocument(this.userId(req), id, documentId);
+    const document = await this.service.getDocument(
+      this.userId(req),
+      id,
+      documentId,
+    );
     response.setHeader('Content-Type', document.mimeType);
-    response.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(document.originalName)}"`);
+    response.setHeader(
+      'Content-Disposition',
+      `inline; filename="${encodeURIComponent(document.originalName)}"`,
+    );
     response.sendFile(document.absolutePath);
   }
 

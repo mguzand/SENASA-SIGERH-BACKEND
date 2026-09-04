@@ -19,9 +19,9 @@ const fonts = {
 
 @Injectable()
 export class PrinterService {
-  private readonly printer = new PdfPrinter(fonts);
-
   createPdf(docDefinition: any) {
-    return this.printer.createPdfKitDocument(docDefinition);
+    // PdfPrinter mutates internal layout/font state while producing a document.
+    // A fresh instance prevents sequential or concurrent requests from corrupting each other.
+    return new PdfPrinter(fonts).createPdfKitDocument(docDefinition);
   }
 }
