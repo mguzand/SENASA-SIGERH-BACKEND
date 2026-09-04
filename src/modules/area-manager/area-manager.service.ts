@@ -357,6 +357,22 @@ export class AreaManagerService {
       }),
     ]);
 
+    // Este rol es deliberadamente exclusivo: habilita la entrada al panel,
+    // pero únicamente para tramitar licencias. No hereda las bandejas de
+    // vacaciones o pases aunque exista una asignación regional histórica.
+    if (leaveFinalApprover) {
+      return {
+        hasAccess: true,
+        hasAreaManagementAccess: false,
+        isDelegate: false,
+        isRegionalManager: false,
+        isLeaveFinalApprover: true,
+        roleLabel: 'Aprobador de licencias',
+        areaId,
+        areaName: leaveFinalApprover.regional?.name || null,
+      };
+    }
+
     if (!manager) {
       const regionalManager = await this.regionalManagerRepository.findOne({
         where: {
@@ -379,19 +395,6 @@ export class AreaManagerService {
             : 'Jefe regional',
           areaId,
           areaName: regionalManager.regional?.name || null,
-        };
-      }
-
-      if (leaveFinalApprover) {
-        return {
-          hasAccess: true,
-          hasAreaManagementAccess: false,
-          isDelegate: false,
-          isRegionalManager: false,
-          isLeaveFinalApprover: true,
-          roleLabel: 'Aprobador de licencias',
-          areaId,
-          areaName: leaveFinalApprover.regional?.name || null,
         };
       }
 

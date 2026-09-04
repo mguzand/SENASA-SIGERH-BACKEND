@@ -343,6 +343,10 @@ export class LeaveRequestsService {
 
   async findManagerInbox(requesterId: string, query: ListLeaveRequestsDto) {
     const employee = await this.resolveEmployee(requesterId);
+    const finalApprover = await this.getMainDirector();
+    if (finalApprover.employee_id === employee.id) {
+      return this.findInbox(query, 'DIRECTOR', null);
+    }
     const page = Math.max(Number(query.page) || 1, 1);
     const limit = Math.min(Math.max(Number(query.limit) || 8, 1), 50);
     const builder = this.requestRepository
@@ -413,6 +417,10 @@ export class LeaveRequestsService {
     });
     if (!request)
       throw new NotFoundException('Solicitud de licencia no encontrada.');
+
+    if (request.stage === LeaveRequestStage.DIRECTOR_REVIEW) {
+      return this.reviewByDirector(requesterId, id, dto);
+    }
     if (request.status !== LeaveRequestStatus.PENDING)
       throw new BadRequestException('La solicitud ya fue procesada.');
 
