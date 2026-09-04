@@ -481,7 +481,9 @@ export class LeaveRequestsService {
   async findDirectorInbox(requesterId: string, query: ListLeaveRequestsDto) {
     const employee = await this.resolveEmployee(requesterId);
     await this.assertMainDirector(employee.id);
-    return this.findInbox(query, 'DIRECTOR', employee.id);
+    // La bandeja pertenece al rol vigente, no a la persona que estaba
+    // configurada cuando la solicitud llegó originalmente a Dirección.
+    return this.findInbox(query, 'DIRECTOR', null);
   }
 
   async findLiaisonInbox(requesterId: string) {
@@ -709,13 +711,14 @@ export class LeaveRequestsService {
       });
       if (
         request.stage !== LeaveRequestStage.DIRECTOR_REVIEW ||
-        request.status !== LeaveRequestStatus.PENDING ||
-        request.directorEmployeeId !== director.id
+        request.status !== LeaveRequestStatus.PENDING
       ) {
         throw new ForbiddenException(
           'No puede revisar esta solicitud de licencia.',
         );
       }
+      // Conserva como responsable de la decisión al aprobador vigente.
+      request.directorEmployeeId = director.id;
       if (dto.status === LeaveRequestStatus.APPROVED)
         this.assertDocumentsComplete(request);
 
