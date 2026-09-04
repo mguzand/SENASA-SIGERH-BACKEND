@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { AreaManagerService } from './area-manager.service';
 import { CreateAreaManagerDto } from './dto/create-area-manager.dto';
 import { ListAreaManagersDto } from './dto/list-area-managers.dto';
@@ -6,6 +14,7 @@ import { CheckAreaManagerAccessDto } from './dto/check-area-manager-access.dto';
 import { RegionalManagerService } from './regional-manager.service';
 import { CreateRegionalManagerDto } from './dto/create-regional-manager.dto';
 import { UpdateHrLiaisonPermissionsDto } from './dto/update-hr-liaison-permissions.dto';
+import { AssignLeaveFinalApproverDto } from './dto/assign-leave-final-approver.dto';
 
 @Controller('area-manager')
 export class AreaManagerController {
@@ -37,6 +46,18 @@ export class AreaManagerController {
     return this.regionalManagerService.findAll();
   }
 
+  @Get('leave-final-approver')
+  getLeaveFinalApprover() {
+    return this.regionalManagerService.getLeaveFinalApprover();
+  }
+
+  @Post('leave-final-approver')
+  assignLeaveFinalApprover(@Body() dto: AssignLeaveFinalApproverDto) {
+    return this.regionalManagerService.assignLeaveFinalApprover(
+      dto.employee_id,
+    );
+  }
+
   @Post('regional')
   createRegionalManager(@Body() dto: CreateRegionalManagerDto) {
     return this.regionalManagerService.create(dto);
@@ -58,7 +79,10 @@ export class AreaManagerController {
   }
 
   @Patch('regional/hr-liaisons/:id/permissions')
-  updateRegionalHrLiaisonPermissions(@Param('id') id: string, @Body() dto: UpdateHrLiaisonPermissionsDto) {
+  updateRegionalHrLiaisonPermissions(
+    @Param('id') id: string,
+    @Body() dto: UpdateHrLiaisonPermissionsDto,
+  ) {
     return this.regionalManagerService.updateHrLiaisonPermissions(id, dto);
   }
 

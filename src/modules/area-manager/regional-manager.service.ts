@@ -31,13 +31,26 @@ export class RegionalManagerService {
   ) {}
 
   async ensureHrLiaisonPermissionComponent() {
-    const systemId = this.configService.get<string>('DEFAULT_SYSTEM_ID', '6816a2e5-085a-4d96-8a36-a8546d886051');
-    const existing = await this.componentsRepository.findOne({ where: { system_id: systemId, description: 'Enlace de RRHH' } });
+    const systemId = this.configService.get<string>(
+      'DEFAULT_SYSTEM_ID',
+      '6816a2e5-085a-4d96-8a36-a8546d886051',
+    );
+    const existing = await this.componentsRepository.findOne({
+      where: { system_id: systemId, description: 'Enlace de RRHH' },
+    });
     if (existing) return existing;
-    const last = await this.componentsRepository.findOne({ where: { system_id: systemId }, order: { orden: 'DESC' } });
-    return this.componentsRepository.save(this.componentsRepository.create({
-      description: 'Enlace de RRHH', system_id: systemId, orden: Number(last?.orden || 0) + 1, visible: true,
-    }));
+    const last = await this.componentsRepository.findOne({
+      where: { system_id: systemId },
+      order: { orden: 'DESC' },
+    });
+    return this.componentsRepository.save(
+      this.componentsRepository.create({
+        description: 'Enlace de RRHH',
+        system_id: systemId,
+        orden: Number(last?.orden || 0) + 1,
+        visible: true,
+      }),
+    );
   }
 
   async findAll() {
@@ -64,6 +77,63 @@ export class RegionalManagerService {
       employeeEmail: record.employee?.email || null,
       createdAt: record.created_at || null,
     }));
+  }
+
+  async getLeaveFinalApprover(allowLegacyFallback = true) {
+    let record = await this.regionalManagerRepository.findOne({
+      where: {
+        is_active: true,
+        role: RegionalManagerRole.LEAVE_FINAL_APPROVER,
+      },
+      relations: { employee: true, regional: true },
+      order: { created_at: 'DESC' },
+    });
+    if (!record && allowLegacyFallback) {
+      record = await this.regionalManagerRepository
+        .createQueryBuilder('manager')
+        .innerJoinAndSelect('manager.employee', 'employee')
+        .innerJoinAndSelect('manager.regional', 'regional')
+        .where('manager.is_active = true')
+        .andWhere('manager.role = :role', {
+          role: RegionalManagerRole.REGIONAL_MANAGER,
+        })
+        .andWhere('regional.is_main_office = true')
+        .orderBy('manager.created_at', 'DESC')
+        .getOne();
+    }
+    if (!record)
+      throw new BadRequestException(
+        'No hay un aprobador final de licencias configurado.',
+      );
+    return this.mapRecord(record);
+  }
+
+  async assignLeaveFinalApprover(employeeId: string) {
+    const employee = await this.employeeRepository.findOne({
+      where: { id: employeeId },
+    });
+    if (!employee || String(employee.status).toLowerCase() !== 'active')
+      throw new BadRequestException(
+        'El aprobador final debe ser un empleado activo.',
+      );
+    const mainOffice = await this.regionalRepository.findOne({
+      where: { is_main_office: true, is_active: true },
+    });
+    if (!mainOffice)
+      throw new BadRequestException('No existe una oficina principal activa.');
+    await this.regionalManagerRepository.update(
+      { role: RegionalManagerRole.LEAVE_FINAL_APPROVER, is_active: true },
+      { is_active: false },
+    );
+    await this.regionalManagerRepository.save(
+      this.regionalManagerRepository.create({
+        regional_id: mainOffice.id,
+        employee_id: employee.id,
+        role: RegionalManagerRole.LEAVE_FINAL_APPROVER,
+        is_active: true,
+      }),
+    );
+    return this.getLeaveFinalApprover(false);
   }
 
   async create(dto: CreateRegionalManagerDto) {
@@ -115,7 +185,11 @@ export class RegionalManagerService {
 
   findActiveByRegional(regionalId: string) {
     return this.regionalManagerRepository.findOne({
-      where: { regional_id: regionalId, is_active: true, role: RegionalManagerRole.REGIONAL_MANAGER },
+      where: {
+        regional_id: regionalId,
+        is_active: true,
+        role: RegionalManagerRole.REGIONAL_MANAGER,
+      },
       relations: { employee: true, regional: true },
       order: { created_at: 'DESC' },
     });
@@ -124,7 +198,11 @@ export class RegionalManagerService {
   findRegionalIdsByEmployee(employeeId: string) {
     return this.regionalManagerRepository
       .find({
-        where: { employee_id: employeeId, is_active: true, role: RegionalManagerRole.REGIONAL_MANAGER },
+        where: {
+          employee_id: employeeId,
+          is_active: true,
+          role: RegionalManagerRole.REGIONAL_MANAGER,
+        },
         select: ['regional_id'],
       })
       .then((records) => records.map((record) => record.regional_id));
@@ -140,7 +218,10 @@ export class RegionalManagerService {
   }
 
   async createHrLiaison(dto: CreateRegionalManagerDto) {
-    const { regional, employee } = await this.validateRegionalEmployee(dto, 'El enlace de RR. HH.');
+    const { regional, employee } = await this.validateRegionalEmployee(
+      dto,
+      'El enlace de RR. HH.',
+    );
     const existing = await this.regionalManagerRepository.findOne({
       where: {
         regional_id: regional.id,
@@ -152,7 +233,10 @@ export class RegionalManagerService {
         can_review_leaves: Boolean(dto.can_review_leaves),
       },
     });
-    if (existing) throw new BadRequestException('Este empleado ya es enlace activo de RR. HH. en la regional.');
+    if (existing)
+      throw new BadRequestException(
+        'Este empleado ya es enlace activo de RR. HH. en la regional.',
+      );
 
     const liaison = await this.regionalManagerRepository.save(
       this.regionalManagerRepository.create({
@@ -172,17 +256,22 @@ export class RegionalManagerService {
     const liaison = await this.regionalManagerRepository.findOne({
       where: { id, role: RegionalManagerRole.HR_LIAISON, is_active: true },
     });
-    if (!liaison) throw new NotFoundException('Enlace de RR. HH. activo no encontrado.');
+    if (!liaison)
+      throw new NotFoundException('Enlace de RR. HH. activo no encontrado.');
     liaison.is_active = false;
     await this.regionalManagerRepository.save(liaison);
     return { id, isActive: false };
   }
 
-  async updateHrLiaisonPermissions(id: string, dto: UpdateHrLiaisonPermissionsDto) {
+  async updateHrLiaisonPermissions(
+    id: string,
+    dto: UpdateHrLiaisonPermissionsDto,
+  ) {
     const liaison = await this.regionalManagerRepository.findOne({
       where: { id, role: RegionalManagerRole.HR_LIAISON, is_active: true },
     });
-    if (!liaison) throw new NotFoundException('Enlace de RR. HH. activo no encontrado.');
+    if (!liaison)
+      throw new NotFoundException('Enlace de RR. HH. activo no encontrado.');
     liaison.can_review_vacations = Boolean(dto.can_review_vacations);
     liaison.can_review_exit_permits = Boolean(dto.can_review_exit_permits);
     liaison.can_review_leaves = Boolean(dto.can_review_leaves);
@@ -193,34 +282,42 @@ export class RegionalManagerService {
     regionalId: string,
     permission: 'vacations' | 'exit_permits' | 'leaves',
   ) {
-    const column = permission === 'vacations'
-      ? 'can_review_vacations'
-      : permission === 'exit_permits'
-        ? 'can_review_exit_permits'
-        : 'can_review_leaves';
-    return this.regionalManagerRepository.createQueryBuilder('liaison')
+    const column =
+      permission === 'vacations'
+        ? 'can_review_vacations'
+        : permission === 'exit_permits'
+          ? 'can_review_exit_permits'
+          : 'can_review_leaves';
+    return this.regionalManagerRepository
+      .createQueryBuilder('liaison')
       .innerJoinAndSelect('liaison.employee', 'employee')
       .innerJoinAndSelect('liaison.regional', 'regional')
       .innerJoin(User, 'appUser', 'appUser.employeeId = liaison.employee_id')
       .innerJoin(RolUser, 'permission', 'permission.user_id = appUser.id')
       .innerJoin('permission.components', 'component')
       .where('liaison.regional_id = :regionalId', { regionalId })
-      .andWhere('liaison.role = :role', { role: RegionalManagerRole.HR_LIAISON })
+      .andWhere('liaison.role = :role', {
+        role: RegionalManagerRole.HR_LIAISON,
+      })
       .andWhere('liaison.is_active = true')
       .andWhere(`liaison.${column} = true`)
-      .andWhere('component.description = :component', { component: 'Enlace de RRHH' })
+      .andWhere('component.description = :component', {
+        component: 'Enlace de RRHH',
+      })
       .getMany();
   }
 
   findMainOfficeHrLiaisonsByPermission(
     permission: 'vacations' | 'exit_permits' | 'leaves',
   ) {
-    const column = permission === 'vacations'
-      ? 'can_review_vacations'
-      : permission === 'exit_permits'
-        ? 'can_review_exit_permits'
-        : 'can_review_leaves';
-    return this.regionalManagerRepository.createQueryBuilder('liaison')
+    const column =
+      permission === 'vacations'
+        ? 'can_review_vacations'
+        : permission === 'exit_permits'
+          ? 'can_review_exit_permits'
+          : 'can_review_leaves';
+    return this.regionalManagerRepository
+      .createQueryBuilder('liaison')
       .innerJoinAndSelect('liaison.employee', 'employee')
       .innerJoinAndSelect('liaison.regional', 'regional')
       .innerJoin(User, 'appUser', 'appUser.employeeId = liaison.employee_id')
@@ -228,15 +325,20 @@ export class RegionalManagerService {
       .innerJoin('permission.components', 'component')
       .where('regional.is_main_office = true')
       .andWhere('regional.is_active = true')
-      .andWhere('liaison.role = :role', { role: RegionalManagerRole.HR_LIAISON })
+      .andWhere('liaison.role = :role', {
+        role: RegionalManagerRole.HR_LIAISON,
+      })
       .andWhere('liaison.is_active = true')
       .andWhere(`liaison.${column} = true`)
-      .andWhere('component.description = :component', { component: 'Enlace de RRHH' })
+      .andWhere('component.description = :component', {
+        component: 'Enlace de RRHH',
+      })
       .getMany();
   }
 
   async getHrLiaisonAccess(employeeId: string) {
-    const userRepository = this.componentsRepository.manager.getRepository(User);
+    const userRepository =
+      this.componentsRepository.manager.getRepository(User);
     const account = await userRepository
       .createQueryBuilder('appUser')
       .where('appUser.employee_id = :identifier', { identifier: employeeId })
@@ -303,15 +405,25 @@ export class RegionalManagerService {
     };
   }
 
-  private async validateRegionalEmployee(dto: CreateRegionalManagerDto, label: string) {
-    const regional = await this.regionalRepository.findOne({ where: { id: dto.regional_id, is_active: true } });
-    if (!regional) throw new NotFoundException('Regional no encontrada o inactiva.');
-    const employee = await this.employeeRepository.findOne({ where: { id: dto.employee_id } });
+  private async validateRegionalEmployee(
+    dto: CreateRegionalManagerDto,
+    label: string,
+  ) {
+    const regional = await this.regionalRepository.findOne({
+      where: { id: dto.regional_id, is_active: true },
+    });
+    if (!regional)
+      throw new NotFoundException('Regional no encontrada o inactiva.');
+    const employee = await this.employeeRepository.findOne({
+      where: { id: dto.employee_id },
+    });
     if (!employee || String(employee.status).toLowerCase() !== 'active') {
       throw new BadRequestException(`${label} debe ser un empleado activo.`);
     }
     if (employee.regional_id !== regional.id) {
-      throw new BadRequestException('El empleado seleccionado debe pertenecer a la regional asignada.');
+      throw new BadRequestException(
+        'El empleado seleccionado debe pertenecer a la regional asignada.',
+      );
     }
     return { regional, employee };
   }
@@ -323,7 +435,14 @@ export class RegionalManagerService {
       regionalName: record.regional?.name || 'Regional sin nombre',
       isMainOffice: record.regional?.is_main_office || false,
       employeeId: record.employee_id,
-      employeeName: [record.employee?.firstName, record.employee?.middleName, record.employee?.lastName, record.employee?.secondLastName].filter(Boolean).join(' '),
+      employeeName: [
+        record.employee?.firstName,
+        record.employee?.middleName,
+        record.employee?.lastName,
+        record.employee?.secondLastName,
+      ]
+        .filter(Boolean)
+        .join(' '),
       employeeEmail: record.employee?.email || null,
       role: record.role,
       permissions: {

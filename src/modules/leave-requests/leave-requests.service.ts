@@ -1219,12 +1219,7 @@ export class LeaveRequestsService {
   }
 
   private async getMainDirector() {
-    const records = await this.regionalManagerService.findAll();
-    const main = records.find((item) => item.isMainOffice);
-    if (!main)
-      throw new BadRequestException(
-        'No hay Director General configurado para la oficina principal.',
-      );
+    const main = await this.regionalManagerService.getLeaveFinalApprover();
     return {
       employee_id: main.employeeId,
       employee: {
