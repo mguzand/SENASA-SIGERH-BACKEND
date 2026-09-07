@@ -52,10 +52,22 @@ export class CreateEmployeeJobActionDto {
   @IsDateString()
   new_unpaid_leave_end_date?: string;
 
+  @ValidateIf((o) => o.action_type === EmployeeJobActionType.SENIORITY_CHANGE)
+  @IsDateString()
+  new_entry_date?: string;
+
   @IsDateString()
   modification_date: string;
 
   @IsOptional()
   @IsString()
   observation?: string;
+}
+
+export class PreviewSeniorityChangeDto {
+  @IsUUID()
+  employee_id: string;
+
+  @IsDateString()
+  new_entry_date: string;
 }

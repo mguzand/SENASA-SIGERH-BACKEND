@@ -116,6 +116,17 @@ export class EmployeeJobActionsService {
         );
       }
 
+      if (dto.action_type === EmployeeJobActionType.SENIORITY_CHANGE) {
+        recalculatedPeriods = await this.applySeniorityChangeWithManager(
+          dto.employee_id,
+          dto.new_entry_date!,
+          dto.modification_date,
+          dto.observation ?? null,
+          createdByUserId,
+          queryRunner.manager,
+        );
+      }
+
       const employee = await queryRunner.manager.findOne(Employee, {
         where: { id: dto.employee_id },
       });
@@ -192,6 +203,7 @@ export class EmployeeJobActionsService {
     const actionNumber = await this.generateActionNumber(manager);
     const snapshot = await this.resolveActionSnapshot(
       dto,
+      employee,
       currentRecord,
       manager,
     );
@@ -225,9 +237,19 @@ export class EmployeeJobActionsService {
 
   private async resolveActionSnapshot(
     dto: CreateEmployeeJobActionDto,
+    employee: Employee,
     currentRecord: EmployeeJobRecord | null,
     manager: EntityManager,
   ) {
+    if (dto.action_type === EmployeeJobActionType.SENIORITY_CHANGE) {
+      const previousValue = this.serializeDateOnly(employee.entryDate);
+      const nextValue = dto.new_entry_date!;
+      return {
+        previousValue,
+        nextValue,
+        summary: `Cambio de antigüedad desde ${previousValue || 'sin fecha'} hacia ${nextValue}. Se recalcularon los períodos vacacionales activos y pendientes.`,
+      };
+    }
     if (dto.action_type === EmployeeJobActionType.MODALITY_CHANGE) {
       const modality = await manager
         .createQueryBuilder()
@@ -473,6 +495,8 @@ export class EmployeeJobActionsService {
         return 'Cambio de estado';
       case EmployeeJobActionType.UNPAID_LEAVE:
         return 'Licencia sin goce de sueldo';
+      case EmployeeJobActionType.SENIORITY_CHANGE:
+        return 'Cambio de antigüedad';
       default:
         return 'Acción al personal';
     }
@@ -490,6 +514,8 @@ export class EmployeeJobActionsService {
         return 'status_change';
       case EmployeeJobActionType.UNPAID_LEAVE:
         return 'unpaid_leave';
+      case EmployeeJobActionType.SENIORITY_CHANGE:
+        return 'seniority_change';
       default:
         return 'status_change';
     }
@@ -507,9 +533,218 @@ export class EmployeeJobActionsService {
         return 'Cambio de estado aplicado correctamente';
       case EmployeeJobActionType.UNPAID_LEAVE:
         return 'Licencia sin goce registrada correctamente';
+      case EmployeeJobActionType.SENIORITY_CHANGE:
+        return 'Antigüedad y períodos vacacionales actualizados correctamente';
       default:
         return 'Acción al personal registrada correctamente';
     }
+  }
+
+  async previewSeniorityChange(dto: {
+    employee_id: string;
+    new_entry_date: string;
+  }) {
+    const employee = await this.dataSource.manager.findOne(Employee, {
+      where: { id: dto.employee_id },
+    });
+    if (!employee) throw new BadRequestException('Empleado no encontrado');
+
+    const periods = await this.buildSeniorityPeriodChanges(
+      dto.employee_id,
+      dto.new_entry_date,
+      this.dataSource.manager,
+    );
+
+    return {
+      employee_id: employee.id,
+      previous_entry_date: this.serializeDateOnly(employee.entryDate),
+      new_entry_date: dto.new_entry_date,
+      periods,
+      rule: { maximum_available: 2, maximum_pending: 1 },
+    };
+  }
+
+  private async applySeniorityChangeWithManager(
+    employeeId: string,
+    newEntryDate: string,
+    movementDate: string,
+    observation: string | null,
+    createdByUserId: string | null,
+    manager: EntityManager,
+  ) {
+    const employee = await manager.findOne(Employee, {
+      where: { id: employeeId },
+    });
+    if (!employee) throw new BadRequestException('Empleado no encontrado');
+
+    const changes = await this.buildSeniorityPeriodChanges(
+      employeeId,
+      newEntryDate,
+      manager,
+    );
+
+    for (const change of changes) {
+      const period = await manager.findOneByOrFail(EmployeeVacationPeriod, {
+        id: change.period_id,
+        employeeId,
+      });
+      period.periodNumber = change.new_period_number;
+      period.startDate = change.new_start_date;
+      period.endDate = change.new_end_date;
+      period.accreditationDate = change.new_accreditation_date;
+      period.earnedDays = change.new_earned_days;
+      period.availableDays = change.new_available_days;
+      await manager.save(EmployeeVacationPeriod, period);
+
+      const difference =
+        Number(change.new_available_days) - Number(change.old_available_days);
+      if (difference !== 0) {
+        await this.employeeVacationPeriodService.recordAdjustmentWithManager(
+          {
+            employeeId,
+            vacationPeriodId: period.id,
+            days: difference,
+            movementDate,
+            description:
+              observation ||
+              `Ajuste por cambio de antigüedad al ${newEntryDate}.`,
+            createdByUserId,
+          },
+          manager,
+        );
+      }
+    }
+
+    employee.entryDate = this.parseDateOnly(newEntryDate);
+    await manager.save(Employee, employee);
+    return changes;
+  }
+
+  private async buildSeniorityPeriodChanges(
+    employeeId: string,
+    newEntryDateValue: string,
+    manager: EntityManager,
+  ) {
+    const newEntryDate = this.parseDateOnlyStrict(newEntryDateValue);
+    if (!newEntryDate || newEntryDate.getTime() > new Date().getTime()) {
+      throw new BadRequestException(
+        'La nueva fecha de antigüedad debe ser una fecha válida y no puede estar en el futuro.',
+      );
+    }
+
+    const currentRecord = await this.findCurrentDetailedRecord(
+      employeeId,
+      manager,
+    );
+    if (!currentRecord?.modalityId) {
+      throw new BadRequestException(
+        'El empleado no tiene una modalidad laboral vigente.',
+      );
+    }
+
+    const periods = await manager.find(EmployeeVacationPeriod, {
+      where: [
+        { employeeId, status: VacationPeriodStatus.AVAILABLE },
+        { employeeId, status: VacationPeriodStatus.PENDING },
+      ],
+      order: { periodNumber: 'ASC' },
+    });
+    const availableCount = periods.filter(
+      (period) => period.status === VacationPeriodStatus.AVAILABLE,
+    ).length;
+    const pendingCount = periods.filter(
+      (period) => period.status === VacationPeriodStatus.PENDING,
+    ).length;
+    if (availableCount > 2 || pendingCount > 1) {
+      throw new BadRequestException(
+        'Los períodos actuales no cumplen la regla de máximo dos activos y uno pendiente.',
+      );
+    }
+
+    const unpaidLeaves = await manager.find(EmployeeUnpaidLeave, {
+      where: { employeeId },
+    });
+    const maxPeriodNumber = Math.max(
+      1,
+      this.getCompletedYears(newEntryDate, new Date()) + 1,
+    );
+
+    const pendingPeriodNumber = maxPeriodNumber;
+    const firstPeriodNumber = pendingPeriodNumber - periods.length + 1;
+    if (periods.length && firstPeriodNumber < 1) {
+      throw new BadRequestException(
+        'La nueva antigüedad no permite conservar la cantidad actual de períodos activos y pendientes.',
+      );
+    }
+
+    return Promise.all(
+      periods.map(async (period, index) => {
+        const newPeriodNumber = firstPeriodNumber + index;
+        const baseAccreditation = this.addYears(
+          newEntryDate,
+          newPeriodNumber,
+        );
+        const shiftDays = unpaidLeaves.reduce((total, leave) => {
+          const start = this.parseDateOnlyStrict(
+            this.serializeDateOnly(leave.startDate),
+          );
+          const end = this.parseDateOnlyStrict(
+            this.serializeDateOnly(leave.endDate),
+          );
+          if (!start || !end) return total;
+          const firstAffected = this.findFirstAffectedPeriodNumber(
+            newEntryDate,
+            start,
+            end,
+            maxPeriodNumber,
+          );
+          return firstAffected !== null && newPeriodNumber >= firstAffected
+            ? total + Number(leave.days || this.getInclusiveDays(start, end))
+            : total;
+        }, 0);
+        const accreditationDate = this.addDays(baseAccreditation, shiftDays);
+        const startDate = this.addYears(
+          newEntryDate,
+          newPeriodNumber - 1,
+        );
+        const endDate = this.addDays(accreditationDate, -1);
+        const earnedDays =
+          await this.employeeVacationPeriodService.getEarnedDaysForPeriod(
+            currentRecord.modalityId,
+            newPeriodNumber,
+          );
+        const availableDays =
+          period.status === VacationPeriodStatus.PENDING
+            ? 0
+            : Number(earnedDays) -
+              Number(period.usedDays) -
+              Number(period.governmentDays) +
+              Number(period.adjustmentDays);
+
+        return {
+          period_id: period.id,
+          period_number: period.periodNumber,
+          new_period_number: newPeriodNumber,
+          status: period.status,
+          old_start_date: this.serializeDateOnly(period.startDate),
+          new_start_date: this.serializeDateOnly(startDate),
+          old_end_date: this.serializeDateOnly(period.endDate),
+          new_end_date: this.serializeDateOnly(endDate),
+          old_accreditation_date: this.serializeDateOnly(
+            period.accreditationDate,
+          ),
+          new_accreditation_date: this.serializeDateOnly(accreditationDate),
+          old_earned_days: Number(period.earnedDays),
+          new_earned_days: Number(earnedDays),
+          used_days: Number(period.usedDays),
+          government_days: Number(period.governmentDays),
+          adjustment_days: Number(period.adjustmentDays),
+          old_available_days: Number(period.availableDays),
+          new_available_days: Number(availableDays),
+          shift_days: shiftDays,
+        };
+      }),
+    );
   }
 
   private async registerUnpaidLeaveWithManager(
@@ -732,6 +967,18 @@ export class EmployeeJobActionsService {
   private getInclusiveDays(start: Date, end: Date) {
     const millisecondsPerDay = 1000 * 60 * 60 * 24;
     return Math.floor((end.getTime() - start.getTime()) / millisecondsPerDay) + 1;
+  }
+
+  private getCompletedYears(entryDate: Date, referenceDate: Date) {
+    let years = referenceDate.getFullYear() - entryDate.getFullYear();
+    const anniversary = new Date(
+      referenceDate.getFullYear(),
+      entryDate.getMonth(),
+      entryDate.getDate(),
+      12,
+    );
+    if (referenceDate.getTime() < anniversary.getTime()) years -= 1;
+    return Math.max(years, 0);
   }
 
   private findFirstAffectedPeriodNumber(

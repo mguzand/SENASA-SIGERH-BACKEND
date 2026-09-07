@@ -40,6 +40,34 @@ export class EmployeeVacationPeriodService {
     private readonly employeeJobRecordService: EmployeeJobRecordService,
   ) {}
 
+  getEarnedDaysForPeriod(modalityId: string, periodNumber: number) {
+    return this.vacationContractRuleService.getDaysByModalityAndYear(
+      modalityId,
+      periodNumber,
+    );
+  }
+
+  recordAdjustmentWithManager(
+    data: {
+      employeeId: string;
+      vacationPeriodId: string;
+      days: number;
+      movementDate: string;
+      description: string;
+      createdByUserId: string | null;
+    },
+    manager: EntityManager,
+  ) {
+    return this.vacationMovementService.createWithManager(
+      {
+        ...data,
+        vacationRequestId: null,
+        type: VacationMovementType.ADJUSTMENT,
+      },
+      manager,
+    );
+  }
+
   async recalculatePeriodsByModalityChangeWithManager(
     dto: {
       employee_id: string;
