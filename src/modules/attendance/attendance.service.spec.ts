@@ -14,6 +14,18 @@ describe('Attendance report rules', () => {
   it.each([
     ['VACATION', 'V'], ['HOLIDAY', 'A'], ['GOVERNMENT_VACATION', 'ACV'], ['UNPAID_LEAVE', 'LNR'],
   ] as const)('resolves %s as %s', (kind, code) => expect(resolveAttendanceCode({ isWeekend: false, schedule, incidents: [{ kind, description: 'Novedad', affectsVacationBalance: true }] }).code).toBe(code));
+  it('resolves paid leave as L without pending classification', () => {
+    expect(resolveAttendanceCode({ isWeekend: false, schedule, incidents: [{ kind: 'PAID_LEAVE', description: 'Licencia' }] })).toMatchObject({ code: 'L', status: 'PAID_LEAVE' });
+  });
+  it.each([
+    ['Médico IHSS', 'CM'],
+    ['Médico Privado', 'MP'],
+    ['Servicio de Salud Pública', 'SSP'],
+    ['Otros permisos', 'OP'],
+    ['Otros Pases', 'OP'],
+  ])('resolves permit %s as %s', (permitType, code) => {
+    expect(resolveAttendanceCode({ isWeekend: false, schedule, incidents: [{ kind: 'PERMIT', description: permitType, permitType }] })).toMatchObject({ code, status: 'PERMIT', requiresClassification: false });
+  });
   it('keeps vacation priority over biometrics', () => expect(resolveAttendanceCode({ isWeekend: false, schedule, mark: { entry: '08:20:00', exit: '16:00:00' }, incidents: [{ kind: 'VACATION', description: 'Vacación' }] }).code).toBe('V'));
   it('does not invent a code without biometric id/mark', () => expect(resolveAttendanceCode({ isWeekend: false, schedule }).status).toBe('NO_DATA'));
   it('does not evaluate lateness without schedule', () => expect(resolveAttendanceCode({ isWeekend: false, schedule: null, mark: { entry: '08:00:00', exit: '16:00:00' } }).status).toBe('NO_SCHEDULE'));
