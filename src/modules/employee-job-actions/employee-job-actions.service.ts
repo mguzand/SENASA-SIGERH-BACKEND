@@ -125,6 +125,11 @@ export class EmployeeJobActionsService {
           createdByUserId,
           queryRunner.manager,
         );
+        await this.updateEntryDateWithManager(
+          dto.employee_id,
+          dto.new_seniority_date!,
+          queryRunner.manager,
+        );
       }
 
       const employee = await queryRunner.manager.findOne(Employee, {
@@ -242,14 +247,17 @@ export class EmployeeJobActionsService {
     manager: EntityManager,
   ) {
     if (dto.action_type === EmployeeJobActionType.SENIORITY_CHANGE) {
-      const previousValue = this.serializeDateOnly(employee.entryDate);
-      const nextValue = dto.new_entry_date!;
+      const previousVacationDate = this.serializeDateOnly(
+        employee.vacationCalculationDate || employee.entryDate,
+      );
+      const previousSeniorityDate = this.serializeDateOnly(employee.entryDate);
       return {
-        previousValue,
-        nextValue,
-        summary: `Cambio de antigüedad desde ${previousValue || 'sin fecha'} hacia ${nextValue}. Se recalcularon los períodos vacacionales activos y pendientes.`,
+        previousValue: `Antigüedad: ${previousSeniorityDate}; cálculo de vacaciones: ${previousVacationDate}`,
+        nextValue: `Antigüedad: ${dto.new_seniority_date}; cálculo de vacaciones: ${dto.new_entry_date}`,
+        summary: `Se actualizó la antigüedad institucional a ${dto.new_seniority_date} sin usarla para cálculos. Los períodos activos y pendientes se recalcularon únicamente con la fecha ${dto.new_entry_date}.`,
       };
     }
+
     if (dto.action_type === EmployeeJobActionType.MODALITY_CHANGE) {
       const modality = await manager
         .createQueryBuilder()
@@ -534,7 +542,7 @@ export class EmployeeJobActionsService {
       case EmployeeJobActionType.UNPAID_LEAVE:
         return 'Licencia sin goce registrada correctamente';
       case EmployeeJobActionType.SENIORITY_CHANGE:
-        return 'Antigüedad y períodos vacacionales actualizados correctamente';
+        return 'Antigüedad y cálculo de vacaciones actualizados correctamente';
       default:
         return 'Acción al personal registrada correctamente';
     }
@@ -557,7 +565,9 @@ export class EmployeeJobActionsService {
 
     return {
       employee_id: employee.id,
-      previous_entry_date: this.serializeDateOnly(employee.entryDate),
+      previous_entry_date: this.serializeDateOnly(
+        employee.vacationCalculationDate || employee.entryDate,
+      ),
       new_entry_date: dto.new_entry_date,
       periods,
       rule: { maximum_available: 2, maximum_pending: 1 },
@@ -615,9 +625,28 @@ export class EmployeeJobActionsService {
       }
     }
 
-    employee.entryDate = this.parseDateOnly(newEntryDate);
+    employee.vacationCalculationDate = this.parseDateOnly(newEntryDate);
     await manager.save(Employee, employee);
     return changes;
+  }
+
+  private async updateEntryDateWithManager(
+    employeeId: string,
+    newEntryDateValue: string,
+    manager: EntityManager,
+  ) {
+    const newEntryDate = this.parseDateOnlyStrict(newEntryDateValue);
+    if (!newEntryDate || newEntryDate.getTime() > new Date().getTime()) {
+      throw new BadRequestException(
+        'La nueva fecha de antigüedad debe ser válida y no puede estar en el futuro.',
+      );
+    }
+    const employee = await manager.findOne(Employee, {
+      where: { id: employeeId },
+    });
+    if (!employee) throw new BadRequestException('Empleado no encontrado');
+    employee.entryDate = newEntryDate;
+    await manager.save(Employee, employee);
   }
 
   private async buildSeniorityPeriodChanges(
@@ -787,7 +816,9 @@ export class EmployeeJobActionsService {
     }
 
     const entryDate = this.parseDateOnlyStrict(
-      this.serializeDateOnly(employee.entryDate),
+      this.serializeDateOnly(
+        employee.vacationCalculationDate || employee.entryDate,
+      ),
     );
 
     if (!entryDate) {

@@ -35,6 +35,8 @@ import { ApprovalRoutingService } from '../area-manager/approval-routing.service
 import { Employee } from '../employees/entities/employee.entity';
 import { RegionalManagerService } from '../area-manager/regional-manager.service';
 import { PushNotificationsService } from '../push-notifications/push-notifications.service';
+import { PrinterService } from '../../common/printer/printer.service';
+import { buildVacationRequestReport } from './reports/vacation-request.report';
 
 @Injectable()
 export class VacationRequestService {
@@ -52,7 +54,23 @@ export class VacationRequestService {
     private readonly approvalRoutingService: ApprovalRoutingService,
     private readonly regionalManagerService: RegionalManagerService,
     private readonly pushNotifications: PushNotificationsService,
+    private readonly printerService: PrinterService,
   ) {}
+
+  async generatePdf(id: string, currentEmployeeId: string) {
+    const request = await this.vacationRequestRepository.findOne({
+      where: { id },
+      relations: { employee: true, area: true, boss_employee: true, hr_employee: true },
+    });
+
+    if (!request) throw new NotFoundException('Solicitud de vacaciones no encontrada');
+    if (!currentEmployeeId) throw new ForbiddenException('No fue posible identificar al usuario');
+
+    return {
+      pdf: this.printerService.createPdf(buildVacationRequestReport(request)),
+      fileName: `solicitud-vacaciones-${request.id.slice(0, 8)}.pdf`,
+    };
+  }
 
   async createManual(
     dto: CreateManualVacationRequestDto,

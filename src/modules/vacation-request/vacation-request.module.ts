@@ -10,6 +10,7 @@ import { EmployeeVacationPeriodModule } from '../employee-vacation-period/employ
 import { VacationMovementModule } from '../vacation-movement/vacation-movement.module';
 import { AreaManagerModule } from '../area-manager/area-manager.module';
 import { PushNotificationsModule } from '../push-notifications/push-notifications.module';
+import { CommonModule } from '../../common/common.module';
 
 @Module({
   controllers: [VacationRequestController],
@@ -22,6 +23,7 @@ import { PushNotificationsModule } from '../push-notifications/push-notification
     VacationMovementModule,
     AreaManagerModule,
     PushNotificationsModule,
+    CommonModule,
   ],
 })
 export class VacationRequestModule {}

@@ -56,6 +56,10 @@ export class CreateEmployeeJobActionDto {
   @IsDateString()
   new_entry_date?: string;
 
+  @ValidateIf((o) => o.action_type === EmployeeJobActionType.SENIORITY_CHANGE)
+  @IsDateString()
+  new_seniority_date?: string;
+
   @IsDateString()
   modification_date: string;
 

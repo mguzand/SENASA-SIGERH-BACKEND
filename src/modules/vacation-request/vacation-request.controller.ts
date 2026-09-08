@@ -7,8 +7,10 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 
 import { VacationRequestService } from './vacation-request.service';
 import { CreateVacationRequestDto } from './dtos/create-vacation-request.dto';
@@ -103,6 +105,15 @@ export class VacationRequestController {
   @Get('employee/:employeeId')
   findByEmployee(@Param('employeeId') employeeId: string) {
     return this.vacationRequestService.findByEmployee(employeeId);
+  }
+
+  @Get(':id/pdf')
+  async pdf(@Param('id') id: string, @Req() req: any, @Res() response: Response) {
+    const document = await this.vacationRequestService.generatePdf(id, this.getEmployeeId(req));
+    response.setHeader('Content-Type', 'application/pdf');
+    response.setHeader('Content-Disposition', `inline; filename="${document.fileName}"`);
+    document.pdf.pipe(response);
+    document.pdf.end();
   }
 
   @Get(':id')

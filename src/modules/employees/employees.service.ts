@@ -441,6 +441,9 @@ export class EmployeesService {
           regionalId: employee.regional_id || null,
           status: String(employee.status || '').toUpperCase(),
           entryDate: serializeDateOnly(employee.entryDate),
+          vacationCalculationDate: serializeDateOnly(
+            employee.vacationCalculationDate || employee.entryDate,
+          ),
           salary:
             currentRecord?.salary !== null &&
             currentRecord?.salary !== undefined
@@ -546,6 +549,9 @@ export class EmployeesService {
       birthPlace: employee.birth_place,
       address: employee.address,
       entryDate: serializeDateOnly(employee.entryDate),
+      vacationCalculationDate: serializeDateOnly(
+        employee.vacationCalculationDate || employee.entryDate,
+      ),
       gender: employee.gender,
       maritalStatus: employee.marital_status,
       bloodType: employee.type_blood,
@@ -906,6 +912,7 @@ export class EmployeesService {
         birth_place: dto.birth_place || intakeRequest?.birth_place || null,
         address: dto.address || intakeRequest?.home_address || null,
         entryDate: parseDateOnly(dto.start_date) || new Date(),
+        vacationCalculationDate: parseDateOnly(dto.start_date) || new Date(),
         schedule_id: dto.schedule_id,
         regional_id: dto.regional_id,
         status: dto.status ? String(dto.status).toUpperCase() : 'ACTIVE',

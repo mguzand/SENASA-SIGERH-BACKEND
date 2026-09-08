@@ -18,3 +18,10 @@ BEGIN
   END IF;
 END
 $$;
+
+ALTER TABLE public.employees
+  ADD COLUMN IF NOT EXISTS vacation_calculation_date date;
+
+UPDATE public.employees
+SET vacation_calculation_date = entry_date
+WHERE vacation_calculation_date IS NULL;

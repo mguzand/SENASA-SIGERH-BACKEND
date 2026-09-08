@@ -63,6 +63,9 @@ export class Employee {
   @Column({ nullable: false, name: 'entry_date', type: 'date' })
   entryDate: Date;
 
+  @Column({ nullable: true, name: 'vacation_calculation_date', type: 'date' })
+  vacationCalculationDate: Date | null;
+
   @Column({ name: 'schedule_id', type: 'uuid', nullable: true })
   schedule_id: string; //! Relación con la tabla de horarios------------------------------------
 
