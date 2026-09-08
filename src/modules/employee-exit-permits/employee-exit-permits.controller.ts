@@ -72,6 +72,19 @@ export class EmployeeExitPermitsController {
     return this.employeeExitPermitsService.requestSupportChange(id, dto.observation, this.getEmployeeId(req));
   }
 
+  @Patch(':id/liaison-support')
+  uploadSupportByLiaison(
+    @Param('id') id: string,
+    @Body() dto: UpdateExitPermitSupportDto,
+    @Req() req: any,
+  ) {
+    return this.employeeExitPermitsService.uploadSupportByLiaison(
+      id,
+      dto.base64FileFoto,
+      this.getEmployeeId(req),
+    );
+  }
+
   @Get('boss/:id')
   findBossDetail(@Param('id') id: string, @Req() req: any) {
     return this.employeeExitPermitsService.findBossDetail(

@@ -822,6 +822,56 @@ export class EmployeeExitPermitsService {
     return { id: permit.id, hasSupport: true, documentsComplete: true };
   }
 
+  async uploadSupportByLiaison(
+    id: string,
+    base64FileFoto: string,
+    currentEmployeeId: string,
+  ) {
+    const permit = await this.exitPermitRepository.findOneBy({ id });
+    if (!permit)
+      throw new NotFoundException('Solicitud de salida no encontrada');
+    if (
+      permit.stage !== ExitPermitStage.HR_REVIEW ||
+      permit.status !== ExitPermitStatus.PENDING ||
+      !permit.liaison_review_required ||
+      permit.liaison_status !== 'pending'
+    ) {
+      throw new BadRequestException(
+        'El pase ya no está pendiente de revisión por el enlace de RR. HH.',
+      );
+    }
+    await this.assertLiaisonPermission(
+      currentEmployeeId,
+      permit.regional_id!,
+    );
+    if (this.isPersonalPermit(permit.permit_type))
+      throw new BadRequestException(
+        'Los pases personales no requieren documento de respaldo.',
+      );
+    if (permit.support_file_path)
+      throw new BadRequestException(
+        'El pase ya tiene un documento. Utilice la opción de solicitar cambio si necesita reemplazarlo.',
+      );
+
+    const mimeType = this.validateSupportImage(base64FileFoto)!;
+    const extension =
+      mimeType === 'application/pdf'
+        ? 'pdf'
+        : mimeType === 'image/png'
+          ? 'png'
+          : mimeType === 'image/webp'
+            ? 'webp'
+            : 'jpg';
+    permit.support_file_path = this.storageService.saveBase64File(
+      base64FileFoto,
+      `exit-permits/${permit.id}`,
+      `support.${extension}`,
+    );
+    permit.support_mime_type = mimeType;
+    await this.exitPermitRepository.save(permit);
+    return { id: permit.id, hasSupport: true, documentsComplete: true };
+  }
+
   private applyBossOwnershipFilter(
     query: any,
     currentEmployeeId: string,
