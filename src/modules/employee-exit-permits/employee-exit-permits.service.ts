@@ -419,13 +419,13 @@ export class EmployeeExitPermitsService {
     if (isPersonal && endDate !== dto.exit_date) {
       throw new BadRequestException('Los pases personales solo pueden solicitarse para un día');
     }
-    const employeeScheduleEnd = isPersonal
-      ? await this.getEmployeeScheduleEnd(dto.employee_id)
+    const employeeSchedule = isPersonal
+      ? await this.getEmployeeSchedule(dto.employee_id)
       : undefined;
     const personalDuration = isPersonal
-      ? this.classifyPersonalPermit(dto.exit_time, dto.return_time, Boolean(dto.without_return), employeeScheduleEnd)
+      ? this.classifyPersonalPermit(dto.exit_time, dto.return_time, Boolean(dto.without_return), employeeSchedule)
       : null;
-    if (isPersonal) await this.validatePersonalMonthlyQuota(dto.employee_id, dto.exit_date, personalDuration!, employeeScheduleEnd);
+    if (isPersonal) await this.validatePersonalMonthlyQuota(dto.employee_id, dto.exit_date, personalDuration!, employeeSchedule);
 
     const supportMimeType = this.validateSupportImage(dto.base64FileFoto);
 
@@ -495,19 +495,34 @@ export class EmployeeExitPermitsService {
     exitTime: string,
     returnTime?: string,
     withoutReturn = false,
-    scheduleEndTime?: string,
+    schedule?: { startTime?: string; endTime?: string },
   ): 'HALF' | 'FULL' {
-    const effectiveReturnTime = withoutReturn ? scheduleEndTime : returnTime;
+    const effectiveReturnTime = withoutReturn ? schedule?.endTime : returnTime;
     if (!effectiveReturnTime) return 'FULL';
     const exitMinutes = this.timeToMinutes(exitTime);
     const returnMinutes = this.timeToMinutes(effectiveReturnTime);
     if (returnMinutes <= exitMinutes) throw new BadRequestException('La hora de retorno debe ser mayor a la hora de salida');
     const duration = returnMinutes - exitMinutes;
-    const staysInMorning = returnMinutes <= 12 * 60;
-    const staysInAfternoon = exitMinutes >= 12 * 60;
-    return duration <= 4 * 60 && (staysInMorning || staysInAfternoon)
+    const intermediateMinutes = this.getScheduleIntermediateMinutes(schedule);
+    const staysBeforeIntermediate = returnMinutes <= intermediateMinutes;
+    const staysAfterIntermediate = exitMinutes >= intermediateMinutes;
+    return duration <= 4 * 60 && (staysBeforeIntermediate || staysAfterIntermediate)
       ? 'HALF'
       : 'FULL';
+  }
+
+  private getScheduleIntermediateMinutes(schedule?: { startTime?: string; endTime?: string }) {
+    if (!schedule?.startTime || !schedule.endTime) return 12 * 60;
+    const startMinutes = this.timeToMinutes(schedule.startTime);
+    const endMinutes = this.timeToMinutes(schedule.endTime);
+    if (endMinutes <= startMinutes) return 12 * 60;
+
+    // El horario institucional de 08:30 a 16:30 conserva las 12:00 como
+    // separación. Para cualquier otro horario se usa su punto medio real.
+    if (startMinutes === 8 * 60 + 30 && endMinutes === 16 * 60 + 30) {
+      return 12 * 60;
+    }
+    return Math.floor((startMinutes + endMinutes) / 2);
   }
 
   private minimumRetroactiveDate() {
@@ -521,7 +536,7 @@ export class EmployeeExitPermitsService {
     employeeId: string,
     exitDate: string,
     requested: 'HALF' | 'FULL',
-    scheduleEndTime?: string,
+    schedule?: { startTime?: string; endTime?: string },
   ) {
     const monthStart = `${exitDate.slice(0, 7)}-01`;
     const date = new Date(`${monthStart}T12:00:00`);
@@ -564,7 +579,7 @@ export class EmployeeExitPermitsService {
         permit.exit_time,
         permit.return_time ?? undefined,
         permit.without_return,
-        scheduleEndTime,
+        schedule,
       ),
     );
     const allCalculatedDurations = monthlyRecords.map((permit) =>
@@ -572,7 +587,7 @@ export class EmployeeExitPermitsService {
         permit.exit_time,
         permit.return_time ?? undefined,
         permit.without_return,
-        scheduleEndTime,
+        schedule,
       ),
     );
     const correctedPermits = monthlyRecords.filter(
@@ -594,13 +609,16 @@ export class EmployeeExitPermitsService {
     }
   }
 
-  private async getEmployeeScheduleEnd(employeeId: string) {
+  private async getEmployeeSchedule(employeeId: string) {
     const employee = await this.employeeRepository.findOne({
       where: { id: employeeId },
       relations: { schedule: true },
     });
     if (!employee) throw new NotFoundException('Empleado no encontrado');
-    return employee.schedule?.endTime || undefined;
+    return {
+      startTime: employee.schedule?.startTime || undefined,
+      endTime: employee.schedule?.endTime || undefined,
+    };
   }
 
   private validateSupportImage(base64?: string) {
