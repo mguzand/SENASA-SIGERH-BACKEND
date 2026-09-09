@@ -497,19 +497,24 @@ export class EmployeesService {
         (record) => String(record.status || '').toLowerCase() === 'active',
       )
       .sort((left, right) => {
-        const currentDifference = Number(Boolean(right.isCurrent)) - Number(Boolean(left.isCurrent));
+        const currentDifference =
+          Number(Boolean(right.isCurrent)) - Number(Boolean(left.isCurrent));
         if (currentDifference) return currentDifference;
-        return new Date(right.startDate || 0).getTime() - new Date(left.startDate || 0).getTime();
+        return (
+          new Date(right.startDate || 0).getTime() -
+          new Date(left.startDate || 0).getTime()
+        );
       })[0];
-    const directBoss = currentRecord?.area?.id && employee.regional_id
-      ? await this.approvalRoutingService
-          .resolveAreaOrMainManager(
-            employee.id,
-            currentRecord.area.id,
-            employee.regional_id,
-          )
-          .catch(() => null)
-      : null;
+    const directBoss =
+      currentRecord?.area?.id && employee.regional_id
+        ? await this.approvalRoutingService
+            .resolveAreaOrMainManager(
+              employee.id,
+              currentRecord.area.id,
+              employee.regional_id,
+            )
+            .catch(() => null)
+        : null;
     const directBossName = directBoss?.employee
       ? [
           directBoss.employee.firstName,
@@ -520,6 +525,8 @@ export class EmployeesService {
           .filter(Boolean)
           .join(' ')
       : null;
+
+    console.log(currentRecord);
 
     const fullName = [
       employee.firstName,
@@ -573,6 +580,10 @@ export class EmployeesService {
       modalityName: currentRecord?.modality?.name || null,
       functionalPositionName: currentRecord?.functionalPosition?.name || null,
       nominalPositionName: currentRecord?.position?.name || null,
+
+      functionalPositionId: currentRecord?.functionalPosition?.id || null,
+      nominalPositionId: currentRecord?.position?.id || null,
+
       departmentName: currentRecord?.area?.name || null,
       departmentId: currentRecord?.area?.id || null,
       organizationalTypeId: currentRecord?.area?.unitType?.id || null,
@@ -646,6 +657,8 @@ export class EmployeesService {
         ]);
       }
 
+      console.log('======================================>', activeJobRecord);
+
       if (dto.email !== undefined) {
         (employee as any).email = dto.email?.trim() || null;
       }
@@ -668,7 +681,9 @@ export class EmployeesService {
 
       if (dto.schedule_id !== undefined) {
         if (!dto.schedule_id) {
-          throw new BadRequestException(['Debes seleccionar un horario para el empleado.']);
+          throw new BadRequestException([
+            'Debes seleccionar un horario para el empleado.',
+          ]);
         }
 
         const schedule = await qr.manager.findOne(Schedule, {
@@ -682,14 +697,18 @@ export class EmployeesService {
 
       if (dto.regional_id !== undefined) {
         if (!dto.regional_id) {
-          throw new BadRequestException(['Debes seleccionar una regional para el empleado.']);
+          throw new BadRequestException([
+            'Debes seleccionar una regional para el empleado.',
+          ]);
         }
 
         const regional = await qr.manager.findOne(Regional, {
           where: { id: dto.regional_id, is_active: true },
         });
         if (!regional) {
-          throw new BadRequestException(['La regional seleccionada no existe o está inactiva.']);
+          throw new BadRequestException([
+            'La regional seleccionada no existe o está inactiva.',
+          ]);
         }
         employee.regional_id = regional.id;
       }
@@ -778,7 +797,6 @@ export class EmployeesService {
     } finally {
       await qr.release();
     }
-
   }
 
   async getProfilePhoto(id: string) {
@@ -1191,15 +1209,22 @@ export class EmployeesService {
       await qr.release();
     }
 
-    let watchSynchronization: { created: boolean; userId: string } | null = null;
+    let watchSynchronization: { created: boolean; userId: string } | null =
+      null;
     let watchSynchronizationWarning: string | null = null;
     if (savedEmployee) {
       try {
-        watchSynchronization = await this.watchUsersService.createFromEmployee(savedEmployee);
+        watchSynchronization =
+          await this.watchUsersService.createFromEmployee(savedEmployee);
       } catch (error) {
         watchSynchronizationWarning =
-          error instanceof Error ? error.message : 'No se pudo crear el usuario en el reloj.';
-        console.error('Empleado creado, pero no fue posible sincronizarlo con el reloj:', error);
+          error instanceof Error
+            ? error.message
+            : 'No se pudo crear el usuario en el reloj.';
+        console.error(
+          'Empleado creado, pero no fue posible sincronizarlo con el reloj:',
+          error,
+        );
       }
     }
 
