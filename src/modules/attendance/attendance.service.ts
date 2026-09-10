@@ -130,7 +130,7 @@ export function resolveAttendanceCode(input: {
     if (incident.kind === 'PAID_LEAVE')
       return {
         ...base,
-        code: 'LR',
+        code: 'L',
         status: 'PAID_LEAVE',
         description: 'Licencia remunerada',
       };
@@ -148,7 +148,14 @@ export function resolveAttendanceCode(input: {
       'otros permisos': 'OP',
       'otros pases': 'OP',
     };
-    const code = permitCodes[permit] || null;
+    const permitCode = permitCodes[permit] || null;
+    const code = permitCode
+      ? !input.mark?.entry && input.mark?.exit
+        ? `${permitCode}\\`
+        : input.mark?.entry && !input.mark?.exit
+          ? `/${permitCode}`
+          : permitCode
+      : null;
     return {
       ...base,
       code,

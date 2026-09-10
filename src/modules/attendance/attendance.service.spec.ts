@@ -26,6 +26,12 @@ describe('Attendance report rules', () => {
   ])('resolves permit %s as %s', (permitType, code) => {
     expect(resolveAttendanceCode({ isWeekend: false, schedule, incidents: [{ kind: 'PERMIT', description: permitType, permitType }] })).toMatchObject({ code, status: 'PERMIT', requiresClassification: false });
   });
+  it('adds a trailing slash when a permit has only the exit mark', () => {
+    expect(resolveAttendanceCode({ isWeekend: false, schedule, mark: { entry: null, exit: '12:00:00' }, incidents: [{ kind: 'PERMIT', description: 'Oficial', permitType: 'Oficial' }] }).code).toBe('PO\\');
+  });
+  it('adds a leading slash when a permit has only the entry mark', () => {
+    expect(resolveAttendanceCode({ isWeekend: false, schedule, mark: { entry: '13:00:00', exit: null }, incidents: [{ kind: 'PERMIT', description: 'Médico Privado', permitType: 'Médico Privado' }] }).code).toBe('/MP');
+  });
   it('keeps vacation priority over biometrics', () => expect(resolveAttendanceCode({ isWeekend: false, schedule, mark: { entry: '08:20:00', exit: '16:00:00' }, incidents: [{ kind: 'VACATION', description: 'Vacación' }] }).code).toBe('V'));
   it('does not invent a code without biometric id/mark', () => expect(resolveAttendanceCode({ isWeekend: false, schedule }).status).toBe('NO_DATA'));
   it('does not evaluate lateness without schedule', () => expect(resolveAttendanceCode({ isWeekend: false, schedule: null, mark: { entry: '08:00:00', exit: '16:00:00' } }).status).toBe('NO_SCHEDULE'));

@@ -12,10 +12,11 @@ import { WatchesModule } from '../watches/watches.module';
 import { AttendanceController } from './attendance.controller';
 import { AttendanceService } from './attendance.service';
 import { MonthlyAttendancePdfReport } from './reports/monthly-attendance.report';
+import { MonthlyAttendanceExcelReport } from './reports/monthly-attendance-excel.report';
 
 @Module({
   imports: [TypeOrmModule.forFeature([Employee, VacationRequest, EmployeeExitPermit, LeaveRequest, Holiday, GovernmentVacationDay, Components]), WatchesModule, CommonModule],
-  controllers: [AttendanceController], providers: [AttendanceService, MonthlyAttendancePdfReport],
+  controllers: [AttendanceController], providers: [AttendanceService, MonthlyAttendancePdfReport, MonthlyAttendanceExcelReport],
 })
 export class AttendanceModule implements OnModuleInit {
   constructor(private readonly attendanceService: AttendanceService) {}
