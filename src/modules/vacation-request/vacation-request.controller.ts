@@ -18,6 +18,7 @@ import { ReviewVacationRequestDto } from './dtos/review-vacation-request.dto';
 import { ListHrVacationRequestsDto } from './dtos/list-hr-vacation-requests.dto';
 import { AuthGuard } from '@nestjs/passport';
 import { CreateManualVacationRequestDto } from './dtos/create-manual-vacation-request.dto';
+import { UpdateLiaisonVacationDaysDto } from './dtos/update-liaison-vacation-days.dto';
 
 @Controller('vacation-requests')
 export class VacationRequestController {
@@ -105,6 +106,11 @@ export class VacationRequestController {
   @Get('employee/:employeeId')
   findByEmployee(@Param('employeeId') employeeId: string) {
     return this.vacationRequestService.findByEmployee(employeeId);
+  }
+
+  @Patch(':id/liaison-days')
+  updateLiaisonDays(@Param('id') id: string, @Body() dto: UpdateLiaisonVacationDaysDto, @Req() req: any) {
+    return this.vacationRequestService.updateDaysByLiaison(id, dto.days, this.getEmployeeId(req));
   }
 
   @Get(':id/pdf')

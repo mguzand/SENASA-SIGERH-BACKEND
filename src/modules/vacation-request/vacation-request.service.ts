@@ -60,7 +60,7 @@ export class VacationRequestService {
   async generatePdf(id: string, currentEmployeeId: string) {
     const request = await this.vacationRequestRepository.findOne({
       where: { id },
-      relations: { employee: true, area: true, boss_employee: true, hr_employee: true },
+      relations: { employee: true, area: true, boss_employee: true, hr_employee: true, days: true },
     });
 
     if (!request) throw new NotFoundException('Solicitud de vacaciones no encontrada');
@@ -802,12 +802,14 @@ export class VacationRequestService {
         liaison_review_required: true,
         liaison_status: 'PENDING',
       })),
-      relations: { employee: true, area: true },
+      relations: { employee: true, area: true, days: true },
       order: { created_at: 'DESC' },
     });
     return requests.map((request) => ({
       id: request.id,
       requestType: 'vacation',
+      employeeId: request.employee_id,
+      areaId: request.area_id,
       employeeName: this.employeeName(request.employee),
       areaName: request.area?.name || 'Sin área',
       regionalId: request.liaison_regional_id || request.regional_id,
@@ -817,7 +819,48 @@ export class VacationRequestService {
       reason: request.employee_comment,
       canApproveFinally: false,
       createdAt: request.created_at,
+      selectedDays: (request.days || []).filter((day) => day.counts_as_vacation).map((day) => day.date).sort(),
     }));
+  }
+
+  async updateDaysByLiaison(id: string, days: string[], currentEmployeeId: string) {
+    const request = await this.vacationRequestRepository.findOne({ where: { id } });
+    if (!request || request.stage !== VacationRequestStage.HR_REVIEW || request.status !== VacationRequestStatus.PENDING || request.liaison_status !== 'PENDING') {
+      throw new BadRequestException('La solicitud ya no permite modificar los días desde el enlace de RR. HH.');
+    }
+    await this.assertLiaisonPermission(currentEmployeeId, request.liaison_regional_id || request.regional_id!, 'vacations');
+    const sortedDays = [...new Set(days.map((day) => day.slice(0, 10)))].sort();
+    if (!sortedDays.length) throw new BadRequestException('Debe conservar al menos un día de vacaciones');
+    if (sortedDays.some((day) => {
+      const weekday = new Date(`${day}T00:00:00Z`).getUTCDay();
+      return weekday === 0 || weekday === 6;
+    })) throw new BadRequestException('No se pueden seleccionar sábados ni domingos');
+    const holidays: Array<{ date: string }> = await this.dataSource.query(
+      'SELECT date::text AS date FROM holidays WHERE is_active = true AND date = ANY($1::date[])',
+      [sortedDays],
+    );
+    if (holidays.length) {
+      throw new BadRequestException(`No se pueden seleccionar días feriados: ${holidays.map((item) => item.date).join(', ')}`);
+    }
+
+    const runner = this.dataSource.createQueryRunner();
+    await runner.connect();
+    await runner.startTransaction();
+    try {
+      await runner.manager.delete('vacation_request_days', { vacation_request_id: id });
+      await this.vacationRequestDayService.createManyWithManager(id, sortedDays, runner.manager);
+      request.start_date = sortedDays[0];
+      request.end_date = sortedDays[sortedDays.length - 1];
+      request.requested_days = sortedDays.length;
+      await runner.manager.save(VacationRequest, request);
+      await runner.commitTransaction();
+      return this.findOne(id);
+    } catch (error) {
+      await runner.rollbackTransaction();
+      throw error;
+    } finally {
+      await runner.release();
+    }
   }
 
   async liaisonReview(id: string, dto: ReviewVacationRequestDto, currentEmployeeId: string) {

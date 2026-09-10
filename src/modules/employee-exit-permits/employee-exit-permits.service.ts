@@ -194,7 +194,7 @@ export class EmployeeExitPermitsService {
             currentRecord?.area?.name ||
             permit.area?.name ||
             'Sin área asignada',
-          status: permit.hr_status,
+          status: permit.status === ExitPermitStatus.CANCELLED ? ExitPermitStatus.CANCELLED : permit.hr_status,
           stage: permit.stage,
           exitDate: permit.exit_date,
           endDate: permit.end_date,
@@ -213,6 +213,8 @@ export class EmployeeExitPermitsService {
           documentsComplete:
             this.isPersonalPermit(permit.permit_type) ||
             Boolean(permit.support_file_path),
+          cancelledAt: permit.cancelled_at,
+          cancellationReason: permit.cancellation_reason,
         };
       }),
       meta: {
@@ -964,6 +966,40 @@ export class EmployeeExitPermitsService {
     return savedPermit;
   }
 
+  async cancelApprovedByHr(id: string, reason: string, currentEmployeeId: string) {
+    if (!currentEmployeeId) throw new ForbiddenException('No fue posible identificar al usuario de RR. HH.');
+    const permit = await this.exitPermitRepository.findOne({
+      where: { id },
+      relations: { employee: true },
+    });
+    if (!permit) throw new NotFoundException('Solicitud de salida no encontrada');
+    const hrAreaIds = await this.areaManagersService.findAreaIdsByEmployeeAndRole(
+      currentEmployeeId,
+      AreaManagerRole.HR,
+    );
+    if (!hrAreaIds.length && permit.hr_employee_id !== currentEmployeeId) {
+      throw new ForbiddenException('Solo Recursos Humanos puede cancelar un pase aprobado.');
+    }
+    if (permit.status !== ExitPermitStatus.APPROVED || permit.hr_status !== ExitPermitStatus.APPROVED) {
+      throw new BadRequestException('Solo se pueden cancelar pases aprobados por RR. HH.');
+    }
+
+    permit.status = ExitPermitStatus.CANCELLED;
+    permit.cancelled_by_employee_id = currentEmployeeId;
+    permit.cancelled_at = new Date();
+    permit.cancellation_reason = reason.trim();
+    const saved = await this.exitPermitRepository.save(permit);
+
+    await this.notifyEmployeeOfStatus(
+      saved.employee,
+      'pase de salida',
+      ExitPermitStatus.CANCELLED,
+      'Recursos Humanos canceló un pase de salida previamente aprobado. Este pase ya no tendrá efecto en asistencia.',
+      reason.trim(),
+    );
+    return saved;
+  }
+
   private applyHrStatusFilter(query: any, status: string) {
     switch (status) {
       case 'approved':
@@ -973,6 +1009,9 @@ export class EmployeeExitPermitsService {
           })
           .andWhere('permit.stage = :completedStage', {
             completedStage: ExitPermitStage.COMPLETED,
+          })
+          .andWhere('permit.status = :approvedOverallStatus', {
+            approvedOverallStatus: ExitPermitStatus.APPROVED,
           });
       case 'rejected':
         return query
@@ -1068,7 +1107,9 @@ export class EmployeeExitPermitsService {
           .trim(),
       departmentName:
         currentRecord?.area?.name || permit.area?.name || 'Sin área asignada',
-      status: reviewer === 'boss' ? permit.boss_status : permit.hr_status,
+      status: permit.status === ExitPermitStatus.CANCELLED
+        ? ExitPermitStatus.CANCELLED
+        : reviewer === 'boss' ? permit.boss_status : permit.hr_status,
       stage: permit.stage,
       exitDate: permit.exit_date,
       endDate: permit.end_date || permit.exit_date,
@@ -1085,6 +1126,8 @@ export class EmployeeExitPermitsService {
         permit.exit_time,
         permit.return_time,
       ),
+      cancelledAt: permit.cancelled_at,
+      cancellationReason: permit.cancellation_reason,
     };
   }
 
@@ -1129,10 +1172,15 @@ export class EmployeeExitPermitsService {
     observation?: string,
     attachments: Array<{ filename: string; content: Buffer; contentType: string }> = [],
   ) {
+    const statusLabel = status === ExitPermitStatus.APPROVED
+      ? 'aprobado'
+      : status === ExitPermitStatus.CANCELLED
+        ? 'cancelado'
+        : 'denegado';
     await sendRequestNotification(
       employee?.email,
       `${requestType.charAt(0).toUpperCase() + requestType.slice(1)} ${
-        status === ExitPermitStatus.APPROVED ? 'aprobado' : 'denegado'
+        statusLabel
       }`,
       this.employeeName(employee),
       message,
@@ -1142,7 +1190,7 @@ export class EmployeeExitPermitsService {
     );
     await this.pushNotifications.sendToEmployee(
       employee?.id,
-      `Pase de salida ${status === ExitPermitStatus.APPROVED ? 'aprobado' : 'denegado'}`,
+      `Pase de salida ${statusLabel}`,
       message,
       '/exit-permits/history',
     );

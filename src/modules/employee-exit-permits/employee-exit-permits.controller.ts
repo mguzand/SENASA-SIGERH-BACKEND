@@ -16,6 +16,7 @@ import { CreateEmployeeExitPermitDto } from './dto/create-employee-exit-permit.d
 import { ReviewEmployeeExitPermitDto } from './dto/review-employee-exit-permit.dto';
 import { ListHrExitPermitsDto } from './dto/list-hr-exit-permits.dto';
 import { UpdateExitPermitSupportDto } from './dto/update-exit-permit-support.dto';
+import { CancelEmployeeExitPermitDto } from './dto/cancel-employee-exit-permit.dto';
 import { RequestSupportChangeDto } from './dto/request-support-change.dto';
 
 @Controller('employee-exit-permits')
@@ -147,6 +148,19 @@ export class EmployeeExitPermitsController {
     return this.employeeExitPermitsService.reviewByHr(
       id,
       dto,
+      this.getEmployeeId(req),
+    );
+  }
+
+  @Patch(':id/cancel-hr')
+  cancelByHr(
+    @Param('id') id: string,
+    @Body() dto: CancelEmployeeExitPermitDto,
+    @Req() req: any,
+  ) {
+    return this.employeeExitPermitsService.cancelApprovedByHr(
+      id,
+      dto.reason,
       this.getEmployeeId(req),
     );
   }

@@ -79,6 +79,21 @@ export const buildVacationRequestReport = (request: VacationRequest): TDocumentD
         columnGap: 12,
         margin: [0, 20, 0, 18],
       },
+      {
+        stack: [
+          { text: 'DÍAS SOLICITADOS', bold: true, color: '#64748b', fontSize: 8 },
+          {
+            text: (request.days || [])
+              .filter((day) => day.counts_as_vacation)
+              .sort((a, b) => a.date.localeCompare(b.date))
+              .map((day) => formatDate(day.date))
+              .join('  ·  ') || 'Sin días registrados',
+            margin: [0, 6, 0, 0],
+            lineHeight: 1.35,
+          },
+        ],
+        margin: [0, 0, 0, 18],
+      },
       ...observations.map((item) => ({
         stack: [
           { text: item.label.toUpperCase(), bold: true, color: '#64748b', fontSize: 8 },

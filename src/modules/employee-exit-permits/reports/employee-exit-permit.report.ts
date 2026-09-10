@@ -85,11 +85,13 @@ export const buildEmployeeExitPermitReport = (
         margin: [0, 0, 0, 14] as [number, number, number, number],
       })),
       {
-        text: permit.hr_status === 'approved'
-          ? 'AUTORIZADO POR RECURSOS HUMANOS'
-          : 'VISTA PREVIA · PENDIENTE DE AUTORIZACIÓN DE RECURSOS HUMANOS',
+        text: permit.status === 'cancelled'
+          ? 'CANCELADO POR RECURSOS HUMANOS · SIN EFECTO'
+          : permit.hr_status === 'approved'
+            ? 'AUTORIZADO POR RECURSOS HUMANOS'
+            : 'VISTA PREVIA · PENDIENTE DE AUTORIZACIÓN DE RECURSOS HUMANOS',
         alignment: 'center', bold: true,
-        color: permit.hr_status === 'approved' ? '#00875f' : '#b7791f',
+        color: permit.status === 'cancelled' ? '#b42318' : permit.hr_status === 'approved' ? '#00875f' : '#b7791f',
         margin: [0, 14, 0, 0],
       },
       { image: join(__dirname, '../../leave-requests/assets/hr-signature.png'), width: 175, alignment: 'center', margin: [0, 18, 0, 0] },

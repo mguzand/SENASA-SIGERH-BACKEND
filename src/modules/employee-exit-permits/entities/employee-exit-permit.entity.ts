@@ -145,6 +145,15 @@ export class EmployeeExitPermit {
   })
   hr_reviewed_at: Date;
 
+  @Column({ type: 'uuid', nullable: true })
+  cancelled_by_employee_id: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  cancelled_at: Date | null;
+
+  @Column({ type: 'text', nullable: true })
+  cancellation_reason: string | null;
+
   @Column({ default: false })
   liaison_review_required: boolean;
 
