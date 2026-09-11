@@ -62,7 +62,7 @@ export class RequestHistoryService {
       );
       if (type === 'vacation') {
         const suspensions = await this.dataSource.query(
-          `SELECT suspension.*, CONCAT_WS(' ', employee."firstName", employee."middleName", employee."lastName", employee."secondLastName") AS actor_name
+          `SELECT suspension.*, CONCAT_WS(' ', employee.first_name, employee.middle_name, employee.last_name, employee.second_last_name) AS actor_name
            FROM vacation_request_suspensions suspension
            LEFT JOIN employees employee ON employee.id = suspension.hr_employee_id
            WHERE suspension.vacation_request_id = $1
