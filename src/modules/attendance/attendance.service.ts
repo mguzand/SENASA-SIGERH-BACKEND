@@ -460,12 +460,16 @@ export class AttendanceService {
               .leftJoinAndSelect('request.days', 'day')
               .where('request.employee_id IN (:...ids)', { ids: employeeIds })
               .andWhere(
-                'request.status = :approvedStatus AND request.hr_status = :approvedHrStatus',
+                'request.status IN (:...vacationStatuses) AND request.hr_status = :approvedHrStatus',
                 {
-                  approvedStatus: VacationRequestStatus.APPROVED,
+                  vacationStatuses: [
+                    VacationRequestStatus.APPROVED,
+                    VacationRequestStatus.PARTIALLY_SUSPENDED,
+                  ],
                   approvedHrStatus: VacationRequestStatus.APPROVED,
                 },
               )
+              .andWhere('day.counts_as_vacation = true')
               .andWhere('day.date BETWEEN :start AND :end', { start, end })
               .getMany(),
             this.permits

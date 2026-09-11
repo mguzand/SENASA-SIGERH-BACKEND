@@ -60,6 +60,24 @@ export class RequestHistoryService {
       events.push(
         this.reviewEvent('hr', 'Revisión de Recursos Humanos', request.hr_status, request.hr_reviewed_at, actor(request.hr_employee_id), request.hr_observation),
       );
+      if (type === 'vacation') {
+        const suspensions = await this.dataSource.query(
+          `SELECT suspension.*, CONCAT_WS(' ', employee."firstName", employee."middleName", employee."lastName", employee."secondLastName") AS actor_name
+           FROM vacation_request_suspensions suspension
+           LEFT JOIN employees employee ON employee.id = suspension.hr_employee_id
+           WHERE suspension.vacation_request_id = $1
+           ORDER BY suspension.created_at ASC`,
+          [id],
+        );
+        suspensions.forEach((suspension: any, index: number) => events.push({
+          key: `suspension-${suspension.id || index}`,
+          label: Number(suspension.restored_days) > 0 ? 'Suspensión de vacaciones' : 'Suspensión registrada',
+          status: 'SUSPENDED',
+          occurredAt: suspension.created_at,
+          actorName: suspension.actor_name?.trim() || null,
+          observation: `${Number(suspension.restored_days)} día(s) devuelto(s). ${suspension.reason}`,
+        }));
+      }
     }
 
     if (type === 'leave') {

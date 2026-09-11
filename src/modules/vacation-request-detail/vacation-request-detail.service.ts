@@ -33,4 +33,15 @@ export class VacationRequestDetailService {
       relations: ['vacationPeriod'],
     });
   }
+
+  findByRequestWithManager(vacationRequestId: string, manager: EntityManager) {
+    return manager.find(VacationRequestDetail, {
+      where: { vacationRequestId },
+      relations: { vacationPeriod: true },
+    });
+  }
+
+  saveWithManager(detail: VacationRequestDetail, manager: EntityManager) {
+    return manager.save(VacationRequestDetail, detail);
+  }
 }

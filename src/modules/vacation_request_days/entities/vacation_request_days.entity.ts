@@ -1,4 +1,6 @@
 import { VacationRequest } from 'src/modules/vacation-request/entities/vacation-request.entity';
+import { VacationRequestSuspension } from 'src/modules/vacation-request-suspension/entities/vacation-request-suspension.entity';
+import { VacationRequestDayStatus } from 'src/common/enums/vacation.enums';
 import {
   BeforeInsert,
   Column,
@@ -28,6 +30,23 @@ export class VacationRequestDay {
 
   @Column({ default: true })
   counts_as_vacation: boolean;
+
+  @Column({
+    type: 'enum',
+    enum: VacationRequestDayStatus,
+    default: VacationRequestDayStatus.APPROVED,
+  })
+  status: VacationRequestDayStatus;
+
+  @Column({ type: 'uuid', nullable: true })
+  suspension_id: string | null;
+
+  @ManyToOne(() => VacationRequestSuspension, (suspension) => suspension.days, {
+    nullable: true,
+    onDelete: 'SET NULL',
+  })
+  @JoinColumn({ name: 'suspension_id' })
+  suspension: VacationRequestSuspension | null;
 
   @Column({ type: 'text', nullable: true })
   note: string | null;

@@ -36,6 +36,7 @@ import { LeaveRequestsModule } from './leave-requests/leave-requests.module';
 import { AttendanceModule } from './attendance/attendance.module';
 import { WatchUsersModule } from './watch-users/watch-users.module';
 import { PushNotificationsModule } from './push-notifications/push-notifications.module';
+import { VacationRequestSuspensionModule } from './vacation-request-suspension/vacation-request-suspension.module';
 
 @Module({
   imports: [
@@ -76,6 +77,7 @@ import { PushNotificationsModule } from './push-notifications/push-notifications
     AttendanceModule,
     WatchUsersModule,
     PushNotificationsModule,
+    VacationRequestSuspensionModule,
   ],
   exports: [],
 })

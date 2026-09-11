@@ -19,6 +19,7 @@ import { VacationRequestAdjustment } from './vacation-request-adjustment.entity'
 import { VacationRequestStage } from '../enum/vacation-request-stage.enum';
 import { OrganizationalUnit } from 'src/modules/department/entities/organizational-unit.entity';
 import { VacationRequestDay } from 'src/modules/vacation_request_days/entities/vacation_request_days.entity';
+import { VacationRequestSuspension } from 'src/modules/vacation-request-suspension/entities/vacation-request-suspension.entity';
 
 @Entity('vacation_requests')
 export class VacationRequest {
@@ -235,4 +236,7 @@ export class VacationRequest {
     cascade: true,
   })
   days: VacationRequestDay[];
+
+  @OneToMany(() => VacationRequestSuspension, (suspension) => suspension.vacationRequest)
+  suspensions: VacationRequestSuspension[];
 }

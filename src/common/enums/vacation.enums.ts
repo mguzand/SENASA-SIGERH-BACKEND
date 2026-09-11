@@ -18,6 +18,8 @@ export enum VacationRequestStatus {
   REJECTED = 'REJECTED', // RECHAZADO
   ADJUSTED = 'ADJUSTED', // AJUSTADO
   CANCELLED = 'CANCELLED', // CANCELADO
+  PARTIALLY_SUSPENDED = 'PARTIALLY_SUSPENDED',
+  SUSPENDED = 'SUSPENDED',
 }
 
 export enum VacationMovementType {
@@ -28,6 +30,12 @@ export enum VacationMovementType {
   CANCELLED = 'CANCELLED', //CANCELADO
   EXPIRED = 'EXPIRED', //EXPIRADO
   INITIAL_LOAD = 'INITIAL_LOAD',
+  SUSPENSION = 'SUSPENSION',
+}
+
+export enum VacationRequestDayStatus {
+  APPROVED = 'APPROVED',
+  SUSPENDED = 'SUSPENDED',
 }
 
 export enum VacationAdjustmentType {

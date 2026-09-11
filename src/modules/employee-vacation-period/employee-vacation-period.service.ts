@@ -851,6 +851,25 @@ export class EmployeeVacationPeriodService {
     return consumed;
   }
 
+  async restoreVacationDaysWithManager(
+    periodId: string,
+    days: number,
+    manager: EntityManager,
+  ) {
+    const period = await manager.findOne(EmployeeVacationPeriod, {
+      where: { id: periodId },
+      lock: { mode: 'pessimistic_write' },
+    });
+    if (!period) throw new NotFoundException('Período vacacional no encontrado');
+    const usedDays = Number(period.usedDays);
+    if (days <= 0 || usedDays < days) {
+      throw new BadRequestException('La devolución produciría un saldo utilizado inválido.');
+    }
+    period.usedDays = usedDays - days;
+    period.availableDays = Number(period.availableDays) + days;
+    return manager.save(EmployeeVacationPeriod, period);
+  }
+
   async getAvailableDays(employeeId: string) {
     const periods = await this.periodRepository.find({
       where: {
@@ -910,7 +929,10 @@ export class EmployeeVacationPeriodService {
       ).length;
       const approvedRequests = (period.requestDetails || []).filter(
         (detail) =>
-          detail.vacationRequest?.status === VacationRequestStatus.APPROVED,
+          [
+            VacationRequestStatus.APPROVED,
+            VacationRequestStatus.PARTIALLY_SUSPENDED,
+          ].includes(detail.vacationRequest?.status),
       ).length;
       const expiredDays = Number(
         (period.movements || [])

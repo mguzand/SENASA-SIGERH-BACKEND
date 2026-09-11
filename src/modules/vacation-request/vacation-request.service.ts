@@ -219,6 +219,7 @@ export class VacationRequestService {
       .createQueryBuilder('request')
       .leftJoinAndSelect('request.employee', 'employee')
       .leftJoinAndSelect('request.area', 'area')
+      .leftJoinAndSelect('request.days', 'requestDay')
       //.where('request.area_id IN (:...areaIds)', { areaIds })
       .andWhere('request.boss_status = :bossApproved', {
         bossApproved: VacationRequestStatus.APPROVED,
@@ -331,6 +332,7 @@ export class VacationRequestService {
       totalDays: string;
     } | null;
 
+    const today = this.localDateInTegucigalpa();
     return {
       data: requests.map((request) => {
         const employee = request.employee;
@@ -366,6 +368,11 @@ export class VacationRequestService {
           employeeComment: request.employee_comment,
           resolvedAt: request.hr_reviewed_at || request.updated_at || null,
           timingLabel: this.getTimingLabel(request.start_date),
+          overallStatus: request.status,
+          suspendibleDays: (request.days || [])
+            .filter((day) => day.counts_as_vacation && day.status !== 'SUSPENDED' && day.date >= today)
+            .map((day) => day.date)
+            .sort(),
         };
       }),
       meta: {
@@ -1056,6 +1063,9 @@ export class VacationRequestService {
         'hr_employee',
         'details',
         'adjustments',
+        'suspensions',
+        'suspensions.hrEmployee',
+        'suspensions.days',
         'days',
       ],
       order: { created_at: 'DESC' },
@@ -1082,6 +1092,9 @@ export class VacationRequestService {
         'details',
         'details.vacationPeriod',
         'adjustments',
+        'suspensions',
+        'suspensions.hrEmployee',
+        'suspensions.days',
       ],
     });
 
@@ -1094,6 +1107,14 @@ export class VacationRequestService {
 
   private formatDate(date: Date): string {
     return date.toISOString().split('T')[0];
+  }
+
+  private localDateInTegucigalpa(): string {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Tegucigalpa', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).formatToParts(new Date());
+    const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return `${value.year}-${value.month}-${value.day}`;
   }
 
   private async notifyVacationStatus(

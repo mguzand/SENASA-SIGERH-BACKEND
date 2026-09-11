@@ -17,8 +17,9 @@ export class TypeOrmConfigService implements TypeOrmOptionsFactory {
       database: this.configService.get<string>('DATABASE_NAME'),
       schema: 'public',
       autoLoadEntities: true,
+      migrations: [join(__dirname, 'migrations', '*{.ts,.js}')],
       synchronize:
-        this.configService.get<string>('DB_SYNCHRONIZE', 'true') === 'true',
+        this.configService.get<string>('DB_SYNCHRONIZE', 'false') === 'true',
       migrationsRun: false,
       logging: true,
     };
