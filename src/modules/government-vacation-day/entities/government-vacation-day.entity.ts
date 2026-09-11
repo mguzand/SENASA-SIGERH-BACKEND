@@ -59,4 +59,13 @@ export class GovernmentVacationDay {
 
   @Column({ default: false })
   alreadyProcessed: boolean;
+
+  @Column({ type: 'int', default: 0 })
+  affectedEmployees: number;
+
+  @Column({ type: 'int', default: 0 })
+  excludedEmployees: number;
+
+  @Column({ type: 'int', default: 0 })
+  skippedEmployees: number;
 }

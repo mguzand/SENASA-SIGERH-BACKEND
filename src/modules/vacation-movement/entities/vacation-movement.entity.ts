@@ -42,6 +42,9 @@ export class VacationMovement {
   @Column({ name: 'vacation_request_id', nullable: true })
   vacationRequestId: string | null;
 
+  @Column({ name: 'government_vacation_day_id', type: 'uuid', nullable: true })
+  governmentVacationDayId: string | null;
+
   @Column({
     type: 'enum',
     enum: VacationMovementType,

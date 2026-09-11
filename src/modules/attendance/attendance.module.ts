@@ -5,6 +5,7 @@ import { EmployeeExitPermit } from '../employee-exit-permits/entities/employee-e
 import { Components } from '../components/entities/components.entity';
 import { Employee } from '../employees/entities/employee.entity';
 import { GovernmentVacationDay } from '../government-vacation-day/entities/government-vacation-day.entity';
+import { EmployeeGovernmentVacationExclusion } from '../employee-government-vacation-exclusion/entities/employee-government-vacation-exclusion.entity';
 import { Holiday } from '../holiday/entities/holiday.entity';
 import { LeaveRequest } from '../leave-requests/entities/leave-request.entity';
 import { VacationRequest } from '../vacation-request/entities/vacation-request.entity';
@@ -15,7 +16,7 @@ import { MonthlyAttendancePdfReport } from './reports/monthly-attendance.report'
 import { MonthlyAttendanceExcelReport } from './reports/monthly-attendance-excel.report';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Employee, VacationRequest, EmployeeExitPermit, LeaveRequest, Holiday, GovernmentVacationDay, Components]), WatchesModule, CommonModule],
+  imports: [TypeOrmModule.forFeature([Employee, VacationRequest, EmployeeExitPermit, LeaveRequest, Holiday, GovernmentVacationDay, EmployeeGovernmentVacationExclusion, Components]), WatchesModule, CommonModule],
   controllers: [AttendanceController], providers: [AttendanceService, MonthlyAttendancePdfReport, MonthlyAttendanceExcelReport],
 })
 export class AttendanceModule implements OnModuleInit {

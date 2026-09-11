@@ -19,6 +19,7 @@ export class VacationMovementService {
       employeeId: dto.employeeId,
       vacationPeriodId: dto.vacationPeriodId ?? null,
       vacationRequestId: dto.vacationRequestId ?? null,
+      governmentVacationDayId: dto.governmentVacationDayId ?? null,
       type: dto.type,
       days: dto.days,
       movementDate: dto.movementDate,

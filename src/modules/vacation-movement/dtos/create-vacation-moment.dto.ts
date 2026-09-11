@@ -4,6 +4,8 @@ export interface CreateVacationMovementDto {
   employeeId: string;
   vacationPeriodId?: string | null;
   vacationRequestId?: string | null;
+
+  governmentVacationDayId?: string | null;
   type: VacationMovementType;
   days: number;
   movementDate: string;

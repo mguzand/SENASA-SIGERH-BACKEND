@@ -81,6 +81,7 @@ export class VacationRequestService {
     }
 
     const sortedDays = [...new Set(dto.days)].sort();
+    await this.assertSelectableVacationDays(sortedDays, dto.employee_id);
     const minimumRequestDate = this.minimumRetroactiveDate();
     if (sortedDays.some((day) => day < minimumRequestDate)) {
       throw new BadRequestException(
@@ -548,6 +549,7 @@ export class VacationRequestService {
     }
 
     const sortedDays = [...new Set(dto.days)].sort();
+    await this.assertSelectableVacationDays(sortedDays, dto.employee_id);
     const approval = await this.approvalRoutingService.resolve(
       dto.employee_id,
       dto.area_id,
@@ -838,17 +840,7 @@ export class VacationRequestService {
     await this.assertLiaisonPermission(currentEmployeeId, request.liaison_regional_id || request.regional_id!, 'vacations');
     const sortedDays = [...new Set(days.map((day) => day.slice(0, 10)))].sort();
     if (!sortedDays.length) throw new BadRequestException('Debe conservar al menos un día de vacaciones');
-    if (sortedDays.some((day) => {
-      const weekday = new Date(`${day}T00:00:00Z`).getUTCDay();
-      return weekday === 0 || weekday === 6;
-    })) throw new BadRequestException('No se pueden seleccionar sábados ni domingos');
-    const holidays: Array<{ date: string }> = await this.dataSource.query(
-      'SELECT date::text AS date FROM holidays WHERE is_active = true AND date = ANY($1::date[])',
-      [sortedDays],
-    );
-    if (holidays.length) {
-      throw new BadRequestException(`No se pueden seleccionar días feriados: ${holidays.map((item) => item.date).join(', ')}`);
-    }
+    await this.assertSelectableVacationDays(sortedDays, request.employee_id);
 
     const runner = this.dataSource.createQueryRunner();
     await runner.connect();
@@ -867,6 +859,33 @@ export class VacationRequestService {
       throw error;
     } finally {
       await runner.release();
+    }
+  }
+
+  private async assertSelectableVacationDays(days: string[], employeeId: string) {
+    if (days.some((day) => {
+      const weekday = new Date(`${day}T00:00:00Z`).getUTCDay();
+      return weekday === 0 || weekday === 6;
+    })) {
+      throw new BadRequestException('No se pueden seleccionar sábados ni domingos');
+    }
+    const blocked: Array<{ date: string }> = await this.dataSource.query(
+      `SELECT date::text AS date FROM holidays
+       WHERE is_active = true AND date = ANY($1::date[])
+       UNION
+       SELECT day.date::text AS date FROM government_vacation_days day
+       WHERE day."isActive" = true AND day.date = ANY($1::date[])
+         AND NOT EXISTS (
+           SELECT 1 FROM employee_government_vacation_exclusions exclusion
+           WHERE exclusion.government_vacation_day_id = day.id
+             AND exclusion.employee_id = $2
+         )`,
+      [days, employeeId],
+    );
+    if (blocked.length) {
+      throw new BadRequestException(
+        `No se pueden seleccionar días feriados o asuetos: ${blocked.map((item) => item.date).join(', ')}`,
+      );
     }
   }
 

@@ -8,13 +8,41 @@ import { Repository } from 'typeorm';
 import { CreateHolidayDto } from './dto/create-holiday.dto';
 import { UpdateHolidayDto } from './dto/update-holiday.dto';
 import { Holiday } from './entities/holiday.entity';
+import { Components } from '../components/entities/components.entity';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class HolidayService {
   constructor(
     @InjectRepository(Holiday)
     private readonly holidayRepository: Repository<Holiday>,
+    @InjectRepository(Components)
+    private readonly componentsRepository: Repository<Components>,
+    private readonly configService: ConfigService,
   ) {}
+
+  async ensurePermissionComponent() {
+    const systemId = this.configService.get<string>(
+      'DEFAULT_SYSTEM_ID',
+      '6816a2e5-085a-4d96-8a36-a8546d886051',
+    );
+    const existing = await this.componentsRepository.findOne({
+      where: { system_id: systemId, description: 'Feriados' },
+    });
+    if (existing) return existing;
+    const last = await this.componentsRepository.findOne({
+      where: { system_id: systemId },
+      order: { orden: 'DESC' },
+    });
+    return this.componentsRepository.save(
+      this.componentsRepository.create({
+        description: 'Feriados',
+        system_id: systemId,
+        orden: Number(last?.orden || 0) + 1,
+        visible: true,
+      }),
+    );
+  }
 
   findAll() {
     return this.holidayRepository.find({

@@ -8,6 +8,7 @@ import { Components } from '../components/entities/components.entity';
 import { ExitPermitStatus } from '../employee-exit-permits/enums/exit-permit-status.enum';
 import { Employee } from '../employees/entities/employee.entity';
 import { GovernmentVacationDay } from '../government-vacation-day/entities/government-vacation-day.entity';
+import { EmployeeGovernmentVacationExclusion } from '../employee-government-vacation-exclusion/entities/employee-government-vacation-exclusion.entity';
 import { Holiday } from '../holiday/entities/holiday.entity';
 import { LeaveRequest } from '../leave-requests/entities/leave-request.entity';
 import {
@@ -249,6 +250,8 @@ export class AttendanceService {
     @InjectRepository(Holiday) private readonly holidays: Repository<Holiday>,
     @InjectRepository(GovernmentVacationDay)
     private readonly governmentDays: Repository<GovernmentVacationDay>,
+    @InjectRepository(EmployeeGovernmentVacationExclusion)
+    private readonly governmentDayExclusions: Repository<EmployeeGovernmentVacationExclusion>,
     @InjectRepository(Components)
     private readonly components: Repository<Components>,
     private readonly configService: ConfigService,
@@ -452,7 +455,7 @@ export class AttendanceService {
       const key = `${employeeId}|${date}`;
       map.set(key, [...(map.get(key) || []), incident]);
     };
-    const [vacations, permits, leaves, holidays, governmentDays] =
+    const [vacations, permits, leaves, holidays, governmentDays, governmentExclusions] =
       employeeIds.length
         ? await Promise.all([
             this.vacations
@@ -512,6 +515,13 @@ export class AttendanceService {
               .where('day.isActive = true')
               .andWhere('day.date BETWEEN :start AND :end', { start, end })
               .getMany(),
+            this.governmentDayExclusions
+              .createQueryBuilder('exclusion')
+              .innerJoinAndSelect('exclusion.governmentVacationDay', 'day')
+              .where('exclusion.employeeId IN (:...ids)', { ids: employeeIds })
+              .andWhere('day.isActive = true')
+              .andWhere('day.date BETWEEN :start AND :end', { start, end })
+              .getMany(),
           ])
         : [
             [],
@@ -527,6 +537,7 @@ export class AttendanceService {
               .where('day.isActive = true')
               .andWhere('day.date BETWEEN :start AND :end', { start, end })
               .getMany(),
+            [],
           ];
     vacations.forEach((request) =>
       request.days.forEach((day) =>
@@ -568,13 +579,16 @@ export class AttendanceService {
         description: holiday.name || 'Asueto / feriado',
       }),
     );
-    governmentDays.forEach((day) =>
-      add('*', day.date, {
-        kind: 'GOVERNMENT_VACATION',
-        description: day.title,
-        affectsVacationBalance: day.affectsVacationBalance,
-      }),
+    const excludedGovernmentDays = new Set(
+      governmentExclusions.map((item) => `${item.employeeId}|${item.governmentVacationDayId}`),
     );
+    governmentDays.forEach((day) => employeeIds.forEach((employeeId) => {
+      if (excludedGovernmentDays.has(`${employeeId}|${day.id}`)) return;
+      add(employeeId, day.date, {
+        kind: 'GOVERNMENT_VACATION', description: day.title,
+        affectsVacationBalance: day.affectsVacationBalance,
+      });
+    }));
     return map;
   }
 
