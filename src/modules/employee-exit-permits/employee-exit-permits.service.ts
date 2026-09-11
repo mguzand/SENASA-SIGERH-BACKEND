@@ -966,6 +966,56 @@ export class EmployeeExitPermitsService {
     return savedPermit;
   }
 
+  async findLiaisonApproved(currentEmployeeId: string) {
+    const access = await this.regionalManagerService.getHrLiaisonAccess(currentEmployeeId);
+    const assignments = access.assignments.filter(
+      (item) => item.permissions.exitPermits && !item.isMainOffice,
+    );
+    const regionalIds = assignments.map((item) => item.regionalId);
+    if (!regionalIds.length) return [];
+    const today = this.localDateInTegucigalpa();
+    const permits = await this.exitPermitRepository.createQueryBuilder('permit')
+      .leftJoinAndSelect('permit.employee', 'employee')
+      .leftJoinAndSelect('permit.area', 'area')
+      .where('permit.regional_id IN (:...regionalIds)', { regionalIds })
+      .andWhere('permit.status = :approvedStatus', {
+        approvedStatus: ExitPermitStatus.APPROVED,
+      })
+      .andWhere('permit.hr_status = :approvedHrStatus', {
+        approvedHrStatus: ExitPermitStatus.APPROVED,
+      })
+      .andWhere('permit.liaison_status = :liaisonApproved', { liaisonApproved: 'approved' })
+      .andWhere('permit.exit_date >= :today', { today })
+      .orderBy('permit.exit_date', 'ASC')
+      .addOrderBy('permit.created_at', 'DESC')
+      .getMany();
+    return permits.map((permit) => ({
+      id: permit.id,
+      requestType: 'exit_permit',
+      employeeName: this.employeeName(permit.employee),
+      employeeCode: permit.employee?.biometric_id
+        ? `EMP-${String(permit.employee.biometric_id).padStart(4, '0')}`
+        : `EMP-${permit.employee_id.slice(0, 4).toUpperCase()}`,
+      employeeInitials: `${permit.employee?.firstName?.[0] || ''}${permit.employee?.lastName?.[0] || ''}`.toUpperCase(),
+      areaName: permit.area?.name || 'Sin área',
+      regionalId: permit.regional_id,
+      startDate: permit.exit_date,
+      endDate: permit.end_date || permit.exit_date,
+      exitTime: permit.exit_time,
+      returnTime: permit.return_time,
+      withoutReturn: permit.without_return,
+      durationMinutes: this.getDurationInMinutes(permit.exit_time, permit.return_time),
+      reason: permit.description,
+      permitType: permit.permit_type,
+      hasSupport: Boolean(permit.support_file_path),
+      documentsComplete: true,
+      canApproveFinally: false,
+      approvedForCancellation: true,
+      canCancel: String(permit.exit_date).slice(0, 10) > today,
+      createdAt: permit.created_at,
+    }));
+  }
+
   async cancelApprovedByHr(id: string, reason: string, currentEmployeeId: string) {
     if (!currentEmployeeId) throw new ForbiddenException('No fue posible identificar al usuario de RR. HH.');
     const permit = await this.exitPermitRepository.findOne({
@@ -978,10 +1028,18 @@ export class EmployeeExitPermitsService {
       AreaManagerRole.HR,
     );
     if (!hrAreaIds.length && permit.hr_employee_id !== currentEmployeeId) {
-      throw new ForbiddenException('Solo Recursos Humanos puede cancelar un pase aprobado.');
+      const liaison = permit.regional_id
+        ? await this.assertLiaisonPermission(currentEmployeeId, permit.regional_id).catch(() => null)
+        : null;
+      if (!liaison || liaison.regional?.is_main_office) {
+        throw new ForbiddenException('Solo Recursos Humanos o el enlace autorizado de la regional puede cancelar este pase.');
+      }
     }
     if (permit.status !== ExitPermitStatus.APPROVED || permit.hr_status !== ExitPermitStatus.APPROVED) {
       throw new BadRequestException('Solo se pueden cancelar pases aprobados por RR. HH.');
+    }
+    if (String(permit.exit_date).slice(0, 10) <= this.localDateInTegucigalpa()) {
+      throw new BadRequestException('Solo se pueden cancelar pases con fecha futura.');
     }
 
     permit.status = ExitPermitStatus.CANCELLED;
@@ -998,6 +1056,13 @@ export class EmployeeExitPermitsService {
       reason.trim(),
     );
     return saved;
+  }
+
+  private localDateInTegucigalpa() {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Tegucigalpa',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date());
   }
 
   private applyHrStatusFilter(query: any, status: string) {

@@ -68,6 +68,13 @@ export class EmployeeExitPermitsController {
     return this.employeeExitPermitsService.liaisonReview(id, dto, this.getEmployeeId(req));
   }
 
+  @Get('liaison/approved')
+  findLiaisonApproved(@Req() req: any) {
+    return this.employeeExitPermitsService.findLiaisonApproved(
+      this.getEmployeeId(req),
+    );
+  }
+
   @Patch(':id/liaison-support-change')
   requestSupportChange(@Param('id') id: string, @Body() dto: RequestSupportChangeDto, @Req() req: any) {
     return this.employeeExitPermitsService.requestSupportChange(id, dto.observation, this.getEmployeeId(req));
