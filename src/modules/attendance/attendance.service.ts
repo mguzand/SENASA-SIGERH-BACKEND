@@ -117,7 +117,7 @@ export function resolveAttendanceCode(input: {
     if (incident.kind === 'GOVERNMENT_VACATION')
       return {
         ...base,
-        code: incident.affectsVacationBalance ? 'ACV' : 'A',
+        code: incident.affectsVacationBalance ? 'ACV' : 'F',
         status: 'GOVERNMENT_VACATION',
         description: incident.description,
       };
@@ -455,90 +455,96 @@ export class AttendanceService {
       const key = `${employeeId}|${date}`;
       map.set(key, [...(map.get(key) || []), incident]);
     };
-    const [vacations, permits, leaves, holidays, governmentDays, governmentExclusions] =
-      employeeIds.length
-        ? await Promise.all([
-            this.vacations
-              .createQueryBuilder('request')
-              .leftJoinAndSelect('request.days', 'day')
-              .where('request.employee_id IN (:...ids)', { ids: employeeIds })
-              .andWhere(
-                'request.status IN (:...vacationStatuses) AND request.hr_status = :approvedHrStatus',
-                {
-                  vacationStatuses: [
-                    VacationRequestStatus.APPROVED,
-                    VacationRequestStatus.PARTIALLY_SUSPENDED,
-                  ],
-                  approvedHrStatus: VacationRequestStatus.APPROVED,
-                },
-              )
-              .andWhere('day.counts_as_vacation = true')
-              .andWhere('day.date BETWEEN :start AND :end', { start, end })
-              .getMany(),
-            this.permits
-              .createQueryBuilder('permit')
-              .where('permit.employee_id IN (:...ids)', { ids: employeeIds })
-              .andWhere(
-                'permit.status = :approvedStatus AND permit.hr_status = :approvedHrStatus',
-                {
-                  approvedStatus: ExitPermitStatus.APPROVED,
-                  approvedHrStatus: ExitPermitStatus.APPROVED,
-                },
-              )
-              .andWhere(
-                'permit.exit_date <= :end AND COALESCE(permit.end_date, permit.exit_date) >= :start',
-                { start, end },
-              )
-              .getMany(),
-            this.leaves
-              .createQueryBuilder('leave')
-              .where('leave.employee_id IN (:...ids)', { ids: employeeIds })
-              .andWhere(
-                'leave.status = :approvedStatus AND leave.hr_status = :approvedHrStatus',
-                {
-                  approvedStatus: LeaveRequestStatus.APPROVED,
-                  approvedHrStatus: LeaveRequestStatus.APPROVED,
-                },
-              )
-              .andWhere(
-                'leave.start_date <= :end AND leave.end_date >= :start',
-                { start, end },
-              )
-              .getMany(),
-            this.holidays
-              .createQueryBuilder('holiday')
-              .where('holiday.is_active = true')
-              .andWhere('holiday.date BETWEEN :start AND :end', { start, end })
-              .getMany(),
-            this.governmentDays
-              .createQueryBuilder('day')
-              .where('day.isActive = true')
-              .andWhere('day.date BETWEEN :start AND :end', { start, end })
-              .getMany(),
-            this.governmentDayExclusions
-              .createQueryBuilder('exclusion')
-              .innerJoinAndSelect('exclusion.governmentVacationDay', 'day')
-              .where('exclusion.employeeId IN (:...ids)', { ids: employeeIds })
-              .andWhere('day.isActive = true')
-              .andWhere('day.date BETWEEN :start AND :end', { start, end })
-              .getMany(),
-          ])
-        : [
-            [],
-            [],
-            [],
-            await this.holidays
-              .createQueryBuilder('holiday')
-              .where('holiday.is_active = true')
-              .andWhere('holiday.date BETWEEN :start AND :end', { start, end })
-              .getMany(),
-            await this.governmentDays
-              .createQueryBuilder('day')
-              .where('day.isActive = true')
-              .andWhere('day.date BETWEEN :start AND :end', { start, end })
-              .getMany(),
-            [],
-          ];
+    const [
+      vacations,
+      permits,
+      leaves,
+      holidays,
+      governmentDays,
+      governmentExclusions,
+    ] = employeeIds.length
+      ? await Promise.all([
+          this.vacations
+            .createQueryBuilder('request')
+            .leftJoinAndSelect('request.days', 'day')
+            .where('request.employee_id IN (:...ids)', { ids: employeeIds })
+            .andWhere(
+              'request.status IN (:...vacationStatuses) AND request.hr_status = :approvedHrStatus',
+              {
+                vacationStatuses: [
+                  VacationRequestStatus.APPROVED,
+                  VacationRequestStatus.PARTIALLY_SUSPENDED,
+                ],
+                approvedHrStatus: VacationRequestStatus.APPROVED,
+              },
+            )
+            .andWhere('day.counts_as_vacation = true')
+            .andWhere('day.date BETWEEN :start AND :end', { start, end })
+            .getMany(),
+          this.permits
+            .createQueryBuilder('permit')
+            .where('permit.employee_id IN (:...ids)', { ids: employeeIds })
+            .andWhere(
+              'permit.status = :approvedStatus AND permit.hr_status = :approvedHrStatus',
+              {
+                approvedStatus: ExitPermitStatus.APPROVED,
+                approvedHrStatus: ExitPermitStatus.APPROVED,
+              },
+            )
+            .andWhere(
+              'permit.exit_date <= :end AND COALESCE(permit.end_date, permit.exit_date) >= :start',
+              { start, end },
+            )
+            .getMany(),
+          this.leaves
+            .createQueryBuilder('leave')
+            .where('leave.employee_id IN (:...ids)', { ids: employeeIds })
+            .andWhere(
+              'leave.status = :approvedStatus AND leave.hr_status = :approvedHrStatus',
+              {
+                approvedStatus: LeaveRequestStatus.APPROVED,
+                approvedHrStatus: LeaveRequestStatus.APPROVED,
+              },
+            )
+            .andWhere('leave.start_date <= :end AND leave.end_date >= :start', {
+              start,
+              end,
+            })
+            .getMany(),
+          this.holidays
+            .createQueryBuilder('holiday')
+            .where('holiday.is_active = true')
+            .andWhere('holiday.date BETWEEN :start AND :end', { start, end })
+            .getMany(),
+          this.governmentDays
+            .createQueryBuilder('day')
+            .where('day.isActive = true')
+            .andWhere('day.date BETWEEN :start AND :end', { start, end })
+            .getMany(),
+          this.governmentDayExclusions
+            .createQueryBuilder('exclusion')
+            .innerJoinAndSelect('exclusion.governmentVacationDay', 'day')
+            .where('exclusion.employeeId IN (:...ids)', { ids: employeeIds })
+            .andWhere('day.isActive = true')
+            .andWhere('day.date BETWEEN :start AND :end', { start, end })
+            .getMany(),
+        ])
+      : [
+          [],
+          [],
+          [],
+          await this.holidays
+            .createQueryBuilder('holiday')
+            .where('holiday.is_active = true')
+            .andWhere('holiday.date BETWEEN :start AND :end', { start, end })
+            .getMany(),
+          await this.governmentDays
+            .createQueryBuilder('day')
+            .where('day.isActive = true')
+            .andWhere('day.date BETWEEN :start AND :end', { start, end })
+            .getMany(),
+          [],
+        ];
     vacations.forEach((request) =>
       request.days.forEach((day) =>
         add(request.employee_id, day.date, {
@@ -580,15 +586,20 @@ export class AttendanceService {
       }),
     );
     const excludedGovernmentDays = new Set(
-      governmentExclusions.map((item) => `${item.employeeId}|${item.governmentVacationDayId}`),
+      governmentExclusions.map(
+        (item) => `${item.employeeId}|${item.governmentVacationDayId}`,
+      ),
     );
-    governmentDays.forEach((day) => employeeIds.forEach((employeeId) => {
-      if (excludedGovernmentDays.has(`${employeeId}|${day.id}`)) return;
-      add(employeeId, day.date, {
-        kind: 'GOVERNMENT_VACATION', description: day.title,
-        affectsVacationBalance: day.affectsVacationBalance,
-      });
-    }));
+    governmentDays.forEach((day) =>
+      employeeIds.forEach((employeeId) => {
+        if (excludedGovernmentDays.has(`${employeeId}|${day.id}`)) return;
+        add(employeeId, day.date, {
+          kind: 'GOVERNMENT_VACATION',
+          description: day.title,
+          affectsVacationBalance: day.affectsVacationBalance,
+        });
+      }),
+    );
     return map;
   }
 
