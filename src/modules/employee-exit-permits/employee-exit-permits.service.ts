@@ -1215,11 +1215,6 @@ export class EmployeeExitPermitsService {
       .addOrderBy('permit.created_at', 'DESC')
       .getMany();
 
-    console.log(
-      '===============================PERMISO===========================================',
-      permits,
-    );
-
     return permits.map((permit) => ({
       id: permit.id,
       requestType: 'exit_permit',
