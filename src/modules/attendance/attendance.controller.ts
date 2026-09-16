@@ -20,6 +20,7 @@ export class AttendanceController {
   ) {
     return this.service.getMonthlyReport(query);
   }
+
   @Get('monthly-report/pdf') async getMonthlyPdf(
     @Query() query: MonthlyAttendanceFilterDto,
     @Res() response: Response,

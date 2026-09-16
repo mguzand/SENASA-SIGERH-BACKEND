@@ -110,7 +110,7 @@ export function resolveAttendanceCode(input: {
     if (incident.kind === 'HOLIDAY')
       return {
         ...base,
-        code: 'A',
+        code: 'F',
         status: 'HOLIDAY',
         description: incident.description,
       };
