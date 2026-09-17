@@ -6,6 +6,7 @@ import {
   MonthlyAttendanceDay,
   MonthlyAttendanceReport,
 } from '../interfaces/monthly-attendance.interface';
+import { join } from 'path';
 
 type ReportColumn =
   | { kind: 'day'; day: MonthlyAttendanceDay }
@@ -23,7 +24,8 @@ export class MonthlyAttendancePdfReport {
     const fixedColumnCount = 4;
     const separatorIndexes = new Set<number>();
     reportColumns.forEach((column, index) => {
-      if (column.kind === 'separator') separatorIndexes.add(fixedColumnCount + index);
+      if (column.kind === 'separator')
+        separatorIndexes.add(fixedColumnCount + index);
     });
 
     const firstHeader = [
@@ -94,9 +96,20 @@ export class MonthlyAttendancePdfReport {
         },
         {
           columns: [
-            { text: `REGIONAL: ${report.regional.name.toUpperCase()}`, bold: true },
-            { text: `MES: ${report.period.monthName.toUpperCase()}`, bold: true, alignment: 'center' },
-            { text: `AÑO: ${report.period.year}`, bold: true, alignment: 'right' },
+            {
+              text: `REGIONAL: ${report.regional.name.toUpperCase()}`,
+              bold: true,
+            },
+            {
+              text: `MES: ${report.period.monthName.toUpperCase()}`,
+              bold: true,
+              alignment: 'center',
+            },
+            {
+              text: `AÑO: ${report.period.year}`,
+              bold: true,
+              alignment: 'right',
+            },
           ],
           margin: [0, 0, 0, 8],
         },
@@ -105,14 +118,29 @@ export class MonthlyAttendancePdfReport {
             headerRows: 2,
             dontBreakRows: true,
             keepWithHeaderRows: 2,
-            widths: [18, 32, 155, 135, ...reportColumns.map((column) => (column.kind === 'day' ? 23 : 3))],
+            widths: [
+              18,
+              32,
+              155,
+              135,
+              ...reportColumns.map((column) =>
+                column.kind === 'day' ? 23 : 3,
+              ),
+            ],
             body: [firstHeader, secondHeader, ...rows],
           },
           layout: {
             hLineWidth: (index: number) => (index <= 2 ? 0.8 : 0.35),
-            vLineWidth: (index: number, node: { table: { widths: unknown[] } }) => {
+            vLineWidth: (
+              index: number,
+              node: { table: { widths: unknown[] } },
+            ) => {
               if (index === 0 || index === node.table.widths.length) return 0.8;
-              if (separatorIndexes.has(index) || separatorIndexes.has(index - 1)) return 1;
+              if (
+                separatorIndexes.has(index) ||
+                separatorIndexes.has(index - 1)
+              )
+                return 1;
               return 0.3;
             },
             hLineColor: () => '#8795a6',
@@ -120,7 +148,11 @@ export class MonthlyAttendancePdfReport {
               separatorIndexes.has(index) || separatorIndexes.has(index - 1)
                 ? '#34465a'
                 : '#aab5c2',
-            fillColor: (rowIndex: number, _node: unknown, columnIndex: number) => {
+            fillColor: (
+              rowIndex: number,
+              _node: unknown,
+              columnIndex: number,
+            ) => {
               if (separatorIndexes.has(columnIndex)) return '#ffffff';
               if (rowIndex < 2) return '#e7edf4';
               return rowIndex % 2 === 0 ? '#ffffff' : '#f8fafc';
@@ -131,7 +163,12 @@ export class MonthlyAttendancePdfReport {
             paddingBottom: () => 3,
           },
         },
-        { text: 'LEYENDA INSTITUCIONAL', bold: true, fontSize: 7.5, margin: [0, 10, 0, 4] },
+        {
+          text: 'LEYENDA INSTITUCIONAL',
+          bold: true,
+          fontSize: 7.5,
+          margin: [0, 10, 0, 4],
+        },
         {
           table: { widths: ['*', '*', '*'], body: legendRows },
           layout: {
@@ -149,6 +186,45 @@ export class MonthlyAttendancePdfReport {
           bold: true,
           fontSize: 6,
           margin: [0, 5, 0, 0],
+        },
+
+        {
+          columns: [
+            {
+              width: '*',
+              alignment: 'center',
+              stack: [
+                {
+                  image: join(
+                    __dirname,
+                    '../../leave-requests/assets/hr-signature.png',
+                  ),
+                  width: 200,
+                  alignment: 'center',
+                  margin: [0, 0, 0, 0],
+                },
+                {
+                  text: 'ING. KEVIN ERNESTO MENDOZA LIRA',
+                  bold: true,
+                  fontSize: 7.5,
+                  alignment: 'center',
+                  margin: [0, -9, 0, 0],
+                },
+                {
+                  text: 'DIRECTOR DE RECURSOS HUMANOS Y CAPACITACIÓN DEL SENASA',
+                  fontSize: 7,
+                  alignment: 'center',
+                },
+                //  {
+                //    text: data.delegationMemo,
+                //    fontSize: 5.5,
+                //    color: '#475569',
+                //    alignment: 'center',
+                //    margin: [0, 1, 0, 0],
+                //  },
+              ],
+            },
+          ],
         },
       ],
       styles: {},
@@ -181,7 +257,11 @@ export class MonthlyAttendancePdfReport {
     }));
     const rows: Array<Array<{ text: unknown }>> = [];
     for (let index = 0; index < items.length; index += 3) {
-      rows.push([items[index], items[index + 1] || { text: '' }, items[index + 2] || { text: '' }]);
+      rows.push([
+        items[index],
+        items[index + 1] || { text: '' },
+        items[index + 2] || { text: '' },
+      ]);
     }
     return rows;
   }

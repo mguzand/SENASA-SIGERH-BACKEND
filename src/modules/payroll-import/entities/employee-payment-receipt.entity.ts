@@ -34,7 +34,7 @@ export class EmployeePaymentReceipt {
   @Column({ name: 'identity_number' })
   identityNumber: string;
 
-  @Column({ name: 'employee_name_from_file', type: 'text' })
+  @Column({ name: 'employee_name_from_file', type: 'text', nullable: true })
   employeeNameFromFile: string | null;
 
   @Column({ nullable: true, type: 'varchar', length: 30 })

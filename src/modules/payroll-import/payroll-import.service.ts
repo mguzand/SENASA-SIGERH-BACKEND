@@ -535,16 +535,42 @@ export class PayrollImportService {
     let employeeNameFromFile: string | null = null;
 
     /**
+     * NUEVO:
+     * Busca un número que:
+     * - tenga exactamente 13 dígitos
+     * - no comience con 00
+     * - no sea parte de un número más largo
+     *
+     * Ejemplo:
+     * 0511199801713  -> válido
+     * 00002020090400 -> inválido
+     */
+    const identityMatch = normalizedText.match(/(?<!\d)(?!00)\d{13}(?!\d)/);
+
+    if (identityMatch) {
+      identityNumber = identityMatch[0];
+    }
+
+    /**
      * Caso normal:
      * Identidad: HN - TID 0803197100061
+     *
+     * Se mantiene como respaldo, pero solo si todavía
+     * no encontramos una identidad válida.
      */
-    const normalIdentityMatch =
-      normalizedText.match(/Identidad:\s*HN\s*-\s*TID\s*(\d{13})/i) ||
-      normalizedText.match(/Identidad:[\s\S]*?HN\s*TID[\s\S]*?(\d{13})/i) ||
-      normalizedText.match(/TID\s*(\d{13})/i);
+    if (!identityNumber) {
+      const normalIdentityMatch =
+        normalizedText.match(
+          /Identidad:\s*HN\s*-\s*TID\s*((?!00)\d{13})(?!\d)/i,
+        ) ||
+        normalizedText.match(
+          /Identidad:[\s\S]*?HN\s*TID[\s\S]*?((?!00)\d{13})(?!\d)/i,
+        ) ||
+        normalizedText.match(/TID\s*((?!00)\d{13})(?!\d)/i);
 
-    if (normalIdentityMatch) {
-      identityNumber = normalIdentityMatch[1];
+      if (normalIdentityMatch) {
+        identityNumber = normalIdentityMatch[1];
+      }
     }
 
     /**
@@ -561,7 +587,12 @@ export class PayrollImportService {
         if (/^Identidad:/i.test(lines[i])) {
           const previousLine = lines[i - 1];
 
-          if (previousLine && /^\d{13}$/.test(previousLine)) {
+          /**
+           * CAMBIO:
+           * además de tener 13 dígitos,
+           * NO puede comenzar con 00.
+           */
+          if (previousLine && /^(?!00)\d{13}$/.test(previousLine)) {
             identityNumber = previousLine;
           }
 

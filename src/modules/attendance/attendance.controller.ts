@@ -4,6 +4,7 @@ import { AttendanceService } from './attendance.service';
 import { MonthlyAttendanceFilterDto } from './dto/monthly-attendance-filter.dto';
 import { MonthlyAttendancePdfReport } from './reports/monthly-attendance.report';
 import { MonthlyAttendanceExcelReport } from './reports/monthly-attendance-excel.report';
+import { Public } from 'src/common/decorators/public.decorator';
 
 @Controller('attendance')
 export class AttendanceController {
@@ -21,7 +22,9 @@ export class AttendanceController {
     return this.service.getMonthlyReport(query);
   }
 
-  @Get('monthly-report/pdf') async getMonthlyPdf(
+  @Public()
+  @Get('monthly-report/pdf')
+  async getMonthlyPdf(
     @Query() query: MonthlyAttendanceFilterDto,
     @Res() response: Response,
   ) {
@@ -39,6 +42,7 @@ export class AttendanceController {
     pdf.pipe(response);
     pdf.end();
   }
+
   @Get('monthly-report/excel') async getMonthlyExcel(
     @Query() query: MonthlyAttendanceFilterDto,
     @Res() response: Response,
