@@ -191,7 +191,32 @@ export class MonthlyAttendancePdfReport {
         {
           columns: [
             {
-              width: '*',
+              alignment: 'center',
+              stack: [
+                {
+                  image: join(
+                    __dirname,
+                    '../../leave-requests/assets/hr-signature-1.png',
+                  ),
+                  width: 200,
+                  alignment: 'center',
+                  margin: [0, 0, 0, 0],
+                },
+                {
+                  text: 'NOLVIA YOLANDA MARTINEZ HERRERA',
+                  bold: true,
+                  fontSize: 7.5,
+                  alignment: 'center',
+                  margin: [0, -9, 0, 0],
+                },
+                {
+                  text: 'ENCARGADA DE CONVENIOS Y ASISTENCIA NIVEL CENTRAL',
+                  fontSize: 7,
+                  alignment: 'center',
+                },
+              ],
+            },
+            {
               alignment: 'center',
               stack: [
                 {
@@ -215,13 +240,32 @@ export class MonthlyAttendancePdfReport {
                   fontSize: 7,
                   alignment: 'center',
                 },
-                //  {
-                //    text: data.delegationMemo,
-                //    fontSize: 5.5,
-                //    color: '#475569',
-                //    alignment: 'center',
-                //    margin: [0, 1, 0, 0],
-                //  },
+              ],
+            },
+            {
+              alignment: 'center',
+              stack: [
+                {
+                  image: join(
+                    __dirname,
+                    '../../leave-requests/assets/hr-signature-2.png',
+                  ),
+                  width: 200,
+                  alignment: 'center',
+                  margin: [0, 0, 0, 0],
+                },
+                {
+                  text: 'RAFAEL MAURICIO DERAS PADILLA',
+                  bold: true,
+                  fontSize: 7.5,
+                  alignment: 'center',
+                  margin: [0, -9, 0, 0],
+                },
+                {
+                  text: 'JEFE DEL DEPARTAMENTO COMPENSACIONES Y CONTROL DE PERSONAL',
+                  fontSize: 7,
+                  alignment: 'center',
+                },
               ],
             },
           ],

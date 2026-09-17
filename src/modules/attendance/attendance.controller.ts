@@ -30,15 +30,15 @@ export class AttendanceController {
   ) {
     const report = await this.service.getMonthlyReport(query);
     const pdf = this.pdfReport.generate(report);
-    const regional = report.regional.name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '');
-    response.setHeader('Content-Type', 'application/pdf');
-    response.setHeader(
-      'Content-Disposition',
-      `attachment; filename="reporte-asistencia-${regional}-${query.month}-${query.year}.pdf"`,
-    );
+    // const regional = report.regional.name
+    //   .toLowerCase()
+    //   .replace(/[^a-z0-9]+/g, '-')
+    //   .replace(/(^-|-$)/g, '');
+    // response.setHeader('Content-Type', 'application/pdf');
+    // response.setHeader(
+    //   'Content-Disposition',
+    //   `attachment; filename="reporte-asistencia-${regional}-${query.month}-${query.year}.pdf"`,
+    // );
     pdf.pipe(response);
     pdf.end();
   }
