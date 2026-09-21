@@ -51,7 +51,12 @@ export class EmployeePaymentReceipt {
   })
   payrollClass: string | null;
 
-  @Column({ name: 'payroll_type', nullable: true, type: 'varchar', length: 50 })
+  @Column({
+    name: 'payroll_type',
+    nullable: true,
+    type: 'varchar',
+    length: 100,
+  })
   payrollType: string | null;
 
   @Column({

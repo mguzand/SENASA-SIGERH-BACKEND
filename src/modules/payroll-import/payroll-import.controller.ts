@@ -27,19 +27,27 @@ export class PayrollImportController {
 
   @Post('upload')
   @UseInterceptors(FileInterceptor('file'))
-  async uploadPayrollPdf(
+  async uploadPayroll(
     @UploadedFile() file: Express.Multer.File,
     @Req() req: any,
   ) {
     if (!file) {
-      throw new BadRequestException('Debe subir un archivo PDF');
+      throw new BadRequestException('Debe subir un archivo');
     }
 
-    if (file.mimetype !== 'application/pdf') {
-      throw new BadRequestException('El archivo debe ser PDF');
+    const allowedMimeTypes = [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-excel',
+    ];
+
+    if (!allowedMimeTypes.includes(file.mimetype)) {
+      throw new BadRequestException(
+        'El archivo debe ser PDF o Excel (.xlsx, .xls)',
+      );
     }
 
-    return this.payrollImportService.processPayrollPdf({
+    return this.payrollImportService.processPayrollFile({
       file,
       userId: req.user?.id,
     });

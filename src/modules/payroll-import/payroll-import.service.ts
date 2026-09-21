@@ -17,6 +17,7 @@ import { PayrollItemType } from './enum/payroll-item-type.enum';
 import { PrinterService } from 'src/common/printer/printer.service';
 import { PayrollVoucherReport } from './reports/payroll-voucher.report';
 import { ListPayrollReceiptsDto } from './dto/list-payroll-receipts.dto';
+import * as ExcelJS from 'exceljs';
 
 @Injectable()
 export class PayrollImportService {
@@ -332,6 +333,38 @@ export class PayrollImportService {
     });
 
     return this.printerService.createPdf(docDefinition);
+  }
+
+  async processPayrollFile({
+    file,
+    userId,
+  }: {
+    file: Express.Multer.File;
+    userId?: string;
+  }) {
+    if (!file?.buffer) {
+      throw new BadRequestException('No se pudo leer el archivo');
+    }
+
+    if (file.mimetype === 'application/pdf') {
+      return this.processPayrollPdf({
+        file,
+        userId,
+      });
+    }
+
+    if (
+      file.mimetype ===
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+      file.mimetype === 'application/vnd.ms-excel'
+    ) {
+      return this.processPayrollExcel({
+        file,
+        userId,
+      });
+    }
+
+    throw new BadRequestException('Formato de archivo no soportado');
   }
 
   async processPayrollPdf({
@@ -1080,5 +1113,426 @@ export class PayrollImportService {
     };
 
     return convert(value).replace(/\s+/g, ' ').trim();
+  }
+
+  private isPayrollEmployeeRow(row: ExcelJS.Row): boolean {
+    const value = this.getExcelCellValue(row.getCell(1));
+
+    if (value === null || value === undefined || value === '') {
+      return false;
+    }
+
+    if (typeof value === 'number') {
+      return Number.isFinite(value);
+    }
+
+    const text = String(value).trim();
+
+    return /^\d+$/.test(text);
+  }
+
+  private extractExcelPayrollRow(
+    row: ExcelJS.Row,
+    worksheet: ExcelJS.Worksheet,
+    sheetInfo: {
+      month: string | null;
+      year: number | null;
+      payrollClass: string | null;
+      payrollType: string | null;
+    },
+  ) {
+    const employeeName = this.getExcelString(row.getCell(2));
+
+    const position = this.getExcelString(row.getCell(3));
+
+    const identityNumber = this.getExcelString(row.getCell(4)).replace(
+      /\D/g,
+      '',
+    );
+
+    if (!identityNumber) {
+      throw new Error('La fila no contiene número de identidad');
+    }
+
+    if (identityNumber.length !== 13) {
+      throw new Error(`Número de identidad inválido: ${identityNumber}`);
+    }
+
+    const monthlySalary = this.getExcelNumber(row.getCell(5));
+
+    const daysWorked = this.getExcelNumber(row.getCell(6));
+
+    const earnedSalary = this.getExcelNumber(row.getCell(7));
+
+    const workFine = this.getExcelNumber(row.getCell(8));
+
+    const incomeTax = this.getExcelNumber(row.getCell(9));
+
+    const ihss = this.getExcelNumber(row.getCell(10));
+
+    const netSalary = this.getExcelNumber(row.getCell(11));
+
+    const contractValidity = this.getExcelString(row.getCell(12));
+
+    const totalDeductions = workFine + incomeTax + ihss;
+
+    return {
+      employeeName,
+      position,
+      identityNumber,
+
+      monthlySalary,
+      daysWorked,
+      earnedSalary,
+
+      workFine,
+      incomeTax,
+      ihss,
+
+      totalDeductions,
+
+      netSalary,
+
+      contractValidity,
+    };
+  }
+
+  async processPayrollExcel({
+    file,
+    userId,
+  }: {
+    file: Express.Multer.File;
+    userId?: string;
+  }) {
+    if (!file?.buffer) {
+      throw new BadRequestException('No se pudo leer el archivo Excel');
+    }
+
+    const workbook = new ExcelJS.Workbook();
+
+    await workbook.xlsx.load(file.buffer as any);
+
+    const queryRunner = this.dataSource.createQueryRunner();
+
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      const payrollImport = queryRunner.manager.create(PayrollImport, {
+        fileName: file.originalname,
+        uploadedBy: userId ?? null,
+        status: 'PROCESSING',
+      });
+
+      const savedImport = await queryRunner.manager.save(payrollImport);
+
+      let inserted = 0;
+      let errors = 0;
+      let totalRows = 0;
+
+      for (const worksheet of workbook.worksheets) {
+        const sheetInfo = this.extractExcelSheetInfo(worksheet);
+
+        worksheet.eachRow((row) => {
+          if (this.isPayrollEmployeeRow(row)) {
+            totalRows++;
+          }
+        });
+
+        for (let rowNumber = 1; rowNumber <= worksheet.rowCount; rowNumber++) {
+          const row = worksheet.getRow(rowNumber);
+
+          if (!this.isPayrollEmployeeRow(row)) {
+            continue;
+          }
+
+          try {
+            const data = this.extractExcelPayrollRow(row, worksheet, sheetInfo);
+
+            const employee = await this.employeeRepository.findByDni(
+              data.identityNumber,
+            );
+
+            if (!employee) {
+              errors++;
+
+              await queryRunner.manager.save(
+                queryRunner.manager.create(PayrollImportError, {
+                  payrollImportId: savedImport.id,
+                  pageNumber: rowNumber,
+                  identityNumber: data.identityNumber,
+                  employeeNameFromFile: data.employeeName,
+                  errorMessage:
+                    `Empleado no encontrado por identidad. ` +
+                    `Hoja: ${worksheet.name}, fila: ${rowNumber}`,
+                  rawText: JSON.stringify(data),
+                }),
+              );
+
+              continue;
+            }
+
+            const receiptData: DeepPartial<EmployeePaymentReceipt> = {
+              payrollImportId: savedImport.id,
+
+              employeeId: employee.id,
+
+              identityNumber: data.identityNumber,
+
+              employeeNameFromFile: data.employeeName,
+
+              month: sheetInfo.month,
+
+              year: sheetInfo.year,
+
+              payrollClass: sheetInfo.payrollClass,
+
+              payrollType: 'PLANILLA MENSUAL DE SALARIOS FONDOS OIRSA',
+
+              ordinarySalary: data.monthlySalary,
+
+              increments: 0,
+
+              seniority: 0,
+
+              variableSalariesTotal: 0,
+
+              bonusesTotal: 0,
+
+              integralSalary: data.earnedSalary,
+
+              deductionsTotal: data.totalDeductions,
+
+              withholdingsTotal: 0,
+
+              netSalary: data.netSalary,
+
+              amountInWords: '',
+
+              documentNumber: null,
+
+              bankName: null,
+
+              bankAccount: null,
+
+              groupLevel: null,
+
+              rawPageText: JSON.stringify({
+                sheet: worksheet.name,
+                row: rowNumber,
+                position: data.position,
+                daysWorked: data.daysWorked,
+                contractValidity: data.contractValidity,
+              }),
+            };
+
+            const receipt = queryRunner.manager.create(
+              EmployeePaymentReceipt,
+              receiptData,
+            );
+
+            const savedReceipt = await queryRunner.manager.save(receipt);
+
+            const receiptItems: EmployeePaymentReceiptItem[] = [];
+
+            /*
+             * H - MULTA DE TRABAJO
+             */
+            if (data.workFine > 0) {
+              receiptItems.push(
+                queryRunner.manager.create(EmployeePaymentReceiptItem, {
+                  receiptId: savedReceipt.id,
+                  itemType: PayrollItemType.DEDUCTION,
+                  code: 'MULTA_TRABAJO',
+                  description: 'MULTAS DE TRABAJO',
+                  amount: data.workFine,
+                }),
+              );
+            }
+
+            /*
+             * I - IMPUESTO SOBRE LA RENTA
+             */
+            if (data.incomeTax > 0) {
+              receiptItems.push(
+                queryRunner.manager.create(EmployeePaymentReceiptItem, {
+                  receiptId: savedReceipt.id,
+                  itemType: PayrollItemType.DEDUCTION,
+                  code: 'ISR',
+                  description: 'IMPUESTO SOBRE LA RENTA',
+                  amount: data.incomeTax,
+                }),
+              );
+            }
+
+            /*
+             * J - IHSS
+             */
+            if (data.ihss > 0) {
+              receiptItems.push(
+                queryRunner.manager.create(EmployeePaymentReceiptItem, {
+                  receiptId: savedReceipt.id,
+                  itemType: PayrollItemType.DEDUCTION,
+                  code: 'IHSS',
+                  description: 'Instituto Hondureño de Seguridad Social (IHSS)',
+                  amount: data.ihss,
+                }),
+              );
+            }
+
+            if (receiptItems.length > 0) {
+              await queryRunner.manager.save(receiptItems);
+            }
+
+            inserted++;
+          } catch (error) {
+            console.error(
+              `Error hoja ${worksheet.name}, fila ${rowNumber}`,
+              error,
+            );
+
+            errors++;
+
+            await queryRunner.manager.save(
+              queryRunner.manager.create(PayrollImportError, {
+                payrollImportId: savedImport.id,
+                pageNumber: rowNumber,
+                errorMessage:
+                  `${error.message ?? 'Error procesando fila'} ` +
+                  `(Hoja: ${worksheet.name}, fila: ${rowNumber})`,
+                rawText: JSON.stringify({
+                  sheet: worksheet.name,
+                  row: rowNumber,
+                }),
+              }),
+            );
+          }
+        }
+      }
+
+      savedImport.status = errors > 0 ? 'COMPLETED_WITH_ERRORS' : 'COMPLETED';
+
+      await queryRunner.manager.save(savedImport);
+
+      await queryRunner.commitTransaction();
+
+      return {
+        message: 'Archivo Excel procesado correctamente',
+        payrollImportId: savedImport.id,
+        sheets: workbook.worksheets.length,
+        totalRows,
+        inserted,
+        errors,
+      };
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  private getExcelCellValue(cell: ExcelJS.Cell): any {
+    const value = cell.value;
+
+    if (value && typeof value === 'object' && 'result' in value) {
+      return (value as any).result;
+    }
+
+    return value;
+  }
+
+  private getExcelString(cell: ExcelJS.Cell): string {
+    const value = this.getExcelCellValue(cell);
+
+    if (value === null || value === undefined) {
+      return '';
+    }
+
+    return String(value).trim();
+  }
+
+  private getExcelNumber(cell: ExcelJS.Cell): number {
+    const value = this.getExcelCellValue(cell);
+
+    if (value === null || value === undefined || value === '') {
+      return 0;
+    }
+
+    if (typeof value === 'number') {
+      return Number(value.toFixed(2));
+    }
+
+    const normalized = String(value).replace(/,/g, '').trim();
+
+    if (!normalized) {
+      return 0;
+    }
+
+    const number = Number(normalized);
+
+    return Number.isFinite(number) ? Number(number.toFixed(2)) : 0;
+  }
+
+  private extractExcelSheetInfo(worksheet: ExcelJS.Worksheet) {
+    let month: string | null = null;
+    let year: number | null = null;
+
+    let payrollClass: string | null = null;
+    let payrollType: string | null = null;
+
+    /*
+     * Buscamos información general
+     * en las primeras 15 filas.
+     */
+    for (
+      let rowNumber = 1;
+      rowNumber <= Math.min(15, worksheet.rowCount);
+      rowNumber++
+    ) {
+      const row = worksheet.getRow(rowNumber);
+
+      for (let column = 1; column <= 12; column++) {
+        const text = this.getExcelString(row.getCell(column))
+          .replace(/\s+/g, ' ')
+          .trim();
+
+        if (!text) {
+          continue;
+        }
+
+        /*
+         * SEPTIEMBRE 2026
+         */
+        const periodMatch = text.match(
+          /(ENERO|FEBRERO|MARZO|ABRIL|MAYO|JUNIO|JULIO|AGOSTO|SEPTIEMBRE|OCTUBRE|NOVIEMBRE|DICIEMBRE)\s+(\d{4})/i,
+        );
+
+        if (periodMatch) {
+          month = periodMatch[1].toUpperCase();
+          year = Number(periodMatch[2]);
+        }
+
+        /*
+         * Identificar origen/tipo de planilla.
+         */
+        if (text.toUpperCase().includes('PLANILLA MENSUAL DE SALARIOS')) {
+          payrollType = text;
+        }
+      }
+    }
+
+    /*
+     * Podemos utilizar el nombre de la hoja
+     * como clasificación adicional.
+     */
+    payrollClass = worksheet.name.trim();
+
+    return {
+      month,
+      year,
+      payrollClass,
+      payrollType,
+    };
   }
 }
