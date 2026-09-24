@@ -77,6 +77,22 @@ export class RequestHistoryService {
           actorName: suspension.actor_name?.trim() || null,
           observation: `${Number(suspension.restored_days)} día(s) devuelto(s). ${suspension.reason}`,
         }));
+        const reschedules = await this.dataSource.query(
+          `SELECT reschedule.*, CONCAT_WS(' ', employee.first_name, employee.middle_name, employee.last_name, employee.second_last_name) AS actor_name
+           FROM vacation_request_reschedules reschedule
+           LEFT JOIN employees employee ON employee.id = reschedule.hr_employee_id
+           WHERE reschedule.vacation_request_id = $1
+           ORDER BY reschedule.created_at ASC`,
+          [id],
+        );
+        reschedules.forEach((change: any, index: number) => events.push({
+          key: `reschedule-${change.id || index}`,
+          label: 'Reprogramación de vacaciones',
+          status: 'COMPLETED',
+          occurredAt: change.created_at,
+          actorName: change.actor_name?.trim() || null,
+          observation: `Fechas anteriores: ${(change.original_days || []).join(', ')}. Fechas nuevas: ${(change.new_days || []).join(', ')}. ${change.reason}`,
+        }));
       }
     }
 

@@ -10,10 +10,11 @@ import { VacationRequestDaysModule } from '../vacation_request_days/vacation_req
 import { VacationRequestSuspensionController } from './vacation-request-suspension.controller';
 import { VacationRequestSuspension } from './entities/vacation-request-suspension.entity';
 import { VacationRequestSuspensionService } from './vacation-request-suspension.service';
+import { VacationRequestReschedule } from './entities/vacation-request-reschedule.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([VacationRequestSuspension, VacationRequest]),
+    TypeOrmModule.forFeature([VacationRequestSuspension, VacationRequest, VacationRequestReschedule]),
     VacationRequestDaysModule,
     VacationRequestDetailModule,
     EmployeeVacationPeriodModule,

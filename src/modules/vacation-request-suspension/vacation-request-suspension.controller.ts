@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Post, Req, UsePipes, ValidationPipe } from '@nestjs/common';
 import { SuspendVacationRequestDto } from './dto/suspend-vacation-request.dto';
 import { VacationRequestSuspensionService } from './vacation-request-suspension.service';
+import { RescheduleVacationRequestDto } from './dto/reschedule-vacation-request.dto';
 
 @Controller('vacation-requests')
 export class VacationRequestSuspensionController {
@@ -10,6 +11,12 @@ export class VacationRequestSuspensionController {
   @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
   suspend(@Param('id') id: string, @Body() dto: SuspendVacationRequestDto, @Req() req: any) {
     return this.service.suspend(id, dto, this.getEmployeeId(req));
+  }
+
+  @Post(':id/reschedule')
+  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
+  reschedule(@Param('id') id: string, @Body() dto: RescheduleVacationRequestDto, @Req() req: any) {
+    return this.service.reschedule(id, dto, this.getEmployeeId(req));
   }
 
   @Get(':id/suspensions')

@@ -557,7 +557,16 @@ export class EmployeeExitPermitsService {
     const intermediateMinutes = this.getScheduleIntermediateMinutes(schedule);
     const staysBeforeIntermediate = returnMinutes <= intermediateMinutes;
     const staysAfterIntermediate = exitMinutes >= intermediateMinutes;
-    return duration <= 4 * 60 &&
+    const isInstitutionalSchedule =
+      schedule?.startTime != null &&
+      schedule?.endTime != null &&
+      this.timeToMinutes(schedule.startTime) === 8 * 60 + 30 &&
+      this.timeToMinutes(schedule.endTime) === 16 * 60 + 30;
+
+    // En el horario institucional, las 12:00 son la separación acordada entre
+    // mañana y tarde. El tramo 12:00-16:30 cuenta como medio día aunque dure
+    // 4 h 30 min. Los demás horarios conservan el máximo general de 4 horas.
+    return (isInstitutionalSchedule || duration <= 4 * 60) &&
       (staysBeforeIntermediate || staysAfterIntermediate)
       ? 'HALF'
       : 'FULL';
