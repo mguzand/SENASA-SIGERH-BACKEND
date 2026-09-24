@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 
 import { InjectRepository } from '@nestjs/typeorm';
-import { Brackets, DataSource, Repository } from 'typeorm';
+import { Brackets, DataSource, EntityManager, Repository } from 'typeorm';
 
 import { VacationRequest } from './entities/vacation-request.entity';
 
@@ -96,6 +96,12 @@ export class VacationRequestService {
     await queryRunner.startTransaction();
 
     try {
+      await this.assertAnnualApprovedRequestLimitWithManager(
+        dto.employee_id,
+        sortedDays[0],
+        queryRunner.manager,
+      );
+
       const request = queryRunner.manager.create(VacationRequest, {
         employee_id: dto.employee_id,
         area_id: dto.area_id,
@@ -1009,6 +1015,13 @@ export class VacationRequestService {
     await queryRunner.startTransaction();
 
     try {
+      await this.assertAnnualApprovedRequestLimitWithManager(
+        request.employee_id,
+        request.start_date,
+        queryRunner.manager,
+        request.id,
+      );
+
       const periodsConsumed =
         await this.employeeVacationPeriodService.consumeVacationDaysWithManager(
           {
@@ -1126,6 +1139,47 @@ export class VacationRequestService {
 
   private formatDate(date: Date): string {
     return date.toISOString().split('T')[0];
+  }
+
+  private async assertAnnualApprovedRequestLimitWithManager(
+    employeeId: string,
+    requestStartDate: string,
+    manager: EntityManager,
+    excludedRequestId?: string,
+  ) {
+    const year = Number(String(requestStartDate).slice(0, 4));
+    if (!Number.isInteger(year)) {
+      throw new BadRequestException('La fecha inicial de vacaciones no es válida');
+    }
+
+    // Serializa las aprobaciones del mismo empleado y año para impedir que dos
+    // solicitudes simultáneas superen el límite.
+    await manager.query(
+      'SELECT pg_advisory_xact_lock(hashtext($1), $2)',
+      [employeeId, year],
+    );
+
+    const yearStart = `${year}-01-01`;
+    const nextYearStart = `${year + 1}-01-01`;
+    const query = manager
+      .createQueryBuilder(VacationRequest, 'request')
+      .where('request.employee_id = :employeeId', { employeeId })
+      .andWhere('request.start_date >= :yearStart', { yearStart })
+      .andWhere('request.start_date < :nextYearStart', { nextYearStart })
+      .andWhere('request.hr_status = :approved', {
+        approved: VacationRequestStatus.APPROVED,
+      });
+
+    if (excludedRequestId) {
+      query.andWhere('request.id <> :excludedRequestId', { excludedRequestId });
+    }
+
+    const approvedRequests = await query.getCount();
+    if (approvedRequests >= 3) {
+      throw new BadRequestException(
+        `El empleado ya tiene tres solicitudes de vacaciones aprobadas en ${year}.`,
+      );
+    }
   }
 
   private localDateInTegucigalpa(): string {
