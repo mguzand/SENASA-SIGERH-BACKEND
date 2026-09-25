@@ -13,9 +13,22 @@ export enum LeaveRequestStage {
 
 export enum LeaveReasonType {
   DEATH = 'DEATH',
+  EXTENDED_DEATH = 'EXTENDED_DEATH',
+  MARRIAGE = 'MARRIAGE',
+  UNION_EVENT = 'UNION_EVENT',
   PERSONAL = 'PERSONAL',
   IHSS = 'IHSS',
   STUDY = 'STUDY',
+  COURT_APPEARANCE = 'COURT_APPEARANCE',
+  CALAMITY = 'CALAMITY',
+  FAMILY_CARE = 'FAMILY_CARE',
+  OFFICIAL_COMMISSION = 'OFFICIAL_COMMISSION',
+  OTHER_JUSTIFIED = 'OTHER_JUSTIFIED',
+}
+
+export enum LeaveMarriageType {
+  FIRST = 'FIRST',
+  SUBSEQUENT = 'SUBSEQUENT',
 }
 
 export enum LeaveRelationship {

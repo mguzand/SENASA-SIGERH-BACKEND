@@ -29,15 +29,29 @@ const leaveLabel = (request: LeaveRequest) =>
 const legalBasis = (request: LeaveRequest) =>
   ({
     [LeaveReasonType.DEATH]:
-      'Fundamentando la petición del colaborador en el ARTÍCULO 130.- REGLAMENTO DE LA LEY CIVIL: LICENCIAS REMUNERADAS, numeral 2: a) 2- Por duelo: si hubiere fallecido uno de los padres del servidor o uno de sus hijos, hermanos, cónyuge o compañera o compañero de hogar, se concederán cinco (5) días hábiles; si el fallecido hubiere habitado en lugar diferente al domicilio del servidor, se podrán conceder hasta nueve (9) días hábiles, atendiendo la distancia y demás circunstancias.',
+      'Fundamentando la petición del colaborador en el ARTÍCULO 130 del REGLAMENTO DE LA LEY DE SERVICIO CIVIL: LICENCIAS REMUNERADAS, numeral 2, inciso a): Por duelo, si hubiere fallecido uno de los padres del servidor o uno de sus hijos, hermanos, cónyuge o compañera o compañero de hogar, se concederán cinco (5) días hábiles; si el fallecido hubiere habitado en lugar diferente al domicilio del servidor, se podrán conceder hasta nueve (9) días hábiles, atendiendo la distancia y demás circunstancias.',
+    [LeaveReasonType.EXTENDED_DEATH]:
+      'Fundamentando la petición del colaborador en el ARTÍCULO 130 del REGLAMENTO DE LA LEY DE SERVICIO CIVIL, numeral 2, inciso b): Si ocurriere el fallecimiento de un pariente diferente a los anteriormente indicados, comprendido dentro del cuarto grado de consanguinidad o segundo de afinidad, podrán concederse hasta tres (3) días hábiles.',
+    [LeaveReasonType.MARRIAGE]:
+      'Fundamentando la petición del colaborador en el ARTÍCULO 130 del REGLAMENTO DE LA LEY DE SERVICIO CIVIL, numeral 2, inciso c): Por matrimonio se concederán seis (6) días hábiles cuando se trate de primeras nupcias, o tres (3) días hábiles si se tratare de segundas o posteriores.',
+    [LeaveReasonType.UNION_EVENT]:
+      'Fundamentando la petición del colaborador en el ARTÍCULO 130 del REGLAMENTO DE LA LEY DE SERVICIO CIVIL, numeral 2, inciso d): Para asistir a asambleas, congresos, reuniones de trabajo, cursos de capacitación u otros eventos similares promovidos por la organización gremial legalmente reconocida, o para cumplir comisiones relacionadas con dicha organización, por el tiempo razonable previsto para su duración.',
     [LeaveReasonType.PERSONAL]:
       'Fundamentando la petición del colaborador en el artículo 136 del REGLAMENTO DE LA LEY DE SERVICIO CIVIL: LICENCIAS NO REMUNERADAS, numeral 6: Otras circunstancias calificadas en las que prevalezca el interés personal del servidor y no el de la Administración Pública, siempre que no se ponga en precario el servicio.',
     [LeaveReasonType.IHSS]:
-      'Fundamentando la petición del colaborador en el artículo 134 del REGLAMENTO DE LA LEY DE SERVICIO CIVIL: LICENCIAS REMUNERADAS, numeral 4: La enfermedad grave de cualquiera de los padres, hijos, hermanos, cónyuge o compañera o compañero de hogar del servidor, previa acreditación mediante certificación médica y evidencia de que fuere imprescindible su asistencia.',
+      'Fundamentando la petición del colaborador en el ARTÍCULO 130 del REGLAMENTO DE LA LEY DE SERVICIO CIVIL, numeral 1: Por enfermedad, gravidez o maternidad, accidentes u otras causas previstas en la Ley del Seguro Social y demás leyes de previsión social, de acuerdo con lo que allí se disponga.',
     [LeaveReasonType.STUDY]:
-      request.type === LeaveRequestType.PAID
-        ? 'Fundamentando la petición del colaborador en el ARTÍCULO 132 del REGLAMENTO DE LA LEY DE SERVICIO CIVIL: También se concederá licencia remunerada cuando el servidor participe en un programa de adiestramiento relacionado con las funciones propias del cargo, de carácter temporal, a propuesta de la dependencia donde preste sus servicios y por el tiempo que estrictamente fuere necesario.'
-        : 'Fundamentando la petición del colaborador en el ARTÍCULO 136 del REGLAMENTO DE LA LEY DE SERVICIO CIVIL: LICENCIAS NO REMUNERADAS, numeral 3: Participar en programas de adiestramiento planificados o programados por organismos no sujetos a la Ley y sobre materias que no tengan relación directa con las funciones propias del cargo, aun cuando fueren de interés profesional para el servidor.',
+      'Fundamentando la petición del colaborador en los ARTÍCULOS 131 y 132 del REGLAMENTO DE LA LEY DE SERVICIO CIVIL: Podrá concederse licencia remunerada para estudios relacionados directamente con las funciones propias del cargo y para participar en programas temporales de adiestramiento relacionados con dichas funciones, por el tiempo estrictamente necesario.',
+    [LeaveReasonType.COURT_APPEARANCE]:
+      'Fundamentando la petición del colaborador en el ARTÍCULO 134 del REGLAMENTO DE LA LEY DE SERVICIO CIVIL, numeral 1: La comparecencia ante cualquier Tribunal de Justicia u Órgano Administrativo, cuando se conozca de un asunto en el que tenga interés legítimo y directo el servidor, o cuando fuere legalmente citado o emplazado para tal efecto.',
+    [LeaveReasonType.CALAMITY]:
+      'Fundamentando la petición del colaborador en el ARTÍCULO 134 del REGLAMENTO DE LA LEY DE SERVICIO CIVIL, numeral 3: En casos de calamidad pública, cuando el servidor o sus parientes dentro del cuarto grado de consanguinidad o segundo de afinidad resultaren afectados y requirieren atención o asistencia inmediata, o cuando el servidor deba prestar servicios de socorro o ayuda.',
+    [LeaveReasonType.FAMILY_CARE]:
+      'Fundamentando la petición del colaborador en el ARTÍCULO 134 del REGLAMENTO DE LA LEY DE SERVICIO CIVIL, numeral 4: La enfermedad grave de cualquiera de los padres, hijos, hermanos, cónyuge o compañera o compañero de hogar del servidor, previa acreditación médica y evidencia de que fuere imprescindible su asistencia.',
+    [LeaveReasonType.OFFICIAL_COMMISSION]:
+      'Fundamentando la petición del colaborador en el ARTÍCULO 134 del REGLAMENTO DE LA LEY DE SERVICIO CIVIL, numeral 5: El desempeño de comisiones especiales, dentro o fuera del país, cuando fuere de interés para la Administración Pública, o para el cumplimiento de obligaciones cívicas previstas en la legislación.',
+    [LeaveReasonType.OTHER_JUSTIFIED]:
+      'Fundamentando la petición del colaborador en el ARTÍCULO 134 del REGLAMENTO DE LA LEY DE SERVICIO CIVIL, numeral 6: Otras razones calificadas previstas en el Reglamento Interior o que, a juicio del titular de la dependencia, fueren de conveniencia o interés para la Administración Pública.',
   })[request.reasonType];
 
 const reportDate = () =>

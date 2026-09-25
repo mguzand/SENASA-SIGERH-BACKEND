@@ -1,6 +1,6 @@
 import { Type } from 'class-transformer';
 import { IsArray, IsBoolean, IsDateString, IsEnum, IsNotEmpty, IsOptional, IsString, MaxLength, ValidateIf, ValidateNested } from 'class-validator';
-import { LeaveReasonType, LeaveRelationship, LeaveRequestType } from '../enums/leave-request.enums';
+import { LeaveMarriageType, LeaveReasonType, LeaveRelationship, LeaveRequestType } from '../enums/leave-request.enums';
 
 export class LeaveDocumentDto {
   @IsString() code: string;
@@ -16,13 +16,18 @@ export class CreateLeaveRequestDto {
   @IsEnum(LeaveReasonType)
   reasonType: LeaveReasonType;
 
-  @ValidateIf((value) => [LeaveReasonType.DEATH, LeaveReasonType.IHSS].includes(value.reasonType))
+  @ValidateIf((value) => [LeaveReasonType.DEATH, LeaveReasonType.IHSS, LeaveReasonType.FAMILY_CARE].includes(value.reasonType))
   @IsEnum(LeaveRelationship)
   relationship?: LeaveRelationship;
 
   @IsOptional()
   @IsBoolean()
   differentDomicile?: boolean;
+
+  @ValidateIf((value) => value.reasonType === LeaveReasonType.MARRIAGE)
+  @IsEnum(LeaveMarriageType)
+  marriageType?: LeaveMarriageType;
+
   @IsDateString()
   startDate: string;
 

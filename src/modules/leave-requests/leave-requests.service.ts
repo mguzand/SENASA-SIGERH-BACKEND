@@ -35,6 +35,7 @@ import {
   LeaveRequestType,
   LeaveReasonType,
   LeaveRelationship,
+  LeaveMarriageType,
 } from './enums/leave-request.enums';
 import {
   buildLeaveRequestReport,
@@ -191,6 +192,7 @@ export class LeaveRequestsService {
         reasonType: dto.reasonType,
         relationship: dto.relationship || null,
         differentDomicile: Boolean(dto.differentDomicile),
+        marriageType: dto.marriageType || null,
         reason: dto.reason.trim(),
         stage: isMainOffice
           ? LeaveRequestStage.AREA_REVIEW
@@ -1095,6 +1097,31 @@ export class LeaveRequestsService {
           `La licencia por fallecimiento permite hasta ${maximum} días hábiles.`,
         );
     }
+    if (dto.reasonType === LeaveReasonType.EXTENDED_DEATH && businessDays > 3) {
+      throw new BadRequestException(
+        'La licencia por duelo de parentesco extendido permite hasta 3 días hábiles.',
+      );
+    }
+    if (dto.reasonType === LeaveReasonType.MARRIAGE) {
+      const maximum = dto.marriageType === LeaveMarriageType.FIRST ? 6 : 3;
+      if (businessDays > maximum) {
+        throw new BadRequestException(
+          `La licencia por matrimonio permite hasta ${maximum} días hábiles para ${dto.marriageType === LeaveMarriageType.FIRST ? 'primeras nupcias' : 'segundas o posteriores nupcias'}.`,
+        );
+      }
+    }
+
+    if (dto.reasonType === LeaveReasonType.PERSONAL) {
+      if (dto.type !== LeaveRequestType.UNPAID) {
+        throw new BadRequestException(
+          'La licencia por asuntos personales debe ser sin goce de sueldo.',
+        );
+      }
+    } else if (dto.type !== LeaveRequestType.PAID) {
+      throw new BadRequestException(
+        'El tipo de licencia seleccionado debe ser con goce de sueldo.',
+      );
+    }
     this.validateDocuments(dto.documents || []);
   }
 
@@ -1122,9 +1149,9 @@ export class LeaveRequestsService {
     reasonType: LeaveReasonType,
     relationship?: LeaveRelationship | null,
   ) {
-    if (reasonType === LeaveReasonType.DEATH)
+    if ([LeaveReasonType.DEATH, LeaveReasonType.EXTENDED_DEATH].includes(reasonType))
       return ['DEATH_CERTIFICATE', 'BIRTH_CERTIFICATE'];
-    if (reasonType === LeaveReasonType.IHSS)
+    if ([LeaveReasonType.IHSS, LeaveReasonType.FAMILY_CARE].includes(reasonType))
       return relationship === LeaveRelationship.SELF
         ? ['IHSS_CERTIFICATE']
         : ['IHSS_CERTIFICATE', 'BIRTH_CERTIFICATE'];

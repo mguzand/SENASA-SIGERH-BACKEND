@@ -49,9 +49,14 @@ export class RequestHistoryService {
     ];
 
     if (type === 'exit-permit' || type === 'vacation') {
-      events.push(
-        this.reviewEvent('boss', 'Revisión de jefatura', request.boss_status, request.boss_reviewed_at, actor(request.boss_employee_id), request.boss_observation),
-      );
+      if (type === 'vacation' && request.regional_manager_employee_id) {
+        events.push(this.reviewEvent('regional', 'Revisión de jefatura regional', request.regional_status, request.regional_reviewed_at, actor(request.regional_manager_employee_id), request.regional_observation));
+      }
+      if (type === 'vacation' && request.area_manager_employee_id) {
+        events.push(this.reviewEvent('area', 'Revisión de jefatura de área', request.boss_status, request.boss_reviewed_at, actor(request.area_manager_employee_id), request.boss_observation));
+      } else {
+        events.push(this.reviewEvent('boss', 'Revisión de jefatura', request.boss_status, request.boss_reviewed_at, actor(request.boss_employee_id), request.boss_observation));
+      }
       if (request.liaison_review_required) {
         events.push(
           this.reviewEvent('liaison', 'Revisión del enlace de RR. HH.', request.liaison_status, request.liaison_reviewed_at, actor(request.liaison_employee_id), request.liaison_observation),
@@ -97,22 +102,15 @@ export class RequestHistoryService {
     }
 
     if (type === 'leave') {
-      const managerIsRegional = request.regional_manager_employee_id != null;
-      events.push(
-        this.reviewEvent(
-          'manager',
-          managerIsRegional ? 'Revisión de jefatura regional' : 'Revisión de jefatura de área',
-          managerIsRegional ? request.regional_status : request.area_status,
-          managerIsRegional ? request.regional_reviewed_at : request.area_reviewed_at,
-          actor(managerIsRegional ? request.regional_manager_employee_id : request.area_manager_employee_id),
-          managerIsRegional ? request.regional_observation : request.area_observation,
-        ),
-      );
+      if (request.regional_manager_employee_id) {
+        events.push(this.reviewEvent('regional', 'Revisión de jefatura regional', request.regional_status, request.regional_reviewed_at, actor(request.regional_manager_employee_id), request.regional_observation));
+      }
+      events.push(this.reviewEvent('area', 'Revisión de jefatura de área', request.area_status, request.area_reviewed_at, actor(request.area_manager_employee_id), request.area_observation));
       if (request.liaison_review_required) {
         events.push(this.reviewEvent('liaison', 'Revisión del enlace de RR. HH.', request.liaison_status, request.liaison_reviewed_at, actor(request.liaison_employee_id), request.liaison_observation));
       }
       events.push(this.reviewEvent('hr', 'Revisión de Recursos Humanos', request.hr_status, request.hr_reviewed_at, actor(request.hr_employee_id), request.hr_observation));
-      if (request.type === 'UNPAID') {
+      if (Number(request.business_days) > 3) {
         events.push(this.reviewEvent('director', 'Resolución de Dirección General', request.director_status, request.director_reviewed_at, actor(request.director_employee_id), request.director_observation));
       }
     }
@@ -151,7 +149,7 @@ export class RequestHistoryService {
   private actorIds(type: RequestType, request: any) {
     const ids = [request.employee_id];
     if (type === 'exit-permit' || type === 'vacation') {
-      ids.push(request.boss_employee_id, request.liaison_employee_id, request.hr_employee_id);
+      ids.push(request.boss_employee_id, request.regional_manager_employee_id, request.area_manager_employee_id, request.liaison_employee_id, request.hr_employee_id);
     } else if (type === 'leave') {
       ids.push(request.regional_manager_employee_id, request.area_manager_employee_id, request.liaison_employee_id, request.hr_employee_id, request.director_employee_id);
     } else {

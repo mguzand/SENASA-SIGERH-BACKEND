@@ -11,7 +11,7 @@ import {
   finalLeaveDocumentKinds,
   LeaveRequestsService,
 } from './leave-requests.service';
-import { LeaveRequestType } from './enums/leave-request.enums';
+import { LeaveMarriageType, LeaveReasonType, LeaveRequestType } from './enums/leave-request.enums';
 import { VacationPeriodStatus } from '../../common/enums/vacation.enums';
 
 describe('LeaveRequestsService business rules', () => {
@@ -56,6 +56,45 @@ describe('LeaveRequestsService business rules', () => {
       '2026-08-17',
     );
     expect(days).toBe(2);
+  });
+
+  it('rejects unpaid licenses for paid legal grounds', () => {
+    expect(() =>
+      (service as any).validateLegalRequest(
+        { reasonType: LeaveReasonType.STUDY, type: LeaveRequestType.UNPAID, documents: [] },
+        2,
+      ),
+    ).toThrow('debe ser con goce de sueldo');
+  });
+
+  it('rejects paid personal licenses', () => {
+    expect(() =>
+      (service as any).validateLegalRequest(
+        { reasonType: LeaveReasonType.PERSONAL, type: LeaveRequestType.PAID, documents: [] },
+        2,
+      ),
+    ).toThrow('debe ser sin goce de sueldo');
+  });
+
+  it('limits extended bereavement to three business days', () => {
+    expect(() =>
+      (service as any).validateLegalRequest(
+        { reasonType: LeaveReasonType.EXTENDED_DEATH, type: LeaveRequestType.PAID, documents: [] },
+        4,
+      ),
+    ).toThrow('hasta 3 días hábiles');
+  });
+
+  it.each([
+    [LeaveMarriageType.FIRST, 7, 6],
+    [LeaveMarriageType.SUBSEQUENT, 4, 3],
+  ])('enforces the marriage limit for %s', (marriageType, requestedDays, maximum) => {
+    expect(() =>
+      (service as any).validateLegalRequest(
+        { reasonType: LeaveReasonType.MARRIAGE, type: LeaveRequestType.PAID, marriageType, documents: [] },
+        requestedDays,
+      ),
+    ).toThrow(`hasta ${maximum} días hábiles`);
   });
 
   it('moves accreditation exactly ten calendar days for a ten-day unpaid leave', async () => {

@@ -15,6 +15,7 @@ import {
   LeaveRequestStage,
   LeaveRequestStatus,
   LeaveRequestType,
+  LeaveMarriageType,
   LeaveReasonType,
   LeaveRelationship,
 } from '../enums/leave-request.enums';
@@ -70,6 +71,9 @@ export class LeaveRequest {
 
   @Column({ name: 'different_domicile', default: false })
   differentDomicile: boolean;
+
+  @Column({ name: 'marriage_type', type: 'varchar', length: 20, nullable: true })
+  marriageType: LeaveMarriageType | null;
 
   @Column({ type: 'text' })
   reason: string;
