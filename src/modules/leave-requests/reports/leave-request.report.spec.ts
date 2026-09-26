@@ -41,10 +41,20 @@ describe('Leave request PDF formats', () => {
     expect(text).toContain('DR. RAFAEL ENRIQUE RODRIGUEZ ALVARADO');
     expect(text).toContain('La Dirección de Recursos Humanos y Capacitación');
   });
-  it('addresses the final resolution from the Director General to the employee', () => {
+  it('issues licenses of up to three days from Human Resources', () => {
     const text = contentText(buildFinalLeaveDecisionReport(request));
     expect(text).toContain('LILIANA MARIBEL VASQUEZ AVILA');
     expect(text).toContain('CONSERJE');
+    expect(text).toContain('ING. KEVIN ERNESTO MENDOZA LIRA');
+    expect(text).toContain('DIRECTOR DE RECURSOS HUMANOS');
+    expect(text).toContain('La Dirección de Recursos Humanos y Capacitación');
+    expect(text).toContain('hr-signature.png');
+    expect(text).not.toContain('DR. RAFAEL ENRIQUE RODRIGUEZ ALVARADO');
+  });
+  it('keeps the Director General resolution for licenses of four or more days', () => {
+    const text = contentText(
+      buildFinalLeaveDecisionReport({ ...request, businessDays: 4 }),
+    );
     expect(text).toContain('DIRECTOR GENERAL DEL SENASA');
     expect(text).toContain('esta Dirección General establece');
     expect(text).toContain('director-general-signature.jpg');

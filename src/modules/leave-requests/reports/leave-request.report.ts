@@ -222,6 +222,7 @@ export const buildFinalLeaveDecisionReport = (
   request: LeaveRequest,
 ): TDocumentDefinitions => {
   const label = leaveLabel(request);
+  const requiresDirectorResolution = request.businessDays > 3;
   const records = request.employee?.jobRecords || [];
   const job =
     records.find((item) => item.isCurrent && item.status === 'ACTIVE') ||
@@ -238,7 +239,9 @@ export const buildFinalLeaveDecisionReport = (
     },
     ...heading(
       `${employeeName(request)}\n${position}`,
-      `${DIRECTOR}\n${DIRECTOR_TITLE}`,
+      requiresDirectorResolution
+        ? `${DIRECTOR}\n${DIRECTOR_TITLE}`
+        : `${HR_DIRECTOR}\n${HR_TITLE}`,
       label,
     ),
     {
@@ -261,7 +264,9 @@ export const buildFinalLeaveDecisionReport = (
     {
       text: [
         {
-          text: 'En vista de contar con un dictamen favorable de la Jefatura de Personal, basada en el artículo precedente, esta Dirección General establece: ',
+          text: requiresDirectorResolution
+            ? 'En vista de contar con un dictamen favorable de la Jefatura de Personal, basada en el artículo precedente, esta Dirección General establece: '
+            : 'La Dirección de Recursos Humanos y Capacitación, basada en el artículo precedente, opina lo siguiente: ',
         },
         {
           text: `Que se proceda a otorgar ${label.toLowerCase()} al colaborador ${employeeName(request)}, por el período solicitado.`,
@@ -272,11 +277,27 @@ export const buildFinalLeaveDecisionReport = (
       margin: [0, 14, 0, 0],
     },
     {
-      image: join(__dirname, '../assets/director-general-signature.jpg'),
-      width: 320,
+      image: join(
+        __dirname,
+        requiresDirectorResolution
+          ? '../assets/director-general-signature.jpg'
+          : '../assets/hr-signature.png',
+      ),
+      width: requiresDirectorResolution ? 320 : 230,
       alignment: 'center',
       margin: [0, 24, 0, 0],
     },
+    ...(requiresDirectorResolution
+      ? []
+      : [
+          {
+            text: `${HR_DIRECTOR}\n${HR_TITLE}`,
+            bold: true,
+            alignment: 'center',
+            fontSize: 9,
+            margin: [0, -10, 0, 0],
+          },
+        ]),
     { text: 'Cc: Archivo', fontSize: 9, margin: [0, 16, 0, 0] },
   ]);
 };
