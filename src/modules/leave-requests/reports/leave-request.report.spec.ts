@@ -25,7 +25,7 @@ const request = {
         isCurrent: true,
         status: 'ACTIVE',
         position: { name: 'Conserje' },
-        modality: { name: 'Acuerdo' },
+        modality: { name: 'Servicio Civil' },
       },
     ],
   },
@@ -65,5 +65,30 @@ describe('Leave request PDF formats', () => {
     expect(text).toContain('modalidad de Acuerdo');
     expect(text).toContain('lunes primero (01) de junio del 2026');
     expect(text).toContain('miércoles tres (03) de junio del 2026');
+  });
+  it('does not copy the employee free-text description into formal documents', () => {
+    expect(contentText(buildFinalLeaveDecisionReport(request))).not.toContain(
+      request.reason,
+    );
+    expect(contentText(buildHrToDirectorLeaveReport(request))).not.toContain(
+      request.reason,
+    );
+  });
+  it('treats every modality other than Servicio Civil as Contrato', () => {
+    const contractRequest = {
+      ...request,
+      employee: {
+        ...request.employee,
+        jobRecords: [
+          {
+            ...request.employee.jobRecords[0],
+            modality: { name: 'Jornal' },
+          },
+        ],
+      },
+    };
+    const text = contentText(buildFinalLeaveDecisionReport(contractRequest));
+    expect(text).toContain('modalidad de Contrato');
+    expect(text).not.toContain('modalidad de Jornal');
   });
 });

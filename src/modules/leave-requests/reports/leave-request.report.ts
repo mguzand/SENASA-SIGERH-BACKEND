@@ -182,7 +182,7 @@ export const buildHrToDirectorLeaveReport = (
         { text: 'Vista la solicitud presentada por el colaborador ' },
         { text: employeeName(request), bold: true },
         {
-          text: `, quien solicita ${label.toLowerCase()} por ${request.businessDays} día(s) hábil(es), del ${request.startDate} al ${request.endDate}, por el siguiente motivo: ${request.reason}.`,
+          text: `, quien solicita ${label.toLowerCase()} por ${request.businessDays} día(s) hábil(es), del ${request.startDate} al ${request.endDate}.`,
         },
       ],
       alignment: 'justify',
@@ -229,7 +229,11 @@ export const buildFinalLeaveDecisionReport = (
     records[0];
   const position =
     job?.position?.name?.toUpperCase() || 'COLABORADOR DEL SENASA';
-  const modality = job?.modality?.name || 'la modalidad registrada';
+  const modality =
+    job?.modality?.name?.trim().toLocaleLowerCase('es-HN') ===
+    'servicio civil'
+      ? 'Acuerdo'
+      : 'Contrato';
   return definition([
     {
       text: request.requestNumber,
@@ -254,9 +258,7 @@ export const buildFinalLeaveDecisionReport = (
         { text: periodDate(request.startDate), bold: true, italics: true },
         { text: ' al ' },
         { text: periodDate(request.endDate), bold: true, italics: true },
-        {
-          text: `, por ${request.reason}. Adjunta documentación correspondiente.`,
-        },
+        { text: '. Adjunta documentación correspondiente.' },
       ],
       alignment: 'justify',
     },
