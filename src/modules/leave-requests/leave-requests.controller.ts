@@ -16,6 +16,7 @@ import { ListLeaveRequestsDto } from './dto/list-leave-requests.dto';
 import { ReviewLeaveRequestDto } from './dto/review-leave-request.dto';
 import { LeaveRequestsService } from './leave-requests.service';
 import { UpdateLeaveDocumentsDto } from './dto/update-leave-documents.dto';
+import { UpdateLeaveClassificationDto } from './dto/update-leave-classification.dto';
 
 @Controller('leave-requests')
 export class LeaveRequestsController {
@@ -68,6 +69,19 @@ export class LeaveRequestsController {
     @Body() dto: ReviewLeaveRequestDto,
   ) {
     return this.service.reviewByLiaison(this.userId(req), id, dto);
+  }
+
+  @Patch(':id/liaison-classification')
+  updateClassificationByLiaison(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: UpdateLeaveClassificationDto,
+  ) {
+    return this.service.updateClassificationByLiaison(
+      this.userId(req),
+      id,
+      dto,
+    );
   }
 
   @Patch(':id/manager-review')

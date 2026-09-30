@@ -26,6 +26,7 @@ import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
 import { ListLeaveRequestsDto } from './dto/list-leave-requests.dto';
 import { ReviewLeaveRequestDto } from './dto/review-leave-request.dto';
 import { UpdateLeaveDocumentsDto } from './dto/update-leave-documents.dto';
+import { UpdateLeaveClassificationDto } from './dto/update-leave-classification.dto';
 import { LeaveRequest } from './entities/leave-request.entity';
 import { LeaveVacationImpact } from './entities/leave-vacation-impact.entity';
 import { LeaveRequestDocument } from './entities/leave-request-document.entity';
@@ -214,9 +215,11 @@ export class LeaveRequestsService {
         hrReviewedAt: null,
         liaisonReviewRequired: false,
         liaisonEmployeeId: null,
+        liaisonRegionalId: null,
         liaisonStatus: null,
         liaisonObservation: null,
         liaisonReviewedAt: null,
+        classificationHistory: [],
         directorEmployeeId: null,
         directorStatus: LeaveRequestStatus.PENDING,
         directorObservation: null,
@@ -505,17 +508,27 @@ export class LeaveRequestsService {
       .filter((item) => item.permissions.leaves)
       .map((item) => item.regionalId);
     if (!regionalIds.length) return [];
-    const requests = await this.requestRepository.find({
-      where: regionalIds.map((regionalId) => ({
-        regionalId,
+    const requests = await this.requestRepository
+      .createQueryBuilder('request')
+      .leftJoinAndSelect('request.employee', 'employee')
+      .leftJoinAndSelect('request.area', 'area')
+      .leftJoinAndSelect('request.documents', 'documents')
+      .where(
+        'COALESCE(request.liaisonRegionalId, request.regionalId) IN (:...regionalIds)',
+        { regionalIds },
+      )
+      .andWhere('request.stage = :stage', {
         stage: LeaveRequestStage.HR_REVIEW,
+      })
+      .andWhere('request.status = :status', {
         status: LeaveRequestStatus.PENDING,
-        liaisonReviewRequired: true,
+      })
+      .andWhere('request.liaisonReviewRequired = true')
+      .andWhere('request.liaisonStatus = :liaisonStatus', {
         liaisonStatus: 'PENDING',
-      })),
-      relations: { employee: true, area: true, documents: true },
-      order: { createdAt: 'DESC' },
-    });
+      })
+      .orderBy('request.createdAt', 'DESC')
+      .getMany();
     return requests.map((request) => ({
       id: request.id,
       requestType: 'leave',
@@ -529,6 +542,9 @@ export class LeaveRequestsService {
       reason: request.reason,
       leaveType: request.type,
       reasonType: request.reasonType,
+      relationship: request.relationship,
+      differentDomicile: request.differentDomicile,
+      marriageType: request.marriageType,
       documents: request.documents,
       documentsComplete: this.withDocumentStatus(request).documentsComplete,
       missingDocumentCodes:
@@ -536,6 +552,68 @@ export class LeaveRequestsService {
       canApproveFinally: false,
       createdAt: request.createdAt,
     }));
+  }
+
+  async updateClassificationByLiaison(
+    requesterId: string,
+    id: string,
+    dto: UpdateLeaveClassificationDto,
+  ) {
+    const reviewer = await this.resolveEmployee(requesterId);
+    const request = await this.requestRepository.findOne({
+      where: { id },
+      relations: { employee: true, documents: true },
+    });
+    if (
+      !request ||
+      request.stage !== LeaveRequestStage.HR_REVIEW ||
+      request.status !== LeaveRequestStatus.PENDING ||
+      request.liaisonStatus !== 'PENDING'
+    ) {
+      throw new BadRequestException(
+        'La clasificación solo puede corregirse mientras la licencia está pendiente del enlace de RR. HH.',
+      );
+    }
+    const liaisons =
+      await this.regionalManagerService.findActiveHrLiaisonsByPermission(
+        request.liaisonRegionalId || request.regionalId,
+        'leaves',
+      );
+    if (!liaisons.some((item) => item.employee_id === reviewer.id)) {
+      throw new ForbiddenException(
+        'No tiene permiso para corregir esta licencia.',
+      );
+    }
+
+    this.validateLegalRequest(
+      {
+        ...dto,
+        startDate: request.startDate,
+        endDate: request.endDate,
+        reason: request.reason,
+        documents: [],
+      },
+      request.businessDays,
+    );
+    const previous = this.classificationSnapshot(request);
+    request.type = dto.type;
+    request.reasonType = dto.reasonType;
+    request.relationship = dto.relationship || null;
+    request.differentDomicile = Boolean(dto.differentDomicile);
+    request.marriageType = dto.marriageType || null;
+    const current = this.classificationSnapshot(request);
+    request.classificationHistory = [
+      ...(request.classificationHistory || []),
+      {
+        changedAt: new Date().toISOString(),
+        changedByEmployeeId: reviewer.id,
+        correctionReason: dto.correctionReason.trim(),
+        previous,
+        current,
+      },
+    ];
+    await this.requestRepository.save(request);
+    return this.withDocumentStatus(await this.getById(id));
   }
 
   async reviewByLiaison(
@@ -560,7 +638,7 @@ export class LeaveRequestsService {
     }
     const liaisons =
       await this.regionalManagerService.findActiveHrLiaisonsByPermission(
-        request.regionalId,
+        request.liaisonRegionalId || request.regionalId,
         'leaves',
       );
     if (!liaisons.some((item) => item.employee_id === reviewer.id))
@@ -599,13 +677,20 @@ export class LeaveRequestsService {
   }
 
   private async prepareLiaisonReview(request: LeaveRequest) {
-    const liaisons =
+    let liaisons =
       await this.regionalManagerService.findActiveHrLiaisonsByPermission(
-        request.regionalId,
+        request.liaisonRegionalId || request.regionalId,
         'leaves',
       );
+    if (!liaisons.length) {
+      liaisons =
+        await this.regionalManagerService.findMainOfficeHrLiaisonsByPermission(
+          'leaves',
+        );
+    }
     request.liaisonReviewRequired = liaisons.length > 0;
     request.liaisonStatus = liaisons.length ? 'PENDING' : null;
+    request.liaisonRegionalId = liaisons[0]?.regional_id || null;
   }
 
   async getDirectorAccess(requesterId: string) {
@@ -1143,6 +1228,16 @@ export class LeaveRequestsService {
         );
       }
     }
+  }
+
+  private classificationSnapshot(request: LeaveRequest) {
+    return {
+      type: request.type,
+      reasonType: request.reasonType,
+      relationship: request.relationship,
+      differentDomicile: request.differentDomicile,
+      marriageType: request.marriageType,
+    };
   }
 
   private requiredDocumentCodes(

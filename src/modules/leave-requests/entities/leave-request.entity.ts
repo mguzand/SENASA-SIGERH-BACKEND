@@ -130,6 +130,9 @@ export class LeaveRequest {
   @Column({ name: 'liaison_employee_id', type: 'uuid', nullable: true })
   liaisonEmployeeId: string | null;
 
+  @Column({ name: 'liaison_regional_id', type: 'uuid', nullable: true })
+  liaisonRegionalId: string | null;
+
   @Column({ name: 'liaison_status', type: 'varchar', length: 20, nullable: true })
   liaisonStatus: 'PENDING' | 'APPROVED' | 'REJECTED' | null;
 
@@ -138,6 +141,15 @@ export class LeaveRequest {
 
   @Column({ name: 'liaison_reviewed_at', type: 'timestamp', nullable: true })
   liaisonReviewedAt: Date | null;
+
+  @Column({ name: 'classification_history', type: 'jsonb', default: () => "'[]'::jsonb" })
+  classificationHistory: Array<{
+    changedAt: string;
+    changedByEmployeeId: string;
+    correctionReason: string;
+    previous: Record<string, unknown>;
+    current: Record<string, unknown>;
+  }>;
 
   @Column({ name: 'director_employee_id', type: 'uuid', nullable: true })
   directorEmployeeId: string | null;

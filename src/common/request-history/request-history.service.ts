@@ -106,6 +106,17 @@ export class RequestHistoryService {
         events.push(this.reviewEvent('regional', 'Revisión de jefatura regional', request.regional_status, request.regional_reviewed_at, actor(request.regional_manager_employee_id), request.regional_observation));
       }
       events.push(this.reviewEvent('area', 'Revisión de jefatura de área', request.area_status, request.area_reviewed_at, actor(request.area_manager_employee_id), request.area_observation));
+      (request.classification_history || []).forEach(
+        (change: any, index: number) =>
+          events.push({
+            key: `classification-${index}`,
+            label: 'Clasificación legal corregida por enlace de RR. HH.',
+            status: 'COMPLETED',
+            occurredAt: change.changedAt || null,
+            actorName: actor(change.changedByEmployeeId),
+            observation: `${this.leaveReasonLabel(change.previous?.reasonType)} → ${this.leaveReasonLabel(change.current?.reasonType)}. Motivo: ${change.correctionReason}`,
+          }),
+      );
       if (request.liaison_review_required) {
         events.push(this.reviewEvent('liaison', 'Revisión del enlace de RR. HH.', request.liaison_status, request.liaison_reviewed_at, actor(request.liaison_employee_id), request.liaison_observation));
       }
@@ -152,6 +163,9 @@ export class RequestHistoryService {
       ids.push(request.boss_employee_id, request.regional_manager_employee_id, request.area_manager_employee_id, request.liaison_employee_id, request.hr_employee_id);
     } else if (type === 'leave') {
       ids.push(request.regional_manager_employee_id, request.area_manager_employee_id, request.liaison_employee_id, request.hr_employee_id, request.director_employee_id);
+      (request.classification_history || []).forEach((change: any) =>
+        ids.push(change.changedByEmployeeId),
+      );
     } else {
       ids.push(request.processed_by_employee_id, request.generated_by_employee_id);
     }
@@ -179,5 +193,24 @@ export class RequestHistoryService {
     if (type === 'vacation') return request.employee_comment || null;
     if (type === 'leave') return request.reason || null;
     return null;
+  }
+
+  private leaveReasonLabel(value?: string | null) {
+    return (
+      {
+        DEATH: 'Duelo familiar',
+        EXTENDED_DEATH: 'Duelo por parentesco extendido',
+        MARRIAGE: 'Matrimonio',
+        UNION_EVENT: 'Eventos y reuniones laborales',
+        PERSONAL: 'Asuntos personales justificados',
+        IHSS: 'Enfermedad',
+        STUDY: 'Estudios o adiestramiento',
+        COURT_APPEARANCE: 'Comparecencia ante tribunal',
+        CALAMITY: 'Calamidad',
+        FAMILY_CARE: 'Cuidado familiar',
+        OFFICIAL_COMMISSION: 'Comisiones especiales oficiales',
+        OTHER_JUSTIFIED: 'Otras razones justificadas',
+      } as Record<string, string>
+    )[value || ''] || value || 'Sin clasificación';
   }
 }

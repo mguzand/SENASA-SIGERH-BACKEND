@@ -147,6 +147,54 @@ describe('LeaveRequestsService business rules', () => {
     );
     expect(manager.insert).not.toHaveBeenCalled();
   });
+
+  it('uses a leave liaison from the employee regional before the main office', async () => {
+    const regionalLiaison = {
+      employee_id: 'regional-liaison',
+      regional_id: 'regional-employee',
+    };
+    const liaisonService = {
+      findActiveHrLiaisonsByPermission: jest
+        .fn()
+        .mockResolvedValue([regionalLiaison]),
+      findMainOfficeHrLiaisonsByPermission: jest.fn(),
+    };
+    (service as any).regionalManagerService = liaisonService;
+    const request: any = { regionalId: 'regional-employee' };
+
+    await (service as any).prepareLiaisonReview(request);
+
+    expect(request.liaisonReviewRequired).toBe(true);
+    expect(request.liaisonStatus).toBe('PENDING');
+    expect(request.liaisonRegionalId).toBe('regional-employee');
+    expect(
+      liaisonService.findMainOfficeHrLiaisonsByPermission,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('falls back to a main-office leave liaison when the regional has none', async () => {
+    const mainLiaison = {
+      employee_id: 'main-liaison',
+      regional_id: 'main-regional',
+    };
+    const liaisonService = {
+      findActiveHrLiaisonsByPermission: jest.fn().mockResolvedValue([]),
+      findMainOfficeHrLiaisonsByPermission: jest
+        .fn()
+        .mockResolvedValue([mainLiaison]),
+    };
+    (service as any).regionalManagerService = liaisonService;
+    const request: any = { regionalId: 'regional-without-liaison' };
+
+    await (service as any).prepareLiaisonReview(request);
+
+    expect(
+      liaisonService.findMainOfficeHrLiaisonsByPermission,
+    ).toHaveBeenCalledWith('leaves');
+    expect(request.liaisonReviewRequired).toBe(true);
+    expect(request.liaisonStatus).toBe('PENDING');
+    expect(request.liaisonRegionalId).toBe('main-regional');
+  });
 });
 
 describe('LeaveRequestsService final documents', () => {
