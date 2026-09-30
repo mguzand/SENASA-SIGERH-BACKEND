@@ -18,6 +18,8 @@ import { ListHrExitPermitsDto } from './dto/list-hr-exit-permits.dto';
 import { UpdateExitPermitSupportDto } from './dto/update-exit-permit-support.dto';
 import { CancelEmployeeExitPermitDto } from './dto/cancel-employee-exit-permit.dto';
 import { RequestSupportChangeDto } from './dto/request-support-change.dto';
+import { ListReceptionExitPermitsDto } from './dto/list-reception-exit-permits.dto';
+import { ReviewExitPermitReceptionDto } from './dto/review-exit-permit-reception.dto';
 
 @Controller('employee-exit-permits')
 export class EmployeeExitPermitsController {
@@ -66,6 +68,16 @@ export class EmployeeExitPermitsController {
   @Patch(':id/liaison-review')
   liaisonReview(@Param('id') id: string, @Body() dto: ReviewEmployeeExitPermitDto, @Req() req: any) {
     return this.employeeExitPermitsService.liaisonReview(id, dto, this.getEmployeeId(req));
+  }
+
+  @Get('reception/inbox')
+  findReceptionInbox(@Query() query: ListReceptionExitPermitsDto, @Req() req: any) {
+    return this.employeeExitPermitsService.findReceptionInbox(query, this.getEmployeeId(req));
+  }
+
+  @Patch(':id/reception-review')
+  reviewByReception(@Param('id') id: string, @Body() dto: ReviewExitPermitReceptionDto, @Req() req: any) {
+    return this.employeeExitPermitsService.reviewByReception(id, dto.observation, this.getEmployeeId(req));
   }
 
   @Get('liaison/approved')

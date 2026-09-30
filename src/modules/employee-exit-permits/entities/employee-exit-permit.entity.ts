@@ -5,6 +5,7 @@ import {
   Entity,
   JoinColumn,
   ManyToOne,
+  OneToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
 
@@ -12,6 +13,7 @@ import { OrganizationalUnit } from 'src/modules/department/entities/organization
 import { Employee } from '../../employees/entities/employee.entity';
 import { ExitPermitStage } from '../enums/exit-permit-stage.enum';
 import { ExitPermitStatus } from '../enums/exit-permit-status.enum';
+import { ExitPermitReceptionReview } from './exit-permit-reception-review.entity';
 
 @Entity('employee_exit_permits')
 export class EmployeeExitPermit {
@@ -188,6 +190,9 @@ export class EmployeeExitPermit {
   @ManyToOne(() => Employee)
   @JoinColumn({ name: 'hr_employee_id' })
   hr_employee: Employee;
+
+  @OneToOne(() => ExitPermitReceptionReview, (review) => review.exitPermit)
+  receptionReview?: ExitPermitReceptionReview;
 
   // =========================
 
