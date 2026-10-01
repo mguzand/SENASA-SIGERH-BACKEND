@@ -554,6 +554,49 @@ export class LeaveRequestsService {
     }));
   }
 
+  async findLiaisonApproved(requesterId: string) {
+    const employee = await this.resolveEmployee(requesterId);
+    const access = await this.regionalManagerService.getHrLiaisonAccess(employee.id);
+    const regionalIds = access.assignments
+      .filter((item) => item.permissions.leaves)
+      .map((item) => item.regionalId);
+    if (!regionalIds.length) return [];
+    const requests = await this.requestRepository
+      .createQueryBuilder('request')
+      .innerJoinAndSelect('request.employee', 'employee')
+      .innerJoinAndSelect('request.area', 'area')
+      .leftJoinAndSelect('request.documents', 'documents')
+      .where('request.regionalId IN (:...regionalIds)', { regionalIds })
+      .andWhere('request.hrStatus = :approved', { approved: LeaveRequestStatus.APPROVED })
+      .orderBy('request.hrReviewedAt', 'DESC')
+      .getMany();
+    return requests.map((request) => ({
+      id: request.id,
+      requestType: 'leave',
+      requestNumber: request.requestNumber,
+      employeeName: this.employeeName(request.employee),
+      areaName: request.area?.name || 'Sin área',
+      regionalId: request.regionalId,
+      startDate: request.startDate,
+      endDate: request.endDate,
+      days: request.businessDays,
+      reason: request.reason,
+      leaveType: request.type,
+      reasonType: request.reasonType,
+      relationship: request.relationship,
+      differentDomicile: request.differentDomicile,
+      marriageType: request.marriageType,
+      documents: request.documents,
+      documentsComplete: this.withDocumentStatus(request).documentsComplete,
+      canApproveFinally: false,
+      approvedByHr: true,
+      finalResolutionAvailable:
+        request.stage === LeaveRequestStage.COMPLETED &&
+        request.status === LeaveRequestStatus.APPROVED,
+      createdAt: request.hrReviewedAt || request.createdAt,
+    }));
+  }
+
   async updateClassificationByLiaison(
     requesterId: string,
     id: string,
@@ -564,12 +607,14 @@ export class LeaveRequestsService {
       where: { id },
       relations: { employee: true, documents: true },
     });
-    if (
-      !request ||
-      request.stage !== LeaveRequestStage.HR_REVIEW ||
-      request.status !== LeaveRequestStatus.PENDING ||
-      request.liaisonStatus !== 'PENDING'
-    ) {
+    const pendingAtLiaison = Boolean(
+      request &&
+      request.stage === LeaveRequestStage.HR_REVIEW &&
+      request.status === LeaveRequestStatus.PENDING &&
+      request.liaisonStatus === 'PENDING',
+    );
+    const approvedByHr = request?.hrStatus === LeaveRequestStatus.APPROVED;
+    if (!request || (!pendingAtLiaison && !approvedByHr)) {
       throw new BadRequestException(
         'La clasificación solo puede corregirse mientras la licencia está pendiente del enlace de RR. HH.',
       );
@@ -595,6 +640,11 @@ export class LeaveRequestsService {
       },
       request.businessDays,
     );
+    if (approvedByHr && request.type !== dto.type) {
+      throw new BadRequestException(
+        'Después de la aprobación de RR. HH. no se puede cambiar la condición remunerada de la licencia.',
+      );
+    }
     const previous = this.classificationSnapshot(request);
     request.type = dto.type;
     request.reasonType = dto.reasonType;
@@ -614,6 +664,80 @@ export class LeaveRequestsService {
     ];
     await this.requestRepository.save(request);
     return this.withDocumentStatus(await this.getById(id));
+  }
+
+  async updateClassificationByHr(
+    requesterId: string,
+    id: string,
+    dto: UpdateLeaveClassificationDto,
+  ) {
+    await this.assertHrAccess(requesterId);
+    const reviewer = await this.resolveEmployee(requesterId);
+    const runner = this.dataSource.createQueryRunner();
+    await runner.connect();
+    await runner.startTransaction();
+    try {
+      const request = await runner.manager
+        .createQueryBuilder(LeaveRequest, 'request')
+        .setLock('pessimistic_write')
+        .where('request.id = :id', { id })
+        .getOne();
+      if (!request) throw new NotFoundException('Solicitud de licencia no encontrada.');
+      if (
+        request.hrStatus !== LeaveRequestStatus.APPROVED ||
+        request.status === LeaveRequestStatus.REJECTED
+      ) {
+        throw new BadRequestException(
+          'Solo se puede corregir la clasificación de licencias aprobadas por RR. HH.',
+        );
+      }
+      request.documents = await runner.manager.find(LeaveRequestDocument, {
+        where: { leaveRequestId: request.id },
+      });
+      this.validateLegalRequest(
+        { ...dto, startDate: request.startDate, endDate: request.endDate, reason: request.reason, documents: [] },
+        request.businessDays,
+      );
+      if (request.vacationImpactApplied && request.type !== dto.type) {
+        throw new BadRequestException(
+          'Esta licencia ya modificó períodos de vacaciones; no es seguro cambiar su condición remunerada.',
+        );
+      }
+      const previous = this.classificationSnapshot(request);
+      request.type = dto.type;
+      request.reasonType = dto.reasonType;
+      request.relationship = dto.relationship || null;
+      request.differentDomicile = Boolean(dto.differentDomicile);
+      request.marriageType = dto.marriageType || null;
+      this.assertDocumentsComplete(request);
+      const current = this.classificationSnapshot(request);
+      request.classificationHistory = [
+        ...(request.classificationHistory || []),
+        {
+          changedAt: new Date().toISOString(),
+          changedByEmployeeId: reviewer.id,
+          correctionReason: dto.correctionReason.trim(),
+          previous,
+          current,
+        },
+      ];
+      if (
+        request.stage === LeaveRequestStage.COMPLETED &&
+        request.status === LeaveRequestStatus.APPROVED &&
+        request.type === LeaveRequestType.UNPAID &&
+        !request.vacationImpactApplied
+      ) {
+        await this.applyUnpaidLeaveImpact(request, runner.manager);
+      }
+      await runner.manager.save(request);
+      await runner.commitTransaction();
+      return this.withDocumentStatus(await this.getById(id));
+    } catch (error) {
+      await runner.rollbackTransaction();
+      throw error;
+    } finally {
+      await runner.release();
+    }
   }
 
   async reviewByLiaison(
@@ -855,8 +979,16 @@ export class LeaveRequestsService {
       await this.assertHrAccess(requesterId);
       isHr = true;
     } catch {}
+    const activeLiaisons =
+      await this.regionalManagerService.findActiveHrLiaisonsByPermission(
+        request.liaisonRegionalId || request.regionalId,
+        'leaves',
+      );
+    const isLiaison = activeLiaisons.some(
+      (item) => item.employee_id === employee.id,
+    );
 
-    if (!isOwner && !isDirector && !isHr) {
+    if (!isOwner && !isDirector && !isHr && !isLiaison) {
       throw new ForbiddenException(
         'No tiene permiso para consultar este documento.',
       );

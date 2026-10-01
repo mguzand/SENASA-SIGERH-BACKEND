@@ -62,6 +62,11 @@ export class LeaveRequestsController {
     return this.service.findLiaisonInbox(this.userId(req));
   }
 
+  @Get('liaison/approved')
+  findLiaisonApproved(@Req() req: AuthenticatedRequest) {
+    return this.service.findLiaisonApproved(this.userId(req));
+  }
+
   @Patch(':id/liaison-review')
   reviewByLiaison(
     @Req() req: AuthenticatedRequest,
