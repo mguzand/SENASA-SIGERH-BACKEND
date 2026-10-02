@@ -48,76 +48,152 @@ export class EmployeeExitPermitsService {
     private readonly pushNotifications: PushNotificationsService,
   ) {}
 
-  async findReceptionInbox(params: ListReceptionExitPermitsDto, currentEmployeeId: string) {
+  async findReceptionInbox(
+    params: ListReceptionExitPermitsDto,
+    currentEmployeeId: string,
+  ) {
     await this.assertReceptionAccess(currentEmployeeId);
     const page = Math.max(Number(params.page) || 1, 1);
     const limit = Math.min(Math.max(Number(params.limit) || 8, 1), 50);
-    const query = this.exitPermitRepository.createQueryBuilder('permit')
+    const query = this.exitPermitRepository
+      .createQueryBuilder('permit')
       .leftJoinAndSelect('permit.employee', 'employee')
       .leftJoinAndSelect('permit.area', 'area')
-      .innerJoin('employee.regional', 'regional', 'regional.is_main_office = true')
+      .innerJoin(
+        'employee.regional',
+        'regional',
+        'regional.is_main_office = true',
+      )
       .leftJoinAndSelect('permit.receptionReview', 'receptionReview')
       .leftJoinAndSelect('receptionReview.reviewedBy', 'receptionReviewer');
 
     if (params.search?.trim()) {
       const search = `%${params.search.trim().toLowerCase()}%`;
-      query.andWhere(new Brackets((qb) => qb
-        .where('LOWER(permit.description) LIKE :search', { search })
-        .orWhere('LOWER(employee.firstName) LIKE :search', { search })
-        .orWhere('LOWER(employee.lastName) LIKE :search', { search })
-        .orWhere("LOWER(COALESCE(employee.biometric_id, '')) LIKE :search", { search })
-        .orWhere("LOWER(COALESCE(area.name, '')) LIKE :search", { search })));
+      query.andWhere(
+        new Brackets((qb) =>
+          qb
+            .where('LOWER(permit.description) LIKE :search', { search })
+            .orWhere('LOWER(employee.firstName) LIKE :search', { search })
+            .orWhere('LOWER(employee.lastName) LIKE :search', { search })
+            .orWhere(
+              "LOWER(COALESCE(employee.biometric_id, '')) LIKE :search",
+              { search },
+            )
+            .orWhere("LOWER(COALESCE(area.name, '')) LIKE :search", { search }),
+        ),
+      );
     }
-    if (params.status && params.status !== 'all') query.andWhere('permit.status = :status', { status: params.status });
-    if (params.reception === 'reviewed') query.andWhere('receptionReview.id IS NOT NULL');
-    if (params.reception === 'pending') query.andWhere('receptionReview.id IS NULL');
-    query.orderBy('permit.exit_date', 'DESC').addOrderBy('permit.exit_time', 'DESC');
-    const [permits, total] = await query.skip((page - 1) * limit).take(limit).getManyAndCount();
+    if (params.status && params.status !== 'all')
+      query.andWhere('permit.status = :status', { status: params.status });
+    if (params.reception === 'reviewed')
+      query.andWhere('receptionReview.id IS NOT NULL');
+    if (params.reception === 'pending')
+      query.andWhere('receptionReview.id IS NULL');
+    query
+      .orderBy('permit.exit_date', 'DESC')
+      .addOrderBy('permit.exit_time', 'DESC');
+    const [permits, total] = await query
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
 
     return {
       data: permits.map((permit: any) => this.mapReceptionPermit(permit)),
-      meta: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) },
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
+      },
     };
   }
 
-  async reviewByReception(id: string, observation: string | undefined, currentEmployeeId: string) {
+  async reviewByReception(
+    id: string,
+    observation: string | undefined,
+    currentEmployeeId: string,
+  ) {
     await this.assertReceptionAccess(currentEmployeeId);
-    const permit = await this.exitPermitRepository.createQueryBuilder('permit')
+    const permit = await this.exitPermitRepository
+      .createQueryBuilder('permit')
       .innerJoin('permit.employee', 'employee')
-      .innerJoin('employee.regional', 'regional', 'regional.is_main_office = true')
-      .where('permit.id = :id', { id }).getOne();
-    if (!permit) throw new NotFoundException('Pase de salida no encontrado en la regional principal.');
-    let review = await this.receptionReviewRepository.findOneBy({ exitPermitId: id });
-    if (!review) review = this.receptionReviewRepository.create({ exitPermitId: id });
+      .innerJoin(
+        'employee.regional',
+        'regional',
+        'regional.is_main_office = true',
+      )
+      .where('permit.id = :id', { id })
+      .getOne();
+    if (!permit)
+      throw new NotFoundException(
+        'Pase de salida no encontrado en la regional principal.',
+      );
+    let review = await this.receptionReviewRepository.findOneBy({
+      exitPermitId: id,
+    });
+    if (!review)
+      review = this.receptionReviewRepository.create({ exitPermitId: id });
     review.reviewedByEmployeeId = currentEmployeeId;
     review.observation = observation?.trim() || null;
     review.reviewedAt = new Date();
     await this.receptionReviewRepository.save(review);
-    return { id, reviewedByReception: true, observation: review.observation, reviewedAt: review.reviewedAt };
+    return {
+      id,
+      reviewedByReception: true,
+      observation: review.observation,
+      reviewedAt: review.reviewedAt,
+    };
   }
 
   private async assertReceptionAccess(employeeId: string) {
-    if (!employeeId) throw new ForbiddenException('No fue posible identificar al empleado.');
+    if (!employeeId)
+      throw new ForbiddenException('No fue posible identificar al empleado.');
     const employee = await this.employeeRepository.findOne({
       where: { id: employeeId },
       relations: { user: { rolUser: { components: true } } },
     });
-    const normalize = (value: unknown) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-    const allowed = employee?.user?.rolUser?.some((permission) => permission.components?.visible && normalize(permission.components.description) === 'recepcion');
-    if (!allowed) throw new ForbiddenException('No tiene permiso para acceder al módulo de Recepción.');
+    const normalize = (value: unknown) =>
+      String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9]/g, '')
+        .toLowerCase();
+    const allowed = employee?.user?.rolUser?.some(
+      (permission) =>
+        permission.components?.visible &&
+        normalize(permission.components.description) === 'recepcion',
+    );
+    if (!allowed)
+      throw new ForbiddenException(
+        'No tiene permiso para acceder al módulo de Recepción.',
+      );
   }
 
   private mapReceptionPermit(permit: any) {
     const review = permit.receptionReview;
     const reviewer = review?.reviewedBy;
-    const holder = permit.status !== ExitPermitStatus.PENDING ? 'Finalizado'
-      : permit.stage === ExitPermitStage.BOSS_REVIEW ? 'Jefatura'
-      : permit.liaison_review_required && permit.liaison_status === ExitPermitStatus.PENDING ? 'Enlace de RR. HH.'
-      : 'Recursos Humanos';
+    const holder =
+      permit.status !== ExitPermitStatus.PENDING
+        ? 'Finalizado'
+        : permit.stage === ExitPermitStage.BOSS_REVIEW
+          ? 'Jefatura'
+          : permit.liaison_review_required &&
+              permit.liaison_status === ExitPermitStatus.PENDING
+            ? 'Enlace de RR. HH.'
+            : 'Recursos Humanos';
     return {
       id: permit.id,
-      employeeName: [permit.employee?.firstName, permit.employee?.middleName, permit.employee?.lastName, permit.employee?.secondLastName].filter(Boolean).join(' '),
-      employeeCode: permit.employee?.biometric_id ? `EMP-${String(permit.employee.biometric_id).padStart(4, '0')}` : 'Sin código',
+      employeeName: [
+        permit.employee?.firstName,
+        permit.employee?.middleName,
+        permit.employee?.lastName,
+        permit.employee?.secondLastName,
+      ]
+        .filter(Boolean)
+        .join(' '),
+      employeeCode: permit.employee?.biometric_id
+        ? `EMP-${String(permit.employee.biometric_id).padStart(4, '0')}`
+        : 'Sin código',
       areaName: permit.area?.name || 'Sin área',
       exitDate: permit.exit_date,
       endDate: permit.end_date || permit.exit_date,
@@ -132,7 +208,16 @@ export class EmployeeExitPermitsService {
       reviewedByReception: Boolean(review),
       receptionObservation: review?.observation || null,
       receptionReviewedAt: review?.reviewedAt || null,
-      receptionReviewerName: reviewer ? [reviewer.firstName, reviewer.middleName, reviewer.lastName, reviewer.secondLastName].filter(Boolean).join(' ') : null,
+      receptionReviewerName: reviewer
+        ? [
+            reviewer.firstName,
+            reviewer.middleName,
+            reviewer.lastName,
+            reviewer.secondLastName,
+          ]
+            .filter(Boolean)
+            .join(' ')
+        : null,
     };
   }
 
@@ -1368,19 +1453,19 @@ export class EmployeeExitPermitsService {
         currentEmployeeId,
         AreaManagerRole.HR,
       );
-    if (!hrAreaIds.length && permit.hr_employee_id !== currentEmployeeId) {
-      const liaison = permit.regional_id
-        ? await this.assertLiaisonPermission(
-            currentEmployeeId,
-            permit.regional_id,
-          ).catch(() => null)
-        : null;
-      if (!liaison || liaison.regional?.is_main_office) {
-        throw new ForbiddenException(
-          'Solo Recursos Humanos o el enlace autorizado de la regional puede cancelar este pase.',
-        );
-      }
-    }
+    // if (!hrAreaIds.length && permit.hr_employee_id !== currentEmployeeId) {
+    //   const liaison = permit.regional_id
+    //     ? await this.assertLiaisonPermission(
+    //         currentEmployeeId,
+    //         permit.regional_id,
+    //       ).catch(() => null)
+    //     : null;
+    //   if (!liaison || liaison.regional?.is_main_office) {
+    //     throw new ForbiddenException(
+    //       'Solo Recursos Humanos o el enlace autorizado de la regional puede cancelar este pase.',
+    //     );
+    //   }
+    // }
     if (
       permit.status !== ExitPermitStatus.APPROVED ||
       permit.hr_status !== ExitPermitStatus.APPROVED
