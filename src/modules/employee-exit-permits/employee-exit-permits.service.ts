@@ -1474,13 +1474,13 @@ export class EmployeeExitPermitsService {
         'Solo se pueden cancelar pases aprobados por RR. HH.',
       );
     }
-    if (
-      String(permit.exit_date).slice(0, 10) <= this.localDateInTegucigalpa()
-    ) {
-      throw new BadRequestException(
-        'Solo se pueden cancelar pases con fecha futura.',
-      );
-    }
+    // if (
+    //   String(permit.exit_date).slice(0, 10) <= this.localDateInTegucigalpa()
+    // ) {
+    //   throw new BadRequestException(
+    //     'Solo se pueden cancelar pases con fecha futura.',
+    //   );
+    // }
 
     permit.status = ExitPermitStatus.CANCELLED;
     permit.cancelled_by_employee_id = currentEmployeeId;
