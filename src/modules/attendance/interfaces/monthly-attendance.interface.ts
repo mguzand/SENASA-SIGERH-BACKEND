@@ -71,6 +71,7 @@ export interface AttendanceIncident {
   description: string;
   affectsVacationBalance?: boolean;
   permitType?: string;
+  personalDuration?: 'HALF' | 'FULL';
 }
 
 export interface BiometricMark {

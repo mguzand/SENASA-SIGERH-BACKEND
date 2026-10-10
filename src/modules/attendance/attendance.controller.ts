@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Res } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Query, Req, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { AttendanceService } from './attendance.service';
 import { MonthlyAttendanceFilterDto } from './dto/monthly-attendance-filter.dto';
@@ -20,6 +20,28 @@ export class AttendanceController {
     @Query() query: MonthlyAttendanceFilterDto,
   ) {
     return this.service.getMonthlyReport(query);
+  }
+
+  @Get('my-month')
+  async getMyMonth(
+    @Query() query: MonthlyAttendanceFilterDto,
+    @Req() req: any,
+  ) {
+    const employeeId =
+      req.user?.employee_id ??
+      req.user?.employeeId ??
+      req.user?.employees?.id ??
+      req.user?.employee?.id;
+    if (!employeeId) {
+      throw new BadRequestException(
+        'El usuario autenticado no tiene empleado asociado',
+      );
+    }
+    return this.service.getMyMonthlyAttendance(
+      employeeId,
+      query.month,
+      query.year,
+    );
   }
 
   @Public()

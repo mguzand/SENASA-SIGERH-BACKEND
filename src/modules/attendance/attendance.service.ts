@@ -425,9 +425,10 @@ export class AttendanceService {
                   }
                 : null,
               mark: marks.get(employee.id)?.get(day.date),
-              incidents:
-                incidents.get(`${employee.id}|${day.date}`) ||
-                incidents.get(`*|${day.date}`),
+              incidents: [
+                ...(incidents.get(`${employee.id}|${day.date}`) || []),
+                ...(incidents.get(`*|${day.date}`) || []),
+              ],
             }),
           ]),
         ),
@@ -438,6 +439,24 @@ export class AttendanceService {
             : '',
       })),
       warnings,
+    };
+  }
+
+  async getMyMonthlyAttendance(
+    employeeId: string,
+    month: number,
+    year: number,
+  ) {
+    const report = await this.getMonthlyReport({
+      month,
+      year,
+      employeeId,
+    });
+    return {
+      period: report.period,
+      calendar: report.days,
+      employee: report.employees[0] || null,
+      warnings: report.warnings,
     };
   }
 
@@ -560,8 +579,9 @@ export class AttendanceService {
       ).forEach((date) =>
         add(permit.employee_id, date, {
           kind: 'PERMIT',
-          description: permit.description || `Permiso ${permit.permit_type}`,
+          description: this.exitPermitAttendanceLabel(permit),
           permitType: permit.permit_type,
+          personalDuration: permit.personal_duration || undefined,
         }),
       ),
     );
@@ -601,6 +621,18 @@ export class AttendanceService {
       }),
     );
     return map;
+  }
+
+  private exitPermitAttendanceLabel(permit: EmployeeExitPermit) {
+    const type = String(permit.permit_type || '').trim();
+    if (type.toLowerCase() === 'personal') {
+      return permit.personal_duration === 'HALF'
+        ? 'Pase personal · Medio día'
+        : permit.personal_duration === 'FULL'
+          ? 'Pase personal · Día completo'
+          : 'Pase personal';
+    }
+    return `Pase ${type || 'de salida'}`;
   }
 
   private dateRange(start: string, end: string) {
