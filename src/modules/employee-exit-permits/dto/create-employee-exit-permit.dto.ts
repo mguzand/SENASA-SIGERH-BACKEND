@@ -50,6 +50,13 @@ export class CreateEmployeeExitPermitDto {
   @IsOptional()
   return_time?: string;
 
+  // Optional for backwards compatibility with app versions that still let
+  // the server infer the duration from the selected hours.
+  @IsString()
+  @IsOptional()
+  @IsIn(['HALF', 'FULL'])
+  personal_duration?: 'HALF' | 'FULL';
+
   @IsBoolean()
   @IsOptional()
   without_return?: boolean;

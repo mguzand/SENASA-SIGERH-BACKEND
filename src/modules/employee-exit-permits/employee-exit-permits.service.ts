@@ -629,20 +629,28 @@ export class EmployeeExitPermitsService {
       ? await this.getEmployeeSchedule(dto.employee_id)
       : undefined;
     const personalDuration = isPersonal
-      ? this.classifyPersonalPermit(
+      ? dto.personal_duration || this.classifyPersonalPermit(
           dto.exit_time,
           dto.return_time,
           Boolean(dto.without_return),
           employeeSchedule,
         )
       : null;
-    if (isPersonal)
+    if (isPersonal) {
+      this.validatePersonalDurationSelection(
+        personalDuration!,
+        dto.exit_time,
+        dto.return_time,
+        Boolean(dto.without_return),
+        employeeSchedule,
+      );
       await this.validatePersonalMonthlyQuota(
         dto.employee_id,
         dto.exit_date,
         personalDuration!,
         employeeSchedule,
       );
+    }
 
     const supportMimeType = this.validateSupportImage(dto.base64FileFoto);
 
@@ -735,19 +743,49 @@ export class EmployeeExitPermitsService {
     const intermediateMinutes = this.getScheduleIntermediateMinutes(schedule);
     const staysBeforeIntermediate = returnMinutes <= intermediateMinutes;
     const staysAfterIntermediate = exitMinutes >= intermediateMinutes;
-    const isInstitutionalSchedule =
-      schedule?.startTime != null &&
-      schedule?.endTime != null &&
-      this.timeToMinutes(schedule.startTime) === 8 * 60 + 30 &&
-      this.timeToMinutes(schedule.endTime) === 16 * 60 + 30;
-
-    // En el horario institucional, las 12:00 son la separación acordada entre
-    // mañana y tarde. El tramo 12:00-16:30 cuenta como medio día aunque dure
-    // 4 h 30 min. Los demás horarios conservan el máximo general de 4 horas.
-    return (isInstitutionalSchedule || duration <= 4 * 60) &&
+    return duration <= 4 * 60 &&
       (staysBeforeIntermediate || staysAfterIntermediate)
       ? 'HALF'
       : 'FULL';
+  }
+
+  private validatePersonalDurationSelection(
+    requested: 'HALF' | 'FULL',
+    exitTime: string,
+    returnTime: string | undefined,
+    withoutReturn: boolean,
+    schedule?: { startTime?: string; endTime?: string },
+  ) {
+    if (requested !== 'HALF') return;
+
+    const effectiveReturnTime = withoutReturn ? schedule?.endTime : returnTime;
+    if (!effectiveReturnTime) {
+      throw new BadRequestException(
+        'No se pudo determinar el final del horario para validar el medio día',
+      );
+    }
+
+    const exitMinutes = this.timeToMinutes(exitTime);
+    const returnMinutes = this.timeToMinutes(effectiveReturnTime);
+    if (returnMinutes <= exitMinutes) {
+      throw new BadRequestException(
+        'La hora de retorno debe ser mayor a la hora de salida',
+      );
+    }
+
+    const duration = returnMinutes - exitMinutes;
+    const intermediate = this.getScheduleIntermediateMinutes(schedule);
+    const intermediateLabel = this.minutesToTime(intermediate);
+    if (exitMinutes < intermediate && returnMinutes > intermediate) {
+      throw new BadRequestException(
+        `El medio día no puede cruzar la hora intermedia (${intermediateLabel}). Seleccione una hora final igual o anterior, o una hora inicial igual o posterior.`,
+      );
+    }
+    if (duration > 4 * 60) {
+      throw new BadRequestException(
+        `Un medio día no puede superar 4 horas. Ajuste el horario tomando como referencia la hora intermedia (${intermediateLabel}).`,
+      );
+    }
   }
 
   private getScheduleIntermediateMinutes(schedule?: {
@@ -759,12 +797,85 @@ export class EmployeeExitPermitsService {
     const endMinutes = this.timeToMinutes(schedule.endTime);
     if (endMinutes <= startMinutes) return 12 * 60;
 
-    // El horario institucional de 08:30 a 16:30 conserva las 12:00 como
-    // separación. Para cualquier otro horario se usa su punto medio real.
-    if (startMinutes === 8 * 60 + 30 && endMinutes === 16 * 60 + 30) {
-      return 12 * 60;
-    }
     return Math.floor((startMinutes + endMinutes) / 2);
+  }
+
+  private minutesToTime(minutes: number) {
+    return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+  }
+
+  async getPersonalMonthlyQuota(employeeId: string, requestedDate?: string) {
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(requestedDate || '')
+      ? requestedDate!
+      : new Date().toISOString().slice(0, 10);
+    const schedule = await this.getEmployeeSchedule(employeeId);
+    const records = await this.getCountablePersonalPermits(employeeId, date);
+    const entries = records.map((permit) => ({
+      id: permit.id,
+      date: String(permit.exit_date),
+      duration:
+        permit.personal_duration ||
+        this.classifyPersonalPermit(
+          permit.exit_time,
+          permit.return_time ?? undefined,
+          permit.without_return,
+          schedule,
+        ),
+      status: permit.status,
+    }));
+    const halfDays = entries.filter((entry) => entry.duration === 'HALF').length;
+    const hasFullDay = entries.some((entry) => entry.duration === 'FULL');
+    const dates = entries.map((entry) => entry.date).join(', ');
+    const message = hasFullDay
+      ? `Ya tienes un día completo solicitado este mes${dates ? ` (${dates})` : ''}.`
+      : halfDays === 2
+        ? `Ya tienes dos medios días solicitados este mes${dates ? ` (${dates})` : ''}.`
+        : halfDays === 1
+          ? `Ya tienes un medio día solicitado este mes${dates ? ` (${dates})` : ''}.`
+          : 'Aún no has utilizado pases personales este mes.';
+
+    return {
+      month: date.slice(0, 7),
+      scheduleStart: schedule.startTime || null,
+      scheduleEnd: schedule.endTime || null,
+      intermediateTime: this.minutesToTime(
+        this.getScheduleIntermediateMinutes(schedule),
+      ),
+      halfDays,
+      hasFullDay,
+      canRequestHalf: !hasFullDay && halfDays < 2,
+      canRequestFull: !hasFullDay && halfDays === 0,
+      message,
+      entries,
+    };
+  }
+
+  private async getCountablePersonalPermits(employeeId: string, exitDate: string) {
+    const monthStart = `${exitDate.slice(0, 7)}-01`;
+    const date = new Date(`${monthStart}T12:00:00`);
+    date.setMonth(date.getMonth() + 1);
+    const nextMonth = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
+    const records = await this.exitPermitRepository
+      .createQueryBuilder('permit')
+      .where('permit.employee_id = :employeeId', { employeeId })
+      .andWhere('LOWER(TRIM(permit.permit_type)) = :personalType', {
+        personalType: 'personal',
+      })
+      .andWhere('permit.exit_date >= :monthStart', { monthStart })
+      .andWhere('permit.exit_date < :nextMonth', { nextMonth })
+      .getMany();
+    const rejectedValues = new Set([
+      ExitPermitStatus.REJECTED,
+      'cancelled',
+      'canceled',
+      'cancelado',
+      'denied',
+    ]);
+    return records.filter(
+      (permit) =>
+        ![permit.status, permit.boss_status, permit.hr_status, permit.liaison_status]
+          .some((status) => rejectedValues.has(String(status || '').toLowerCase())),
+    );
   }
 
   private minimumRetroactiveDate() {
@@ -780,73 +891,20 @@ export class EmployeeExitPermitsService {
     requested: 'HALF' | 'FULL',
     schedule?: { startTime?: string; endTime?: string },
   ) {
-    const monthStart = `${exitDate.slice(0, 7)}-01`;
-    const date = new Date(`${monthStart}T12:00:00`);
-    date.setMonth(date.getMonth() + 1);
-    const nextMonth = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
-    const monthlyRecords = await this.exitPermitRepository
-      .createQueryBuilder('permit')
-      .where('permit.employee_id = :employeeId', { employeeId })
-      .andWhere('LOWER(TRIM(permit.permit_type)) = :personalType', {
-        personalType: 'personal',
-      })
-      .andWhere('permit.exit_date >= :monthStart', { monthStart })
-      .andWhere('permit.exit_date < :nextMonth', { nextMonth })
-      .getMany();
-
-    // A denial at any level releases the monthly quota. Filter in application
-    // code because PostgreSQL stores every status column as a different ENUM,
-    // and old rows may have a rejected reviewer while the global status stayed
-    // pending. Legacy cancellation spellings are accepted as well.
-    const rejectedValues = new Set([
-      ExitPermitStatus.REJECTED,
-      'cancelled',
-      'canceled',
-      'cancelado',
-      'denied',
-    ]);
-    const monthly = monthlyRecords.filter(
-      (permit) =>
-        ![
-          permit.status,
-          permit.boss_status,
-          permit.hr_status,
-          permit.liaison_status,
-        ].some((status) =>
-          rejectedValues.has(String(status || '').toLowerCase()),
-        ),
-    );
+    const monthly = await this.getCountablePersonalPermits(employeeId, exitDate);
 
     // Recalculate legacy rows using their actual schedule. Older versions only
     // recognized the morning window and stored afternoon half-days as FULL.
-    const monthlyDurations = monthly.map((permit) =>
-      this.classifyPersonalPermit(
-        permit.exit_time,
-        permit.return_time ?? undefined,
-        permit.without_return,
-        schedule,
-      ),
+    const monthlyDurations = monthly.map(
+      (permit) =>
+        permit.personal_duration ||
+        this.classifyPersonalPermit(
+          permit.exit_time,
+          permit.return_time ?? undefined,
+          permit.without_return,
+          schedule,
+        ),
     );
-    const allCalculatedDurations = monthlyRecords.map((permit) =>
-      this.classifyPersonalPermit(
-        permit.exit_time,
-        permit.return_time ?? undefined,
-        permit.without_return,
-        schedule,
-      ),
-    );
-    const correctedPermits = monthlyRecords.filter(
-      (permit, index) =>
-        permit.personal_duration !== allCalculatedDurations[index],
-    );
-    if (correctedPermits.length) {
-      correctedPermits.forEach((permit) => {
-        const index = monthlyRecords.indexOf(permit);
-        permit.personal_duration = allCalculatedDurations[index];
-      });
-      await this.exitPermitRepository.save(correctedPermits);
-    }
-
     if (requested === 'FULL' && monthlyDurations.length) {
       throw new BadRequestException(
         'Ya utilizó parte del cupo personal de este mes. Solo se permite un pase completo o dos medios días.',
