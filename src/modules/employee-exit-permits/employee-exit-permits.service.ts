@@ -27,6 +27,7 @@ import { buildEmployeeExitPermitReport } from './reports/employee-exit-permit.re
 import { PushNotificationsService } from '../push-notifications/push-notifications.service';
 import { ExitPermitReceptionReview } from './entities/exit-permit-reception-review.entity';
 import { ListReceptionExitPermitsDto } from './dto/list-reception-exit-permits.dto';
+import { WatchesService } from '../watches/watches.service';
 
 @Injectable()
 export class EmployeeExitPermitsService {
@@ -46,6 +47,7 @@ export class EmployeeExitPermitsService {
     private readonly regionalManagerService: RegionalManagerService,
     private readonly printerService: PrinterService,
     private readonly pushNotifications: PushNotificationsService,
+    private readonly watchesService: WatchesService,
   ) {}
 
   async findReceptionInbox(
@@ -614,6 +616,7 @@ export class EmployeeExitPermitsService {
     }
 
     const isPersonal = this.isPersonalPermit(dto.permit_type);
+    const isCompensatory = this.isCompensatoryPermit(dto.permit_type);
     const endDate = dto.end_date || dto.exit_date;
     if (endDate < dto.exit_date) {
       throw new BadRequestException(
@@ -623,6 +626,29 @@ export class EmployeeExitPermitsService {
     if (isPersonal && endDate !== dto.exit_date) {
       throw new BadRequestException(
         'Los pases personales solo pueden solicitarse para un día',
+      );
+    }
+    if (isCompensatory) {
+      if (endDate !== dto.exit_date) {
+        throw new BadRequestException(
+          'Las horas compensatorias solo pueden solicitarse para un día',
+        );
+      }
+      if (dto.without_return || !dto.return_time) {
+        throw new BadRequestException(
+          'Debe indicar la hora inicial y final de las horas compensatorias',
+        );
+      }
+      if (!dto.base64FileFoto) {
+        throw new BadRequestException(
+          'Debe adjuntar la nota de respaldo en PDF o imagen',
+        );
+      }
+      await this.validateCompensatoryBalance(
+        dto.employee_id,
+        dto.exit_date,
+        dto.exit_time,
+        dto.return_time,
       );
     }
     const employeeSchedule = isPersonal
@@ -931,6 +957,140 @@ export class EmployeeExitPermitsService {
       startTime: employee.schedule?.startTime || undefined,
       endTime: employee.schedule?.endTime || undefined,
     };
+  }
+
+  async getCompensatoryBalance(employeeId: string, requestedDate?: string) {
+    const targetDate = /^\d{4}-\d{2}-\d{2}$/.test(requestedDate || '')
+      ? requestedDate!
+      : new Date().toISOString().slice(0, 10);
+    const year = Number(targetDate.slice(0, 4));
+    const month = Number(targetDate.slice(5, 7));
+    const employee = await this.employeeRepository.findOne({
+      where: { id: employeeId },
+      relations: { schedule: true },
+    });
+    if (!employee) throw new NotFoundException('Empleado no encontrado');
+    if (!employee.schedule?.endTime) {
+      throw new BadRequestException('El empleado no tiene horario asignado');
+    }
+    if (!employee.biometric_id) {
+      throw new BadRequestException(
+        'El empleado no tiene identificación biométrica configurada',
+      );
+    }
+
+    const marks = await this.watchesService.getReporteMarcaciones({
+      userid: employee.biometric_id,
+      mes: month,
+      anio: year,
+      horaEntrada: employee.schedule.startTime,
+      horaSalida: employee.schedule.endTime,
+    });
+    const scheduledExit = this.timeToMinutes(employee.schedule.endTime);
+    const earnedDays = (marks || [])
+      .map((mark: any) => {
+        if (!mark.Hora_Salida) return null;
+        const actualExit = this.timeToMinutes(mark.Hora_Salida);
+        const earnedMinutes = this.calculateCompensatoryMinutes(
+          scheduledExit,
+          actualExit,
+        );
+        // An overtime day qualifies only after reaching two hours, but once it
+        // qualifies the complete excess after the scheduled exit is credited.
+        if (!earnedMinutes) return null;
+        return {
+          date: this.normalizeWatchDate(mark.Fecha),
+          scheduledExit: employee.schedule.endTime,
+          actualExit: mark.Hora_Salida,
+          minutes: earnedMinutes,
+        };
+      })
+      .filter(Boolean) as Array<{
+        date: string;
+        scheduledExit: string;
+        actualExit: string;
+        minutes: number;
+      }>;
+
+    const monthStart = `${targetDate.slice(0, 7)}-01`;
+    const nextMonthDate = new Date(`${monthStart}T12:00:00`);
+    nextMonthDate.setMonth(nextMonthDate.getMonth() + 1);
+    const nextMonth = nextMonthDate.toISOString().slice(0, 10);
+    const requests = await this.exitPermitRepository
+      .createQueryBuilder('permit')
+      .where('permit.employee_id = :employeeId', { employeeId })
+      .andWhere('LOWER(TRIM(permit.permit_type)) = :type', {
+        type: 'horas compensatorias',
+      })
+      .andWhere('permit.exit_date >= :monthStart', { monthStart })
+      .andWhere('permit.exit_date < :nextMonth', { nextMonth })
+      .getMany();
+    const rejected = new Set(['rejected', 'cancelled', 'canceled', 'cancelado', 'denied']);
+    const activeRequests = requests.filter(
+      (permit) =>
+        ![permit.status, permit.boss_status, permit.hr_status, permit.liaison_status]
+          .some((status) => rejected.has(String(status || '').toLowerCase())),
+    );
+    const usedMinutes = activeRequests.reduce(
+      (total, permit) =>
+        total + (this.getDurationInMinutes(permit.exit_time, permit.return_time) || 0),
+      0,
+    );
+    const earnedMinutes = earnedDays.reduce((total, day) => total + day.minutes, 0);
+    return {
+      month: targetDate.slice(0, 7),
+      earnedMinutes,
+      usedMinutes,
+      availableMinutes: Math.max(earnedMinutes - usedMinutes, 0),
+      earnedDays,
+      requests: activeRequests.map((permit) => ({
+        id: permit.id,
+        date: String(permit.exit_date),
+        minutes: this.getDurationInMinutes(permit.exit_time, permit.return_time) || 0,
+        status: permit.status,
+      })),
+    };
+  }
+
+  private async validateCompensatoryBalance(
+    employeeId: string,
+    date: string,
+    startTime: string,
+    endTime: string,
+  ) {
+    const requestedMinutes = this.getDurationInMinutes(startTime, endTime) || 0;
+    if (requestedMinutes <= 0) {
+      throw new BadRequestException(
+        'La hora final debe ser mayor a la hora inicial',
+      );
+    }
+    const balance = await this.getCompensatoryBalance(employeeId, date);
+    if (requestedMinutes > balance.availableMinutes) {
+      throw new BadRequestException(
+        `Solo tiene ${this.durationLabel(balance.availableMinutes)} disponible en horas compensatorias para este mes.`,
+      );
+    }
+  }
+
+  private durationLabel(totalMinutes: number) {
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return `${hours} h${minutes ? ` ${minutes} min` : ''}`;
+  }
+
+  private calculateCompensatoryMinutes(
+    scheduledExitMinutes: number,
+    actualExitMinutes: number,
+  ) {
+    const overtime = Math.max(actualExitMinutes - scheduledExitMinutes, 0);
+    return overtime >= 120 ? overtime : 0;
+  }
+
+  private normalizeWatchDate(value: unknown) {
+    const text = String(value || '');
+    const match = text.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+    if (match) return `${match[3]}-${match[2]}-${match[1]}`;
+    return /^\d{4}-\d{2}-\d{2}/.test(text) ? text.slice(0, 10) : text;
   }
 
   private validateSupportImage(base64?: string) {
@@ -1707,6 +1867,11 @@ export class EmployeeExitPermitsService {
         .trim()
         .toLocaleLowerCase('es') === 'personal'
     );
+  }
+
+  private isCompensatoryPermit(permitType?: string | null) {
+    return String(permitType || '').trim().toLocaleLowerCase('es') ===
+      'horas compensatorias';
   }
 
   private getDurationInMinutes(exitTime: string, returnTime: string | null) {

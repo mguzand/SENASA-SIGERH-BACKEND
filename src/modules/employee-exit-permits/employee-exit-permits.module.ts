@@ -8,6 +8,7 @@ import { Employee } from '../employees/entities/employee.entity';
 import { CommonModule } from '../../common/common.module';
 import { PushNotificationsModule } from '../push-notifications/push-notifications.module';
 import { ExitPermitReceptionReview } from './entities/exit-permit-reception-review.entity';
+import { WatchesModule } from '../watches/watches.module';
 
 @Module({
   controllers: [EmployeeExitPermitsController],
@@ -17,6 +18,7 @@ import { ExitPermitReceptionReview } from './entities/exit-permit-reception-revi
     AreaManagerModule,
     CommonModule,
     PushNotificationsModule,
+    WatchesModule,
   ],
 })
 export class EmployeeExitPermitsModule {}

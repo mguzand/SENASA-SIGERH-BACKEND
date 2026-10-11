@@ -148,6 +148,7 @@ export function resolveAttendanceCode(input: {
       'servicio de salud publica': 'SSP',
       'otros permisos': 'OP',
       'otros pases': 'OP',
+      'horas compensatorias': 'HC',
     };
     const permitCode = permitCodes[permit] || null;
     const code = permitCode

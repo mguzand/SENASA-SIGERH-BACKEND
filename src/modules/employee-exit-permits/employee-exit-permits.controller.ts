@@ -72,6 +72,18 @@ export class EmployeeExitPermitsController {
     );
   }
 
+  @Get('compensatory-balance')
+  getCompensatoryBalance(@Query('date') date: string, @Req() req: any) {
+    const employeeId = this.getEmployeeId(req);
+    if (!employeeId) {
+      throw new BadRequestException('El usuario autenticado no tiene empleado asociado');
+    }
+    return this.employeeExitPermitsService.getCompensatoryBalance(
+      employeeId,
+      date,
+    );
+  }
+
   @Get('liaison/inbox')
   findLiaisonInbox(@Req() req: any) {
     return this.employeeExitPermitsService.findLiaisonInbox(this.getEmployeeId(req));

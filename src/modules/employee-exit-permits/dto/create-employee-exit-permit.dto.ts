@@ -27,6 +27,7 @@ export class CreateEmployeeExitPermitDto {
   @IsIn([
     'Oficial',
     'Otros permisos',
+    'Horas compensatorias',
     'Personal',
     'Médico IHSS',
     'Médico Privado',
