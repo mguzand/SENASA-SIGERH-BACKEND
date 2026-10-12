@@ -41,7 +41,9 @@ const legalBasis = (request: LeaveRequest) =>
     [LeaveReasonType.IHSS]:
       'Fundamentando la petición del colaborador en el ARTÍCULO 130 del REGLAMENTO DE LA LEY DE SERVICIO CIVIL, numeral 1: Por enfermedad, gravidez o maternidad, accidentes u otras causas previstas en la Ley del Seguro Social y demás leyes de previsión social, de acuerdo con lo que allí se disponga.',
     [LeaveReasonType.STUDY]:
-      'Fundamentando la petición del colaborador en los ARTÍCULOS 131 y 132 del REGLAMENTO DE LA LEY DE SERVICIO CIVIL: Podrá concederse licencia remunerada para estudios relacionados directamente con las funciones propias del cargo y para participar en programas temporales de adiestramiento relacionados con dichas funciones, por el tiempo estrictamente necesario.',
+      request.type === LeaveRequestType.UNPAID
+        ? 'Fundamentando la petición del colaborador en el ARTÍCULO 136 del REGLAMENTO DE LA LEY DE SERVICIO CIVIL: LICENCIAS NO REMUNERADAS, numeral 3: Participar en programas de adiestramiento planificados o programados por organismos no sujetos a la Ley y sobre materias que no tengan relación directa con las funciones propias del cargo, aun cuando fueren de interés profesional para el servidor.'
+        : 'Fundamentando la petición del colaborador en los ARTÍCULOS 131 y 132 del REGLAMENTO DE LA LEY DE SERVICIO CIVIL: Podrá concederse licencia remunerada para estudios relacionados directamente con las funciones propias del cargo y para participar en programas temporales de adiestramiento relacionados con dichas funciones, por el tiempo estrictamente necesario.',
     [LeaveReasonType.COURT_APPEARANCE]:
       'Fundamentando la petición del colaborador en el ARTÍCULO 134 del REGLAMENTO DE LA LEY DE SERVICIO CIVIL, numeral 1: La comparecencia ante cualquier Tribunal de Justicia u Órgano Administrativo, cuando se conozca de un asunto en el que tenga interés legítimo y directo el servidor, o cuando fuere legalmente citado o emplazado para tal efecto.',
     [LeaveReasonType.CALAMITY]:

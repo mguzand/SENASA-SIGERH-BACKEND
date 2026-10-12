@@ -12,6 +12,8 @@ import { EmployeeVacationPeriod } from '../employee-vacation-period/entities/emp
 import { Employee } from '../employees/entities/employee.entity';
 import { EmployeeUnpaidLeave } from '../employees/entities/employee-unpaid-leave.entity';
 import { VacationPeriodStatus } from 'src/common/enums/vacation.enums';
+import { LeaveRequestsService } from '../leave-requests/leave-requests.service';
+import { LeaveReasonType } from '../leave-requests/enums/leave-request.enums';
 
 @Injectable()
 export class EmployeeJobActionsService {
@@ -19,6 +21,7 @@ export class EmployeeJobActionsService {
     private readonly dataSource: DataSource,
     private readonly employeeJobRecordService: EmployeeJobRecordService,
     private readonly employeeVacationPeriodService: EmployeeVacationPeriodService,
+    private readonly leaveRequestsService: LeaveRequestsService,
   ) {}
 
   async create(
@@ -46,6 +49,7 @@ export class EmployeeJobActionsService {
 
       let newJobRecord: EmployeeJobRecord | null = null;
       let recalculatedPeriods: unknown[] = [];
+      let leaveRequestId: string | null = null;
 
       if (dto.action_type === EmployeeJobActionType.MODALITY_CHANGE) {
         newJobRecord =
@@ -110,10 +114,23 @@ export class EmployeeJobActionsService {
       }
 
       if (dto.action_type === EmployeeJobActionType.UNPAID_LEAVE) {
-        recalculatedPeriods = await this.registerUnpaidLeaveWithManager(
-          dto,
+        const approvedLeave = await this.leaveRequestsService.createApprovedByHrWithManager(
+          {
+            employeeId: dto.employee_id,
+            startDate: dto.new_unpaid_leave_start_date!,
+            endDate: dto.new_unpaid_leave_end_date!,
+            reasonType: dto.new_unpaid_leave_reason_type!,
+            type: dto.new_leave_type!,
+            relationship: dto.new_leave_relationship ?? null,
+            differentDomicile: dto.new_leave_different_domicile ?? false,
+            marriageType: dto.new_leave_marriage_type ?? null,
+            reason: dto.observation?.trim() || 'Licencia no remunerada registrada por RR. HH.',
+            createdByUserId,
+          },
           queryRunner.manager,
         );
+        leaveRequestId = approvedLeave.id;
+        recalculatedPeriods = approvedLeave.vacationImpacts;
       }
 
       if (dto.action_type === EmployeeJobActionType.SENIORITY_CHANGE) {
@@ -145,6 +162,7 @@ export class EmployeeJobActionsService {
         employeeBefore,
         currentRecord,
         newJobRecord,
+        leaveRequestId,
         createdByUserId,
         queryRunner.manager,
       );
@@ -202,6 +220,7 @@ export class EmployeeJobActionsService {
     employee: Employee,
     currentRecord: EmployeeJobRecord | null,
     newJobRecord: EmployeeJobRecord | null,
+    leaveRequestId: string | null,
     createdByUserId: string | null,
     manager: EntityManager,
   ) {
@@ -234,6 +253,8 @@ export class EmployeeJobActionsService {
         : null,
       previousJobRecordId: currentRecord?.id ?? null,
       newJobRecordId: newJobRecord?.id ?? null,
+      leaveRequestId,
+      leaveRequestType: dto.new_leave_type ?? null,
     });
 
     const saved = await manager.save(EmployeeJobAction, action);
@@ -349,11 +370,15 @@ export class EmployeeJobActionsService {
 
       const days = this.getInclusiveDays(startDate, endDate);
       const dateRange = `${this.formatHumanDate(startDate)} al ${this.formatHumanDate(endDate)}`;
+      const legalBasis = this.getLeaveLegalBasis(
+        dto.new_unpaid_leave_reason_type!,
+        dto.new_leave_type,
+      );
 
       return {
         previousValue: 'Sin licencia',
-        nextValue: `${dateRange} · ${days} día${days === 1 ? '' : 's'}`,
-        summary: `Licencia sin goce de sueldo del ${dateRange} (${days} día${days === 1 ? '' : 's'}).`,
+        nextValue: `${dateRange} · ${legalBasis}`,
+        summary: `Licencia sin goce de sueldo del ${dateRange} (${days} día${days === 1 ? '' : 's'}) · ${legalBasis}.`,
       };
     }
 
@@ -478,7 +503,12 @@ export class EmployeeJobActionsService {
         currentRecord?.position?.name ||
         null,
       actionType: this.mapFrontendActionType(action.actionType),
-      actionLabel: this.getActionLabel(action.actionType),
+      actionLabel:
+        action.actionType === EmployeeJobActionType.UNPAID_LEAVE
+          ? action.leaveRequestType === 'PAID'
+            ? 'Licencia remunerada'
+            : 'Licencia no remunerada'
+          : this.getActionLabel(action.actionType),
       effectiveDate: this.serializeDateOnly(action.modificationDate),
       createdAt:
         action.created_at?.toISOString?.() ??
@@ -488,6 +518,8 @@ export class EmployeeJobActionsService {
       previousValue: action.previousValue,
       nextValue: action.nextValue,
       status: 'Registrada',
+      leaveRequestId: action.leaveRequestId,
+      leaveRequestType: action.leaveRequestType,
     };
   }
 
@@ -540,12 +572,33 @@ export class EmployeeJobActionsService {
       case EmployeeJobActionType.STATUS_CHANGE:
         return 'Cambio de estado aplicado correctamente';
       case EmployeeJobActionType.UNPAID_LEAVE:
-        return 'Licencia sin goce registrada correctamente';
+        return 'Licencia registrada y aprobada correctamente';
       case EmployeeJobActionType.SENIORITY_CHANGE:
         return 'Antigüedad y cálculo de vacaciones actualizados correctamente';
       default:
         return 'Acción al personal registrada correctamente';
     }
+  }
+
+  private getLeaveLegalBasis(reasonType: LeaveReasonType, type?: string) {
+    if (reasonType === LeaveReasonType.STUDY && type === 'UNPAID') {
+      return 'Artículo 136, numeral 3';
+    }
+    const articles: Partial<Record<LeaveReasonType, string>> = {
+      [LeaveReasonType.IHSS]: 'Artículo 130, numeral 1',
+      [LeaveReasonType.DEATH]: 'Artículo 130, numeral 2, inciso a)',
+      [LeaveReasonType.EXTENDED_DEATH]: 'Artículo 130, numeral 2, inciso b)',
+      [LeaveReasonType.MARRIAGE]: 'Artículo 130, numeral 2, inciso c)',
+      [LeaveReasonType.UNION_EVENT]: 'Artículo 130, numeral 2, inciso d)',
+      [LeaveReasonType.STUDY]: 'Artículos 131 y 132',
+      [LeaveReasonType.COURT_APPEARANCE]: 'Artículo 134, numeral 1',
+      [LeaveReasonType.CALAMITY]: 'Artículo 134, numeral 3',
+      [LeaveReasonType.FAMILY_CARE]: 'Artículo 134, numeral 4',
+      [LeaveReasonType.OFFICIAL_COMMISSION]: 'Artículo 134, numeral 5',
+      [LeaveReasonType.OTHER_JUSTIFIED]: 'Artículo 134, numeral 6',
+      [LeaveReasonType.PERSONAL]: 'Artículo 136, numeral 6',
+    };
+    return articles[reasonType] || 'Fundamento legal registrado';
   }
 
   async previewSeniorityChange(dto: {

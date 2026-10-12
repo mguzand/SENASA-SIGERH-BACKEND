@@ -77,6 +77,12 @@ export class EmployeeJobAction {
   @Column({ name: 'new_job_record_id', type: 'uuid', nullable: true })
   newJobRecordId: string | null;
 
+  @Column({ name: 'leave_request_id', type: 'uuid', nullable: true })
+  leaveRequestId: string | null;
+
+  @Column({ name: 'leave_request_type', type: 'varchar', length: 20, nullable: true })
+  leaveRequestType: string | null;
+
   @Column({
     type: 'timestamp',
     nullable: true,

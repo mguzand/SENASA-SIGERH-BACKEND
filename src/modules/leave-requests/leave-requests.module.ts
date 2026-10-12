@@ -34,6 +34,7 @@ import { PushNotificationsModule } from '../push-notifications/push-notification
   ],
   controllers: [LeaveRequestsController],
   providers: [LeaveRequestsService],
+  exports: [LeaveRequestsService],
 })
 export class LeaveRequestsModule implements OnModuleInit {
   constructor(private readonly service: LeaveRequestsService) {}

@@ -135,7 +135,6 @@ export class LeaveRequestsService {
         'El rango debe contener al menos un día laboral.',
       );
     }
-
     const overlapping = await this.requestRepository
       .createQueryBuilder('request')
       .where('request.employeeId = :employeeId', { employeeId: employee.id })
@@ -276,6 +275,151 @@ export class LeaveRequestsService {
       order: { createdAt: 'DESC' },
     });
     return requests.map((request) => this.withDocumentStatus(request));
+  }
+
+  async createApprovedByHrWithManager(
+    input: {
+      employeeId: string;
+      startDate: string;
+      endDate: string;
+      reasonType: LeaveReasonType;
+      type: LeaveRequestType;
+      relationship: LeaveRelationship | null;
+      differentDomicile: boolean;
+      marriageType: LeaveMarriageType | null;
+      reason: string;
+      createdByUserId: string | null;
+    },
+    manager: any,
+  ) {
+    if (input.endDate < input.startDate) {
+      throw new BadRequestException(
+        'La fecha final no puede ser anterior a la fecha inicial.',
+      );
+    }
+    const businessDays = await this.countBusinessDays(input.startDate, input.endDate);
+    if (businessDays <= 0) {
+      throw new BadRequestException(
+        'El rango debe contener al menos un día laboral.',
+      );
+    }
+    if (
+      [LeaveReasonType.DEATH, LeaveReasonType.IHSS, LeaveReasonType.FAMILY_CARE].includes(
+        input.reasonType,
+      ) &&
+      !input.relationship
+    ) {
+      throw new BadRequestException('Seleccione el parentesco o la persona relacionada.');
+    }
+    if (input.reasonType === LeaveReasonType.MARRIAGE && !input.marriageType) {
+      throw new BadRequestException('Seleccione el tipo de matrimonio.');
+    }
+    this.validateLegalRequest(
+      {
+        type: input.type,
+        reasonType: input.reasonType,
+        relationship: input.relationship ?? undefined,
+        differentDomicile: input.differentDomicile,
+        marriageType: input.marriageType ?? undefined,
+        startDate: input.startDate,
+        endDate: input.endDate,
+        reason: input.reason,
+        documents: [],
+      },
+      businessDays,
+    );
+    const employee = await manager.findOne(Employee, {
+      where: { id: input.employeeId },
+      relations: { regional: true, jobRecords: { area: true } },
+    });
+    if (!employee) throw new BadRequestException('Empleado no encontrado.');
+    const activeJob = employee.jobRecords?.find(
+      (record: any) => String(record.status || '').toUpperCase() === 'ACTIVE',
+    );
+    if (!activeJob?.area_id) {
+      throw new BadRequestException(
+        'El empleado no tiene un registro laboral activo con área asignada.',
+      );
+    }
+    const overlapping = await manager
+      .createQueryBuilder(LeaveRequest, 'request')
+      .where('request.employeeId = :employeeId', { employeeId: input.employeeId })
+      .andWhere('request.status != :rejected', { rejected: LeaveRequestStatus.REJECTED })
+      .andWhere('request.startDate <= :endDate AND request.endDate >= :startDate', {
+        startDate: input.startDate,
+        endDate: input.endDate,
+      })
+      .getExists();
+    if (overlapping) {
+      throw new BadRequestException(
+        'Ya existe una licencia activa que se cruza con ese rango.',
+      );
+    }
+    const creator = input.createdByUserId
+      ? await manager.findOne(User, { where: { id: input.createdByUserId } })
+      : null;
+    const director = businessDays > 3 ? await this.getMainDirector() : null;
+    const sequence = await manager.query(
+      `SELECT nextval('leave_request_number_seq') AS value`,
+    );
+    const now = new Date();
+    const request = manager.create(LeaveRequest, {
+      requestNumber: `SOL-${String(sequence[0].value).padStart(6, '0')}`,
+      employeeId: employee.id,
+      areaId: activeJob.area_id,
+      regionalId: employee.regional_id,
+      startDate: input.startDate,
+      endDate: input.endDate,
+      businessDays,
+      type: input.type,
+      reasonType: input.reasonType,
+      relationship: input.relationship,
+      differentDomicile: input.differentDomicile,
+      marriageType: input.marriageType,
+      reason: input.reason,
+      stage: LeaveRequestStage.COMPLETED,
+      status: LeaveRequestStatus.APPROVED,
+      regionalManagerEmployeeId: null,
+      regionalStatus: LeaveRequestStatus.APPROVED,
+      regionalObservation: 'Registro directo realizado por Recursos Humanos.',
+      regionalReviewedAt: now,
+      areaManagerEmployeeId: null,
+      areaStatus: LeaveRequestStatus.APPROVED,
+      areaObservation: 'Registro directo realizado por Recursos Humanos.',
+      areaReviewedAt: now,
+      hrEmployeeId: creator?.employeeId || null,
+      hrStatus: LeaveRequestStatus.APPROVED,
+      hrObservation: input.reason,
+      hrReviewedAt: now,
+      liaisonReviewRequired: false,
+      liaisonEmployeeId: null,
+      liaisonRegionalId: null,
+      liaisonStatus: null,
+      liaisonObservation: null,
+      liaisonReviewedAt: null,
+      classificationHistory: [],
+      directorEmployeeId: director?.employee_id || null,
+      directorStatus:
+        businessDays > 3
+          ? LeaveRequestStatus.APPROVED
+          : LeaveRequestStatus.PENDING,
+      directorObservation:
+        businessDays > 3
+          ? 'Resolución emitida mediante registro directo de Recursos Humanos.'
+          : null,
+      directorReviewedAt: businessDays > 3 ? now : null,
+      vacationImpactApplied: false,
+      vacationImpactAppliedAt: null,
+    });
+    await manager.save(LeaveRequest, request);
+    if (request.type === LeaveRequestType.UNPAID) {
+      await this.applyUnpaidLeaveImpact(request, manager);
+    }
+    await manager.save(LeaveRequest, request);
+    request.vacationImpacts = await manager.find(LeaveVacationImpact, {
+      where: { leaveRequestId: request.id },
+    });
+    return request;
   }
 
   async updateDocuments(
@@ -1334,7 +1478,10 @@ export class LeaveRequestsService {
           'La licencia por asuntos personales debe ser sin goce de sueldo.',
         );
       }
-    } else if (dto.type !== LeaveRequestType.PAID) {
+    } else if (
+      dto.reasonType !== LeaveReasonType.STUDY &&
+      dto.type !== LeaveRequestType.PAID
+    ) {
       throw new BadRequestException(
         'El tipo de licencia seleccionado debe ser con goce de sueldo.',
       );

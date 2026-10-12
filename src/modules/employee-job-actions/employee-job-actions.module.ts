@@ -7,12 +7,14 @@ import { EmployeeJobAction } from './entities/employee-job-action.entity';
 
 import { EmployeeJobRecordModule } from '../employee-job-record/employee-job-record.module';
 import { EmployeeVacationPeriodModule } from '../employee-vacation-period/employee-vacation-period.module';
+import { LeaveRequestsModule } from '../leave-requests/leave-requests.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([EmployeeJobAction]),
     EmployeeJobRecordModule,
     EmployeeVacationPeriodModule,
+    LeaveRequestsModule,
   ],
   controllers: [EmployeeJobActionsController],
   providers: [EmployeeJobActionsService],

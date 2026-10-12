@@ -1,5 +1,6 @@
 import {
   IsDateString,
+  IsBoolean,
   IsEnum,
   IsOptional,
   IsString,
@@ -7,6 +8,12 @@ import {
   ValidateIf,
 } from 'class-validator';
 import { EmployeeJobActionType } from '../enums/employee-job-action-type.enum';
+import {
+  LeaveMarriageType,
+  LeaveReasonType,
+  LeaveRelationship,
+  LeaveRequestType,
+} from '../../leave-requests/enums/leave-request.enums';
 
 export class CreateEmployeeJobActionDto {
   @IsUUID()
@@ -51,6 +58,26 @@ export class CreateEmployeeJobActionDto {
   @ValidateIf((o) => o.action_type === EmployeeJobActionType.UNPAID_LEAVE)
   @IsDateString()
   new_unpaid_leave_end_date?: string;
+
+  @ValidateIf((o) => o.action_type === EmployeeJobActionType.UNPAID_LEAVE)
+  @IsEnum(LeaveReasonType)
+  new_unpaid_leave_reason_type?: LeaveReasonType;
+
+  @ValidateIf((o) => o.action_type === EmployeeJobActionType.UNPAID_LEAVE)
+  @IsEnum(LeaveRequestType)
+  new_leave_type?: LeaveRequestType;
+
+  @IsOptional()
+  @IsEnum(LeaveRelationship)
+  new_leave_relationship?: LeaveRelationship;
+
+  @IsOptional()
+  @IsBoolean()
+  new_leave_different_domicile?: boolean;
+
+  @IsOptional()
+  @IsEnum(LeaveMarriageType)
+  new_leave_marriage_type?: LeaveMarriageType;
 
   @ValidateIf((o) => o.action_type === EmployeeJobActionType.SENIORITY_CHANGE)
   @IsDateString()
