@@ -963,8 +963,18 @@ export class EmployeeExitPermitsService {
     const targetDate = /^\d{4}-\d{2}-\d{2}$/.test(requestedDate || '')
       ? requestedDate!
       : new Date().toISOString().slice(0, 10);
-    const year = Number(targetDate.slice(0, 4));
-    const month = Number(targetDate.slice(5, 7));
+    const targetMonthDate = new Date(`${targetDate.slice(0, 7)}-01T12:00:00`);
+    const evaluationStartDate = new Date(targetMonthDate);
+    evaluationStartDate.setMonth(evaluationStartDate.getMonth() - 2);
+    const nextMonthDate = new Date(targetMonthDate);
+    nextMonthDate.setMonth(nextMonthDate.getMonth() + 1);
+    const monthStart = targetMonthDate.toISOString().slice(0, 10);
+    const evaluationStart = evaluationStartDate.toISOString().slice(0, 10);
+    const nextMonth = nextMonthDate.toISOString().slice(0, 10);
+    const yearStart = `${targetDate.slice(0, 4)}-01-01`;
+    const nextYear = `${Number(targetDate.slice(0, 4)) + 1}-01-01`;
+    const queryStart = evaluationStart < yearStart ? evaluationStart : yearStart;
+    const queryEnd = nextMonth > nextYear ? nextMonth : nextYear;
     const employee = await this.employeeRepository.findOne({
       where: { id: employeeId },
       relations: { schedule: true },
@@ -979,13 +989,23 @@ export class EmployeeExitPermitsService {
       );
     }
 
-    const marks = await this.watchesService.getReporteMarcaciones({
-      userid: employee.biometric_id,
-      mes: month,
-      anio: year,
-      horaEntrada: employee.schedule.startTime,
-      horaSalida: employee.schedule.endTime,
+    const evaluatedMonths = Array.from({ length: 3 }, (_, index) => {
+      const date = new Date(evaluationStartDate);
+      date.setMonth(date.getMonth() + index);
+      return { month: date.getMonth() + 1, year: date.getFullYear() };
     });
+    const monthlyMarks = await Promise.all(
+      evaluatedMonths.map(({ month, year }) =>
+        this.watchesService.getReporteMarcaciones({
+          userid: employee.biometric_id,
+          mes: month,
+          anio: year,
+          horaEntrada: employee.schedule!.startTime,
+          horaSalida: employee.schedule!.endTime,
+        }),
+      ),
+    );
+    const marks = monthlyMarks.flat();
     const scheduledExit = this.timeToMinutes(employee.schedule.endTime);
     const earnedDays = (marks || [])
       .map((mark: any) => {
@@ -1012,18 +1032,14 @@ export class EmployeeExitPermitsService {
         minutes: number;
       }>;
 
-    const monthStart = `${targetDate.slice(0, 7)}-01`;
-    const nextMonthDate = new Date(`${monthStart}T12:00:00`);
-    nextMonthDate.setMonth(nextMonthDate.getMonth() + 1);
-    const nextMonth = nextMonthDate.toISOString().slice(0, 10);
     const requests = await this.exitPermitRepository
       .createQueryBuilder('permit')
       .where('permit.employee_id = :employeeId', { employeeId })
       .andWhere('LOWER(TRIM(permit.permit_type)) = :type', {
         type: 'horas compensatorias',
       })
-      .andWhere('permit.exit_date >= :monthStart', { monthStart })
-      .andWhere('permit.exit_date < :nextMonth', { nextMonth })
+      .andWhere('permit.exit_date >= :queryStart', { queryStart })
+      .andWhere('permit.exit_date < :queryEnd', { queryEnd })
       .getMany();
     const rejected = new Set(['rejected', 'cancelled', 'canceled', 'cancelado', 'denied']);
     const activeRequests = requests.filter(
@@ -1031,7 +1047,22 @@ export class EmployeeExitPermitsService {
         ![permit.status, permit.boss_status, permit.hr_status, permit.liaison_status]
           .some((status) => rejected.has(String(status || '').toLowerCase())),
     );
-    const usedMinutes = activeRequests.reduce(
+    const evaluationRequests = activeRequests.filter(
+      (permit) =>
+        String(permit.exit_date) >= evaluationStart &&
+        String(permit.exit_date) < nextMonth,
+    );
+    const monthlyRequests = activeRequests.filter(
+      (permit) =>
+        String(permit.exit_date) >= monthStart &&
+        String(permit.exit_date) < nextMonth,
+    );
+    const yearlyRequests = activeRequests.filter(
+      (permit) =>
+        String(permit.exit_date) >= yearStart &&
+        String(permit.exit_date) < nextYear,
+    );
+    const usedMinutes = evaluationRequests.reduce(
       (total, permit) =>
         total + (this.getDurationInMinutes(permit.exit_time, permit.return_time) || 0),
       0,
@@ -1039,11 +1070,18 @@ export class EmployeeExitPermitsService {
     const earnedMinutes = earnedDays.reduce((total, day) => total + day.minutes, 0);
     return {
       month: targetDate.slice(0, 7),
+      evaluatedFrom: evaluationStart,
+      evaluatedTo: nextMonth,
+      evaluatedMonths,
       earnedMinutes,
       usedMinutes,
       availableMinutes: Math.max(earnedMinutes - usedMinutes, 0),
       earnedDays,
-      requests: activeRequests.map((permit) => ({
+      monthlyRequestCount: monthlyRequests.length,
+      monthlyRequestLimit: 2,
+      yearlyRequestCount: yearlyRequests.length,
+      yearlyRequestLimit: 15,
+      requests: evaluationRequests.map((permit) => ({
         id: permit.id,
         date: String(permit.exit_date),
         minutes: this.getDurationInMinutes(permit.exit_time, permit.return_time) || 0,
@@ -1065,9 +1103,19 @@ export class EmployeeExitPermitsService {
       );
     }
     const balance = await this.getCompensatoryBalance(employeeId, date);
+    if (balance.monthlyRequestCount >= balance.monthlyRequestLimit) {
+      throw new BadRequestException(
+        'Solo puede realizar 2 solicitudes de horas compensatorias por mes.',
+      );
+    }
+    if (balance.yearlyRequestCount >= balance.yearlyRequestLimit) {
+      throw new BadRequestException(
+        'Ya alcanzó el límite anual de 15 solicitudes de horas compensatorias.',
+      );
+    }
     if (requestedMinutes > balance.availableMinutes) {
       throw new BadRequestException(
-        `Solo tiene ${this.durationLabel(balance.availableMinutes)} disponible en horas compensatorias para este mes.`,
+        `Solo tiene ${this.durationLabel(balance.availableMinutes)} disponible en horas compensatorias acumuladas durante los últimos 3 meses.`,
       );
     }
   }
