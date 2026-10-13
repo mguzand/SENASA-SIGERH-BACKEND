@@ -1,7 +1,15 @@
-import { IsBoolean, IsEnum, IsNotEmpty, IsOptional, IsString, MaxLength, ValidateIf } from 'class-validator';
+import { IsBoolean, IsDateString, IsEnum, IsNotEmpty, IsOptional, IsString, MaxLength, ValidateIf } from 'class-validator';
 import { LeaveMarriageType, LeaveReasonType, LeaveRelationship, LeaveRequestType } from '../enums/leave-request.enums';
 
 export class UpdateLeaveClassificationDto {
+  @IsOptional()
+  @IsDateString()
+  startDate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  endDate?: string;
+
   @IsEnum(LeaveRequestType)
   type: LeaveRequestType;
 

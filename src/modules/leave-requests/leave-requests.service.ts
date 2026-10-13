@@ -774,15 +774,58 @@ export class LeaveRequestsService {
       );
     }
 
+    const startDate = this.normalizeDate(dto.startDate || request.startDate);
+    const endDate = this.normalizeDate(dto.endDate || request.endDate);
+    if (endDate < startDate) {
+      throw new BadRequestException(
+        'La fecha final no puede ser anterior a la fecha inicial.',
+      );
+    }
+    const datesChanged =
+      request.startDate !== startDate || request.endDate !== endDate;
+    if (
+      request.stage === LeaveRequestStage.COMPLETED &&
+      request.status === LeaveRequestStatus.APPROVED &&
+      datesChanged
+    ) {
+      throw new BadRequestException(
+        'Las fechas no pueden modificarse después de finalizar la licencia.',
+      );
+    }
+    const businessDays = await this.countBusinessDays(startDate, endDate);
+    if (businessDays <= 0) {
+      throw new BadRequestException(
+        'El rango debe contener al menos un día laboral.',
+      );
+    }
+    const overlapping = await this.requestRepository
+      .createQueryBuilder('other')
+      .where('other.employeeId = :employeeId', {
+        employeeId: request.employeeId,
+      })
+      .andWhere('other.id != :id', { id: request.id })
+      .andWhere('other.status != :rejected', {
+        rejected: LeaveRequestStatus.REJECTED,
+      })
+      .andWhere('other.startDate <= :endDate AND other.endDate >= :startDate', {
+        startDate,
+        endDate,
+      })
+      .getExists();
+    if (overlapping) {
+      throw new BadRequestException(
+        'El nuevo período se cruza con otra licencia activa del empleado.',
+      );
+    }
     this.validateLegalRequest(
       {
         ...dto,
-        startDate: request.startDate,
-        endDate: request.endDate,
+        startDate,
+        endDate,
         reason: request.reason,
         documents: [],
       },
-      request.businessDays,
+      businessDays,
     );
     if (approvedByHr && request.type !== dto.type) {
       throw new BadRequestException(
@@ -795,6 +838,27 @@ export class LeaveRequestsService {
     request.relationship = dto.relationship || null;
     request.differentDomicile = Boolean(dto.differentDomicile);
     request.marriageType = dto.marriageType || null;
+    request.startDate = startDate;
+    request.endDate = endDate;
+    request.businessDays = businessDays;
+    if (
+      approvedByHr &&
+      request.stage === LeaveRequestStage.DIRECTOR_REVIEW &&
+      businessDays <= 3
+    ) {
+      request.stage = LeaveRequestStage.COMPLETED;
+      request.status = LeaveRequestStatus.APPROVED;
+      request.directorEmployeeId = null;
+      request.directorStatus = LeaveRequestStatus.PENDING;
+      request.directorObservation = null;
+      request.directorReviewedAt = null;
+      if (
+        request.type === LeaveRequestType.UNPAID &&
+        !request.vacationImpactApplied
+      ) {
+        await this.applyUnpaidLeaveImpact(request, this.dataSource.manager);
+      }
+    }
     const current = this.classificationSnapshot(request);
     request.classificationHistory = [
       ...(request.classificationHistory || []),
@@ -1516,6 +1580,9 @@ export class LeaveRequestsService {
       relationship: request.relationship,
       differentDomicile: request.differentDomicile,
       marriageType: request.marriageType,
+      startDate: request.startDate,
+      endDate: request.endDate,
+      businessDays: request.businessDays,
     };
   }
 
