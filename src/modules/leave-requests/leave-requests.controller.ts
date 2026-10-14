@@ -89,6 +89,15 @@ export class LeaveRequestsController {
     );
   }
 
+  @Patch(':id/liaison-documents')
+  updateDocumentsByLiaison(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: UpdateLeaveDocumentsDto,
+  ) {
+    return this.service.updateDocumentsByLiaison(this.userId(req), id, dto);
+  }
+
   @Patch(':id/manager-review')
   reviewByManager(
     @Req() req: AuthenticatedRequest,

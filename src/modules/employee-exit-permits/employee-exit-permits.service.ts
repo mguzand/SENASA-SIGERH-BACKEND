@@ -591,9 +591,12 @@ export class EmployeeExitPermitsService {
     return this.mapExitPermitInboxItem(permit, 'boss');
   }
 
-  async create(dto: CreateEmployeeExitPermitDto) {
+  async create(
+    dto: CreateEmployeeExitPermitDto,
+    options: { allowOlderThanTenDays?: boolean } = {},
+  ) {
     const minimumRequestDate = this.minimumRetroactiveDate();
-    if (dto.exit_date < minimumRequestDate) {
+    if (!options.allowOlderThanTenDays && dto.exit_date < minimumRequestDate) {
       throw new BadRequestException(
         'Los pases de salida solo pueden solicitarse hasta 10 días calendario hacia atrás',
       );
@@ -749,6 +752,40 @@ export class EmployeeExitPermitsService {
     );
 
     return savedPermit;
+  }
+
+  async createByLiaison(
+    dto: CreateEmployeeExitPermitDto,
+    currentEmployeeId: string,
+  ) {
+    if (!currentEmployeeId) {
+      throw new ForbiddenException(
+        'No fue posible identificar al enlace de RR. HH.',
+      );
+    }
+    const minimumRequestDate = this.minimumRetroactiveDate();
+    if (dto.exit_date >= minimumRequestDate) {
+      throw new BadRequestException(
+        'Este registro administrativo se utiliza únicamente para pases con más de 10 días de antigüedad.',
+      );
+    }
+    const approval = await this.approvalRoutingService.resolve(
+      dto.employee_id,
+      dto.area_id,
+    );
+    const access =
+      await this.regionalManagerService.getHrLiaisonAccess(currentEmployeeId);
+    const authorized = access.assignments.some(
+      (assignment) =>
+        assignment.permissions.exitPermits &&
+        (assignment.regionalId === approval.regionalId || assignment.isMainOffice),
+    );
+    if (!authorized) {
+      throw new ForbiddenException(
+        'No tiene permiso para registrar pases de salida en esta regional.',
+      );
+    }
+    return this.create(dto, { allowOlderThanTenDays: true });
   }
 
   private classifyPersonalPermit(

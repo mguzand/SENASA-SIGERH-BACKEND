@@ -339,7 +339,6 @@ export class VacationRequestService {
       totalDays: string;
     } | null;
 
-    const today = this.localDateInTegucigalpa();
     return {
       data: requests.map((request) => {
         const employee = request.employee;
@@ -377,7 +376,7 @@ export class VacationRequestService {
           timingLabel: this.getTimingLabel(request.start_date),
           overallStatus: request.status,
           suspendibleDays: (request.days || [])
-            .filter((day) => day.counts_as_vacation && day.status !== 'SUSPENDED' && day.date >= today)
+            .filter((day) => day.counts_as_vacation && day.status !== 'SUSPENDED')
             .map((day) => day.date)
             .sort(),
         };

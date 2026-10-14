@@ -108,9 +108,6 @@ export class VacationRequestSuspensionService {
       const suspensionDate = dto.suspend_all_remaining
         ? String(dto.suspension_date || '')
         : today;
-      if (dto.suspend_all_remaining && suspensionDate < today) {
-        throw new BadRequestException('La fecha de suspensión no puede ser anterior a hoy.');
-      }
 
       const days = dto.suspend_all_remaining
         ? await this.dayService.findRemainingWithManager(
@@ -128,7 +125,7 @@ export class VacationRequestSuspensionService {
 
       if (!dto.suspend_all_remaining && days.length !== new Set(dto.days || []).size) {
         throw new BadRequestException(
-          'Uno o más días no pertenecen a la solicitud, ya pasaron o ya fueron suspendidos.',
+          'Uno o más días no pertenecen a la solicitud o ya fueron suspendidos.',
         );
       }
       if (!days.length) {
@@ -251,9 +248,6 @@ export class VacationRequestSuspensionService {
       throw new BadRequestException('Las fechas nuevas deben ser diferentes de las actuales.');
     }
     const today = this.todayInTegucigalpa();
-    if (newDays.some((day) => day < today)) {
-      throw new BadRequestException('Las fechas nuevas no pueden estar en el pasado.');
-    }
     if (newDays.some((day) => [0, 6].includes(new Date(`${day}T00:00:00Z`).getUTCDay()))) {
       throw new BadRequestException('No se pueden programar vacaciones en sábado o domingo.');
     }
@@ -284,7 +278,7 @@ export class VacationRequestSuspensionService {
         request.id, originalDays, today, runner.manager,
       );
       if (days.length !== originalDays.length) {
-        throw new BadRequestException('Uno o más días ya pasaron, fueron suspendidos o no pertenecen a la solicitud.');
+        throw new BadRequestException('Uno o más días fueron suspendidos o no pertenecen a la solicitud.');
       }
 
       const blocked: Array<{ date: string }> = await runner.query(

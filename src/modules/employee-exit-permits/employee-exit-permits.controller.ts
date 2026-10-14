@@ -39,6 +39,14 @@ export class EmployeeExitPermitsController {
     });
   }
 
+  @Post('liaison/manual')
+  createByLiaison(@Body() dto: CreateEmployeeExitPermitDto, @Req() req: any) {
+    return this.employeeExitPermitsService.createByLiaison(
+      dto,
+      this.getEmployeeId(req),
+    );
+  }
+
   @Get('hr/inbox')
   findHrInbox(@Query() query: ListHrExitPermitsDto, @Req() req: any) {
     return this.employeeExitPermitsService.findHrInbox(

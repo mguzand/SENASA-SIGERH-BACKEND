@@ -874,6 +874,69 @@ export class LeaveRequestsService {
     return this.withDocumentStatus(await this.getById(id));
   }
 
+  async updateDocumentsByLiaison(
+    requesterId: string,
+    id: string,
+    dto: UpdateLeaveDocumentsDto,
+  ) {
+    const reviewer = await this.resolveEmployee(requesterId);
+    const request = await this.requestRepository.findOne({
+      where: { id },
+      relations: { documents: true },
+    });
+    if (!request) {
+      throw new NotFoundException('Solicitud de licencia no encontrada.');
+    }
+    const liaisons =
+      await this.regionalManagerService.findActiveHrLiaisonsByPermission(
+        request.liaisonRegionalId || request.regionalId,
+        'leaves',
+      );
+    if (!liaisons.some((item) => item.employee_id === reviewer.id)) {
+      throw new ForbiddenException(
+        'No tiene permiso para modificar los documentos de esta licencia.',
+      );
+    }
+    this.validateDocuments(dto.documents || []);
+    const allowed = new Set(
+      this.requiredDocumentCodes(request.reasonType, request.relationship),
+    );
+    for (const document of dto.documents || []) {
+      if (!allowed.has(document.code)) {
+        throw new BadRequestException(
+          'El documento no corresponde a la clasificación actual de la licencia.',
+        );
+      }
+      const previous = request.documents?.find(
+        (item) => item.code === document.code,
+      );
+      const extension = this.extensionForMime(document.mimeType);
+      const filePath = this.storageService.saveBase64File(
+        document.base64,
+        `leave-requests/${request.id}`,
+        `${document.code}-${Date.now()}.${extension}`,
+      );
+      if (previous) {
+        this.storageService.deleteFile(previous.filePath);
+        previous.originalName = document.name;
+        previous.mimeType = document.mimeType;
+        previous.filePath = filePath;
+        await this.documentRepository.save(previous);
+      } else {
+        await this.documentRepository.save(
+          this.documentRepository.create({
+            leaveRequestId: request.id,
+            code: document.code,
+            originalName: document.name,
+            mimeType: document.mimeType,
+            filePath,
+          }),
+        );
+      }
+    }
+    return this.withDocumentStatus(await this.getById(request.id));
+  }
+
   async updateClassificationByHr(
     requesterId: string,
     id: string,
