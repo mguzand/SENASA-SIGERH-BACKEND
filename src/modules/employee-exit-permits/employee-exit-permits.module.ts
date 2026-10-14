@@ -9,12 +9,13 @@ import { CommonModule } from '../../common/common.module';
 import { PushNotificationsModule } from '../push-notifications/push-notifications.module';
 import { ExitPermitReceptionReview } from './entities/exit-permit-reception-review.entity';
 import { WatchesModule } from '../watches/watches.module';
+import { ExitPermitRetroactiveAuthorization } from './entities/exit-permit-retroactive-authorization.entity';
 
 @Module({
   controllers: [EmployeeExitPermitsController],
   providers: [EmployeeExitPermitsService],
   imports: [
-    TypeOrmModule.forFeature([EmployeeExitPermit, Employee, ExitPermitReceptionReview]),
+    TypeOrmModule.forFeature([EmployeeExitPermit, Employee, ExitPermitReceptionReview, ExitPermitRetroactiveAuthorization]),
     AreaManagerModule,
     CommonModule,
     PushNotificationsModule,

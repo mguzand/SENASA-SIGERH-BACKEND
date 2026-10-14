@@ -28,6 +28,8 @@ import { PushNotificationsService } from '../push-notifications/push-notificatio
 import { ExitPermitReceptionReview } from './entities/exit-permit-reception-review.entity';
 import { ListReceptionExitPermitsDto } from './dto/list-reception-exit-permits.dto';
 import { WatchesService } from '../watches/watches.service';
+import { ExitPermitRetroactiveAuthorization } from './entities/exit-permit-retroactive-authorization.entity';
+import { AuthorizeRetroactiveExitPermitDto } from './dto/authorize-retroactive-exit-permit.dto';
 
 @Injectable()
 export class EmployeeExitPermitsService {
@@ -40,6 +42,9 @@ export class EmployeeExitPermitsService {
 
     @InjectRepository(ExitPermitReceptionReview)
     private readonly receptionReviewRepository: Repository<ExitPermitReceptionReview>,
+
+    @InjectRepository(ExitPermitRetroactiveAuthorization)
+    private readonly retroactiveAuthorizationRepository: Repository<ExitPermitRetroactiveAuthorization>,
 
     private readonly areaManagersService: AreaManagerService,
     private readonly approvalRoutingService: ApprovalRoutingService,
@@ -591,14 +596,12 @@ export class EmployeeExitPermitsService {
     return this.mapExitPermitInboxItem(permit, 'boss');
   }
 
-  async create(
-    dto: CreateEmployeeExitPermitDto,
-    options: { allowOlderThanTenDays?: boolean } = {},
-  ) {
+  async create(dto: CreateEmployeeExitPermitDto) {
     const minimumRequestDate = this.minimumRetroactiveDate();
-    if (!options.allowOlderThanTenDays && dto.exit_date < minimumRequestDate) {
+    const endDate = dto.end_date || dto.exit_date;
+    if (dto.exit_date < minimumRequestDate && !(await this.hasRetroactiveAuthorization(dto.employee_id, dto.exit_date, endDate))) {
       throw new BadRequestException(
-        'Los pases de salida solo pueden solicitarse hasta 10 días calendario hacia atrás',
+        'Los pases de salida solo pueden solicitarse hasta 10 días calendario hacia atrás, salvo autorización previa de RR. HH.',
       );
     }
     const approval = await this.approvalRoutingService.resolve(
@@ -620,7 +623,6 @@ export class EmployeeExitPermitsService {
 
     const isPersonal = this.isPersonalPermit(dto.permit_type);
     const isCompensatory = this.isCompensatoryPermit(dto.permit_type);
-    const endDate = dto.end_date || dto.exit_date;
     if (endDate < dto.exit_date) {
       throw new BadRequestException(
         'La fecha final no puede ser anterior a la fecha de salida',
@@ -754,22 +756,39 @@ export class EmployeeExitPermitsService {
     return savedPermit;
   }
 
-  async createByHr(
-    dto: CreateEmployeeExitPermitDto,
-    currentEmployeeId: string,
-  ) {
-    if (!currentEmployeeId) {
-      throw new ForbiddenException(
-        'No fue posible identificar al usuario de RR. HH.',
-      );
+  async authorizeRetroactive(dto: AuthorizeRetroactiveExitPermitDto, currentEmployeeId: string) {
+    if (!currentEmployeeId) throw new ForbiddenException('No fue posible identificar al usuario de RR. HH.');
+    if (dto.endDate < dto.startDate) throw new BadRequestException('La fecha final no puede ser anterior a la fecha inicial.');
+    if (dto.endDate >= this.localDateInTegucigalpa()) {
+      throw new BadRequestException('La autorización solo puede incluir fechas anteriores a hoy.');
     }
-    const minimumRequestDate = this.minimumRetroactiveDate();
-    if (dto.exit_date >= minimumRequestDate) {
-      throw new BadRequestException(
-        'Este registro administrativo se utiliza únicamente para pases con más de 10 días de antigüedad.',
-      );
-    }
-    return this.create(dto, { allowOlderThanTenDays: true });
+    const employee = await this.employeeRepository.findOne({ where: { id: dto.employeeId } });
+    if (!employee) throw new NotFoundException('Empleado no encontrado.');
+    return this.retroactiveAuthorizationRepository.save(this.retroactiveAuthorizationRepository.create({
+      employeeId: dto.employeeId,
+      authorizedByEmployeeId: currentEmployeeId,
+      startDate: dto.startDate,
+      endDate: dto.endDate,
+      isActive: true,
+    }));
+  }
+
+  async findRetroactiveAuthorizations(employeeId: string) {
+    if (!employeeId) throw new ForbiddenException('No fue posible identificar al empleado.');
+    const ranges = await this.retroactiveAuthorizationRepository.find({
+      where: { employeeId, isActive: true },
+      order: { startDate: 'ASC' },
+    });
+    return { normalMinimumDate: this.minimumRetroactiveDate(), ranges: ranges.map((item) => ({ id: item.id, startDate: item.startDate, endDate: item.endDate })) };
+  }
+
+  private async hasRetroactiveAuthorization(employeeId: string, startDate: string, endDate: string) {
+    return this.retroactiveAuthorizationRepository.createQueryBuilder('authorization')
+      .where('authorization.employee_id = :employeeId', { employeeId })
+      .andWhere('authorization.is_active = true')
+      .andWhere('authorization.start_date <= :startDate', { startDate })
+      .andWhere('authorization.end_date >= :endDate', { endDate })
+      .getExists();
   }
 
   private classifyPersonalPermit(

@@ -20,6 +20,7 @@ import { CancelEmployeeExitPermitDto } from './dto/cancel-employee-exit-permit.d
 import { RequestSupportChangeDto } from './dto/request-support-change.dto';
 import { ListReceptionExitPermitsDto } from './dto/list-reception-exit-permits.dto';
 import { ReviewExitPermitReceptionDto } from './dto/review-exit-permit-reception.dto';
+import { AuthorizeRetroactiveExitPermitDto } from './dto/authorize-retroactive-exit-permit.dto';
 
 @Controller('employee-exit-permits')
 export class EmployeeExitPermitsController {
@@ -39,12 +40,14 @@ export class EmployeeExitPermitsController {
     });
   }
 
-  @Post('hr/manual')
-  createByHr(@Body() dto: CreateEmployeeExitPermitDto, @Req() req: any) {
-    return this.employeeExitPermitsService.createByHr(
-      dto,
-      this.getEmployeeId(req),
-    );
+  @Post('hr/retroactive-authorizations')
+  authorizeRetroactive(@Body() dto: AuthorizeRetroactiveExitPermitDto, @Req() req: any) {
+    return this.employeeExitPermitsService.authorizeRetroactive(dto, this.getEmployeeId(req));
+  }
+
+  @Get('retroactive-authorizations/mine')
+  findMyRetroactiveAuthorizations(@Req() req: any) {
+    return this.employeeExitPermitsService.findRetroactiveAuthorizations(this.getEmployeeId(req));
   }
 
   @Get('hr/inbox')
