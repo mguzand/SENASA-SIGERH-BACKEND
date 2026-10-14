@@ -39,9 +39,9 @@ export class EmployeeExitPermitsController {
     });
   }
 
-  @Post('liaison/manual')
-  createByLiaison(@Body() dto: CreateEmployeeExitPermitDto, @Req() req: any) {
-    return this.employeeExitPermitsService.createByLiaison(
+  @Post('hr/manual')
+  createByHr(@Body() dto: CreateEmployeeExitPermitDto, @Req() req: any) {
+    return this.employeeExitPermitsService.createByHr(
       dto,
       this.getEmployeeId(req),
     );

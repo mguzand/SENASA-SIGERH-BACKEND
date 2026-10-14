@@ -754,35 +754,19 @@ export class EmployeeExitPermitsService {
     return savedPermit;
   }
 
-  async createByLiaison(
+  async createByHr(
     dto: CreateEmployeeExitPermitDto,
     currentEmployeeId: string,
   ) {
     if (!currentEmployeeId) {
       throw new ForbiddenException(
-        'No fue posible identificar al enlace de RR. HH.',
+        'No fue posible identificar al usuario de RR. HH.',
       );
     }
     const minimumRequestDate = this.minimumRetroactiveDate();
     if (dto.exit_date >= minimumRequestDate) {
       throw new BadRequestException(
         'Este registro administrativo se utiliza únicamente para pases con más de 10 días de antigüedad.',
-      );
-    }
-    const approval = await this.approvalRoutingService.resolve(
-      dto.employee_id,
-      dto.area_id,
-    );
-    const access =
-      await this.regionalManagerService.getHrLiaisonAccess(currentEmployeeId);
-    const authorized = access.assignments.some(
-      (assignment) =>
-        assignment.permissions.exitPermits &&
-        (assignment.regionalId === approval.regionalId || assignment.isMainOffice),
-    );
-    if (!authorized) {
-      throw new ForbiddenException(
-        'No tiene permiso para registrar pases de salida en esta regional.',
       );
     }
     return this.create(dto, { allowOlderThanTenDays: true });
