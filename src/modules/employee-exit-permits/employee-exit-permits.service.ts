@@ -782,6 +782,49 @@ export class EmployeeExitPermitsService {
     return { normalMinimumDate: this.minimumRetroactiveDate(), ranges: ranges.map((item) => ({ id: item.id, startDate: item.startDate, endDate: item.endDate })) };
   }
 
+  async findHrRetroactiveAuthorizations(params: ListHrExitPermitsDto) {
+    const page = Math.max(Number(params.page) || 1, 1);
+    const limit = Math.min(Math.max(Number(params.limit) || 8, 1), 50);
+    const query = this.retroactiveAuthorizationRepository
+      .createQueryBuilder('authorization')
+      .leftJoinAndSelect('authorization.employee', 'employee')
+      .leftJoinAndSelect('authorization.authorizedByEmployee', 'authorizedBy');
+
+    if (params.search?.trim()) {
+      const search = `%${params.search.trim().toLowerCase()}%`;
+      query.andWhere(new Brackets((qb) => qb
+        .where('LOWER(employee.firstName) LIKE :search', { search })
+        .orWhere('LOWER(employee.lastName) LIKE :search', { search })
+        .orWhere("LOWER(COALESCE(employee.middleName, '')) LIKE :search", { search })
+        .orWhere("LOWER(COALESCE(employee.secondLastName, '')) LIKE :search", { search })
+        .orWhere("LOWER(COALESCE(employee.dni, '')) LIKE :search", { search })
+        .orWhere("LOWER(COALESCE(employee.biometric_id, '')) LIKE :search", { search })));
+    }
+
+    const [records, total] = await query
+      .orderBy('authorization.created_at', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+
+    return {
+      data: records.map((item) => ({
+        id: item.id,
+        employeeId: item.employeeId,
+        employeeName: this.employeeName(item.employee),
+        employeeCode: item.employee?.biometric_id
+          ? `EMP-${String(item.employee.biometric_id).padStart(4, '0')}`
+          : `EMP-${item.employeeId.slice(0, 4).toUpperCase()}`,
+        startDate: item.startDate,
+        endDate: item.endDate,
+        authorizedByName: this.employeeName(item.authorizedByEmployee),
+        createdAt: item.createdAt,
+        isActive: item.isActive,
+      })),
+      meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    };
+  }
+
   private async hasRetroactiveAuthorization(employeeId: string, startDate: string, endDate: string) {
     return this.retroactiveAuthorizationRepository.createQueryBuilder('authorization')
       .where('authorization.employee_id = :employeeId', { employeeId })

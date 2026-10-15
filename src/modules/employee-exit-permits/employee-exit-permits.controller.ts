@@ -45,6 +45,11 @@ export class EmployeeExitPermitsController {
     return this.employeeExitPermitsService.authorizeRetroactive(dto, this.getEmployeeId(req));
   }
 
+  @Get('hr/retroactive-authorizations')
+  findHrRetroactiveAuthorizations(@Query() query: ListHrExitPermitsDto) {
+    return this.employeeExitPermitsService.findHrRetroactiveAuthorizations(query);
+  }
+
   @Get('retroactive-authorizations/mine')
   findMyRetroactiveAuthorizations(@Req() req: any) {
     return this.employeeExitPermitsService.findRetroactiveAuthorizations(this.getEmployeeId(req));
