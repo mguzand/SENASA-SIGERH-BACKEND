@@ -232,8 +232,7 @@ export const buildFinalLeaveDecisionReport = (
   const position =
     job?.position?.name?.toUpperCase() || 'COLABORADOR DEL SENASA';
   const modality =
-    job?.modality?.name?.trim().toLocaleLowerCase('es-HN') ===
-    'servicio civil'
+    job?.modality?.name?.trim().toLocaleLowerCase('es-HN') === 'servicio civil'
       ? 'Acuerdo'
       : 'Contrato';
   return definition([
@@ -289,20 +288,20 @@ export const buildFinalLeaveDecisionReport = (
       ),
       width: requiresDirectorResolution ? 320 : 230,
       alignment: 'center',
-      margin: [0, 24, 0, 0],
+      margin: [0, -365, -110, 0],
     },
     ...(requiresDirectorResolution
       ? []
       : [
-          {
-            text: `${HR_DIRECTOR}\n${HR_TITLE}`,
-            bold: true,
-            alignment: 'center',
-            fontSize: 9,
-            margin: [0, -10, 0, 0],
-          },
+          // {
+          //   text: `${HR_DIRECTOR}\n${HR_TITLE}`,
+          //   bold: true,
+          //   alignment: 'center',
+          //   fontSize: 9,
+          //   margin: [0, 300, 0, 0],
+          // },
         ]),
-    { text: 'Cc: Archivo', fontSize: 9, margin: [0, 16, 0, 0] },
+    { text: 'Cc: Archivo', fontSize: 9, margin: [0, 310, 0, 0] },
   ]);
 };
 
