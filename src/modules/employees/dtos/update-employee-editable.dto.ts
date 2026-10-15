@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsEmail,
   IsNumber,
   IsOptional,
@@ -8,6 +9,10 @@ import {
 } from 'class-validator';
 
 export class UpdateEmployeeEditableDto {
+  @IsOptional()
+  @IsBoolean()
+  exit_permit_main_office_flow?: boolean;
+
   @IsOptional()
   @IsEmail()
   email?: string | null;

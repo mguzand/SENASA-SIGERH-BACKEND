@@ -573,6 +573,7 @@ export class EmployeesService {
       regionalId: employee.regional?.id || employee.regional_id || null,
       regionalName: employee.regional?.name || null,
       regionalAddress: employee.regional?.address || null,
+      exitPermitMainOfficeFlow: Boolean(employee.exit_permit_main_office_flow),
       scheduleId: employee.schedule?.id || employee.schedule_id || null,
       scheduleDescription: employee.schedule?.description || null,
       scheduleStartTime: employee.schedule?.startTime || null,
@@ -711,6 +712,11 @@ export class EmployeesService {
           ]);
         }
         employee.regional_id = regional.id;
+      }
+
+      if (dto.exit_permit_main_office_flow !== undefined) {
+        employee.exit_permit_main_office_flow =
+          dto.exit_permit_main_office_flow;
       }
 
       if (dto.profile_photo_base64) {

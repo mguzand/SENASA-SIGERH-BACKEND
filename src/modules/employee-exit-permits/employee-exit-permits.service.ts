@@ -614,6 +614,7 @@ export class EmployeeExitPermitsService {
     const approval = await this.approvalRoutingService.resolve(
       dto.employee_id,
       dto.area_id,
+      true,
     );
 
     if (dto.without_return && dto.return_time) {

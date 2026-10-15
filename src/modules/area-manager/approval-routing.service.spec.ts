@@ -63,19 +63,25 @@ describe('ApprovalRoutingService', () => {
       findOne: jest.fn().mockResolvedValue(mainRegional),
     };
     const areaManagerRepository = {
-      findOne: jest.fn().mockImplementation(({ where }: any) =>
-        Promise.resolve(areaManagers[where.area_id] || null),
-      ),
-      manager: {
-        query: jest.fn().mockImplementation((_sql: string, [areaId]: string[]) =>
-          Promise.resolve([{ parent_id: areaParents[areaId] || null }]),
+      findOne: jest
+        .fn()
+        .mockImplementation(({ where }: any) =>
+          Promise.resolve(areaManagers[where.area_id] || null),
         ),
+      manager: {
+        query: jest
+          .fn()
+          .mockImplementation((_sql: string, [areaId]: string[]) =>
+            Promise.resolve([{ parent_id: areaParents[areaId] || null }]),
+          ),
       },
     };
     const regionalManagerRepository = {
-      findOne: jest.fn().mockImplementation(({ where }: any) =>
-        Promise.resolve(regionalManagers[where.regional_id] || null),
-      ),
+      findOne: jest
+        .fn()
+        .mockImplementation(({ where }: any) =>
+          Promise.resolve(regionalManagers[where.regional_id] || null),
+        ),
     };
 
     service = new ApprovalRoutingService(
@@ -111,6 +117,30 @@ describe('ApprovalRoutingService', () => {
 
     expect(result.employeeId).toBe(areaManagerEmployee.id);
     expect(result.scope).toBe('AREA');
+  });
+
+  it('routes a flagged regional employee through the main-office area flow for exit permits', async () => {
+    employee.regional = secondaryRegional;
+    employee.regional_id = secondaryRegional.id;
+    employee.exit_permit_main_office_flow = true;
+
+    const result = await service.resolve(employee.id, 'area-1', true);
+
+    expect(result.employeeId).toBe(areaManagerEmployee.id);
+    expect(result.scope).toBe('AREA');
+    expect(result.regionalId).toBe(mainRegional.id);
+  });
+
+  it('does not apply the exit-permit exception to other approval flows', async () => {
+    employee.regional = secondaryRegional;
+    employee.regional_id = secondaryRegional.id;
+    employee.exit_permit_main_office_flow = true;
+
+    const result = await service.resolve(employee.id, 'area-1');
+
+    expect(result.employeeId).toBe(secondaryManagerEmployee.id);
+    expect(result.scope).toBe('REGIONAL');
+    expect(result.regionalId).toBe(secondaryRegional.id);
   });
 
   it('escalates a main-office boss or delegate to the parent unit manager', async () => {

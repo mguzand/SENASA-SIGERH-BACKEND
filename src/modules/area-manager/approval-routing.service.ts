@@ -34,6 +34,7 @@ export class ApprovalRoutingService {
   async resolve(
     employeeId: string,
     _requestedAreaId: string,
+    applyExitPermitMainOfficeOverride = false,
   ): Promise<ResolvedApprovalManager> {
     const employee = await this.employeeRepository.findOne({
       where: { id: employeeId },
@@ -54,9 +55,13 @@ export class ApprovalRoutingService {
         (record) => String(record.status || '').toLowerCase() === 'active',
       )
       .sort((left, right) => {
-        const currentDifference = Number(Boolean(right.isCurrent)) - Number(Boolean(left.isCurrent));
+        const currentDifference =
+          Number(Boolean(right.isCurrent)) - Number(Boolean(left.isCurrent));
         if (currentDifference) return currentDifference;
-        return new Date(right.startDate || 0).getTime() - new Date(left.startDate || 0).getTime();
+        return (
+          new Date(right.startDate || 0).getTime() -
+          new Date(left.startDate || 0).getTime()
+        );
       })[0];
     if (!activeJob?.area_id) {
       throw new BadRequestException(
@@ -77,7 +82,11 @@ export class ApprovalRoutingService {
     // Use both sources. The regional_id comparison is authoritative and avoids
     // routing a main-office employee as regional when an ORM relation/cache
     // carries a stale is_main_office value.
+    const usesMainOfficeExitPermitFlow =
+      applyExitPermitMainOfficeOverride &&
+      Boolean(employee.exit_permit_main_office_flow);
     const isMainOffice =
+      usesMainOfficeExitPermitFlow ||
       employee.regional_id === mainRegional.id ||
       employee.regional.id === mainRegional.id ||
       Boolean(employee.regional.is_main_office);
@@ -112,7 +121,7 @@ export class ApprovalRoutingService {
     return this.resolveAreaOrMainManager(
       employee.id,
       activeJob.area_id,
-      employee.regional.id,
+      usesMainOfficeExitPermitFlow ? mainRegional.id : employee.regional.id,
     );
   }
 
@@ -182,7 +191,11 @@ export class ApprovalRoutingService {
 
   private async getRegionalManager(regionalId: string) {
     const manager = await this.regionalManagerRepository.findOne({
-      where: { regional_id: regionalId, is_active: true, role: RegionalManagerRole.REGIONAL_MANAGER },
+      where: {
+        regional_id: regionalId,
+        is_active: true,
+        role: RegionalManagerRole.REGIONAL_MANAGER,
+      },
       relations: { employee: true },
       order: { created_at: 'DESC' },
     });

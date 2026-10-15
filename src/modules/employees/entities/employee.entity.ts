@@ -24,7 +24,13 @@ export class Employee {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ unique: true, nullable: true, name: 'rtn', type: 'varchar', length: 14 })
+  @Column({
+    unique: true,
+    nullable: true,
+    name: 'rtn',
+    type: 'varchar',
+    length: 14,
+  })
   rtn: string | null;
 
   @Column({ unique: true, name: 'dni', type: 'varchar', length: 13 })
@@ -83,6 +89,13 @@ export class Employee {
 
   @Column({ nullable: true, name: 'regional_id', type: 'uuid' })
   regional_id: string; //! Relación con la tabla de regionales------------------------------------
+
+  @Column({
+    name: 'exit_permit_main_office_flow',
+    type: 'boolean',
+    default: false,
+  })
+  exit_permit_main_office_flow: boolean;
 
   @Column({ nullable: true, name: 'position_id', type: 'uuid' })
   position_id: string; //! relación con la tabla de posiciones------------------------------------
