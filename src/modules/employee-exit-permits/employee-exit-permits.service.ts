@@ -802,7 +802,7 @@ export class EmployeeExitPermitsService {
     }
 
     const [records, total] = await query
-      .orderBy('authorization.created_at', 'DESC')
+      .orderBy('authorization.createdAt', 'DESC')
       .skip((page - 1) * limit)
       .take(limit)
       .getManyAndCount();
