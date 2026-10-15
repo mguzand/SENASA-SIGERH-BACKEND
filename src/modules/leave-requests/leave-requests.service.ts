@@ -297,19 +297,26 @@ export class LeaveRequestsService {
         'La fecha final no puede ser anterior a la fecha inicial.',
       );
     }
-    const businessDays = await this.countBusinessDays(input.startDate, input.endDate);
+    const businessDays = await this.countBusinessDays(
+      input.startDate,
+      input.endDate,
+    );
     if (businessDays <= 0) {
       throw new BadRequestException(
         'El rango debe contener al menos un día laboral.',
       );
     }
     if (
-      [LeaveReasonType.DEATH, LeaveReasonType.IHSS, LeaveReasonType.FAMILY_CARE].includes(
-        input.reasonType,
-      ) &&
+      [
+        LeaveReasonType.DEATH,
+        LeaveReasonType.IHSS,
+        LeaveReasonType.FAMILY_CARE,
+      ].includes(input.reasonType) &&
       !input.relationship
     ) {
-      throw new BadRequestException('Seleccione el parentesco o la persona relacionada.');
+      throw new BadRequestException(
+        'Seleccione el parentesco o la persona relacionada.',
+      );
     }
     if (input.reasonType === LeaveReasonType.MARRIAGE && !input.marriageType) {
       throw new BadRequestException('Seleccione el tipo de matrimonio.');
@@ -343,12 +350,19 @@ export class LeaveRequestsService {
     }
     const overlapping = await manager
       .createQueryBuilder(LeaveRequest, 'request')
-      .where('request.employeeId = :employeeId', { employeeId: input.employeeId })
-      .andWhere('request.status != :rejected', { rejected: LeaveRequestStatus.REJECTED })
-      .andWhere('request.startDate <= :endDate AND request.endDate >= :startDate', {
-        startDate: input.startDate,
-        endDate: input.endDate,
+      .where('request.employeeId = :employeeId', {
+        employeeId: input.employeeId,
       })
+      .andWhere('request.status != :rejected', {
+        rejected: LeaveRequestStatus.REJECTED,
+      })
+      .andWhere(
+        'request.startDate <= :endDate AND request.endDate >= :startDate',
+        {
+          startDate: input.startDate,
+          endDate: input.endDate,
+        },
+      )
       .getExists();
     if (overlapping) {
       throw new BadRequestException(
@@ -700,7 +714,9 @@ export class LeaveRequestsService {
 
   async findLiaisonApproved(requesterId: string) {
     const employee = await this.resolveEmployee(requesterId);
-    const access = await this.regionalManagerService.getHrLiaisonAccess(employee.id);
+    const access = await this.regionalManagerService.getHrLiaisonAccess(
+      employee.id,
+    );
     const regionalIds = access.assignments
       .filter((item) => item.permissions.leaves)
       .map((item) => item.regionalId);
@@ -711,7 +727,9 @@ export class LeaveRequestsService {
       .innerJoinAndSelect('request.area', 'area')
       .leftJoinAndSelect('request.documents', 'documents')
       .where('request.regionalId IN (:...regionalIds)', { regionalIds })
-      .andWhere('request.hrStatus = :approved', { approved: LeaveRequestStatus.APPROVED })
+      .andWhere('request.hrStatus = :approved', {
+        approved: LeaveRequestStatus.APPROVED,
+      })
       .orderBy('request.hrReviewedAt', 'DESC')
       .getMany();
     return requests.map((request) => ({
@@ -779,17 +797,6 @@ export class LeaveRequestsService {
     if (endDate < startDate) {
       throw new BadRequestException(
         'La fecha final no puede ser anterior a la fecha inicial.',
-      );
-    }
-    const datesChanged =
-      request.startDate !== startDate || request.endDate !== endDate;
-    if (
-      request.stage === LeaveRequestStage.COMPLETED &&
-      request.status === LeaveRequestStatus.APPROVED &&
-      datesChanged
-    ) {
-      throw new BadRequestException(
-        'Las fechas no pueden modificarse después de finalizar la licencia.',
       );
     }
     const businessDays = await this.countBusinessDays(startDate, endDate);
@@ -953,7 +960,8 @@ export class LeaveRequestsService {
         .setLock('pessimistic_write')
         .where('request.id = :id', { id })
         .getOne();
-      if (!request) throw new NotFoundException('Solicitud de licencia no encontrada.');
+      if (!request)
+        throw new NotFoundException('Solicitud de licencia no encontrada.');
       if (
         request.hrStatus !== LeaveRequestStatus.APPROVED ||
         request.status === LeaveRequestStatus.REJECTED
@@ -966,7 +974,13 @@ export class LeaveRequestsService {
         where: { leaveRequestId: request.id },
       });
       this.validateLegalRequest(
-        { ...dto, startDate: request.startDate, endDate: request.endDate, reason: request.reason, documents: [] },
+        {
+          ...dto,
+          startDate: request.startDate,
+          endDate: request.endDate,
+          reason: request.reason,
+          documents: [],
+        },
         request.businessDays,
       );
       if (request.vacationImpactApplied && request.type !== dto.type) {
@@ -1653,9 +1667,15 @@ export class LeaveRequestsService {
     reasonType: LeaveReasonType,
     relationship?: LeaveRelationship | null,
   ) {
-    if ([LeaveReasonType.DEATH, LeaveReasonType.EXTENDED_DEATH].includes(reasonType))
+    if (
+      [LeaveReasonType.DEATH, LeaveReasonType.EXTENDED_DEATH].includes(
+        reasonType,
+      )
+    )
       return ['DEATH_CERTIFICATE', 'BIRTH_CERTIFICATE'];
-    if ([LeaveReasonType.IHSS, LeaveReasonType.FAMILY_CARE].includes(reasonType))
+    if (
+      [LeaveReasonType.IHSS, LeaveReasonType.FAMILY_CARE].includes(reasonType)
+    )
       return relationship === LeaveRelationship.SELF
         ? ['IHSS_CERTIFICATE']
         : ['IHSS_CERTIFICATE', 'BIRTH_CERTIFICATE'];
