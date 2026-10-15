@@ -599,7 +599,14 @@ export class EmployeeExitPermitsService {
   async create(dto: CreateEmployeeExitPermitDto) {
     const minimumRequestDate = this.minimumRetroactiveDate();
     const endDate = dto.end_date || dto.exit_date;
-    if (dto.exit_date < minimumRequestDate && !(await this.hasRetroactiveAuthorization(dto.employee_id, dto.exit_date, endDate))) {
+    if (
+      dto.exit_date < minimumRequestDate &&
+      !(await this.hasRetroactiveAuthorization(
+        dto.employee_id,
+        dto.exit_date,
+        endDate,
+      ))
+    ) {
       throw new BadRequestException(
         'Los pases de salida solo pueden solicitarse hasta 10 días calendario hacia atrás, salvo autorización previa de RR. HH.',
       );
@@ -623,6 +630,14 @@ export class EmployeeExitPermitsService {
 
     const isPersonal = this.isPersonalPermit(dto.permit_type);
     const isCompensatory = this.isCompensatoryPermit(dto.permit_type);
+    const isDisability = this.isDisabilityPermit(dto.permit_type);
+    const isTherapy = this.isTherapyPermit(dto.permit_type);
+    const isStudy = this.isStudyPermit(dto.permit_type);
+    if ((isDisability || isTherapy || isStudy) && !dto.base64FileFoto) {
+      throw new BadRequestException(
+        'Debe adjuntar el documento de respaldo en PDF o imagen',
+      );
+    }
     if (endDate < dto.exit_date) {
       throw new BadRequestException(
         'La fecha final no puede ser anterior a la fecha de salida',
@@ -656,11 +671,50 @@ export class EmployeeExitPermitsService {
         dto.return_time,
       );
     }
+    if (isStudy) {
+      if (!dto.end_date || endDate <= dto.exit_date) {
+        throw new BadRequestException(
+          'El permiso de estudio debe indicar una fecha final posterior a la fecha inicial',
+        );
+      }
+      if (dto.without_return || !dto.return_time) {
+        throw new BadRequestException(
+          'El permiso de estudio debe indicar hora de salida y retorno',
+        );
+      }
+      const studySchedule = await this.getEmployeeSchedule(dto.employee_id);
+      if (!studySchedule.startTime || !studySchedule.endTime) {
+        throw new BadRequestException(
+          'El empleado no tiene un horario asignado para validar el permiso de estudio',
+        );
+      }
+      const scheduleStart = this.timeToMinutes(studySchedule.startTime);
+      const scheduleEnd = this.timeToMinutes(studySchedule.endTime);
+      const requestedStart = this.timeToMinutes(dto.exit_time);
+      const requestedEnd = this.timeToMinutes(dto.return_time);
+      const validStudySchedule =
+        (requestedStart === scheduleStart &&
+          requestedEnd === scheduleStart + 60) ||
+        (requestedStart === scheduleEnd - 60 && requestedEnd === scheduleEnd);
+      if (!validStudySchedule) {
+        const morningEnd = this.minutesToTime(scheduleStart + 60);
+        const afternoonStart = this.minutesToTime(scheduleEnd - 60);
+        throw new BadRequestException(
+          `El permiso de estudio debe corresponder a la primera hora (${this.minutesToTime(scheduleStart)} a ${morningEnd}) o a la última hora (${afternoonStart} a ${this.minutesToTime(scheduleEnd)}) del horario del empleado.`,
+        );
+      }
+    }
+    if (isTherapy && (!dto.end_date || endDate <= dto.exit_date)) {
+      throw new BadRequestException(
+        'El permiso de terapia debe indicar una fecha final posterior a la fecha inicial',
+      );
+    }
     const employeeSchedule = isPersonal
       ? await this.getEmployeeSchedule(dto.employee_id)
       : undefined;
     const personalDuration = isPersonal
-      ? dto.personal_duration || this.classifyPersonalPermit(
+      ? dto.personal_duration ||
+        this.classifyPersonalPermit(
           dto.exit_time,
           dto.return_time,
           Boolean(dto.without_return),
@@ -756,30 +810,53 @@ export class EmployeeExitPermitsService {
     return savedPermit;
   }
 
-  async authorizeRetroactive(dto: AuthorizeRetroactiveExitPermitDto, currentEmployeeId: string) {
-    if (!currentEmployeeId) throw new ForbiddenException('No fue posible identificar al usuario de RR. HH.');
-    if (dto.endDate < dto.startDate) throw new BadRequestException('La fecha final no puede ser anterior a la fecha inicial.');
+  async authorizeRetroactive(
+    dto: AuthorizeRetroactiveExitPermitDto,
+    currentEmployeeId: string,
+  ) {
+    if (!currentEmployeeId)
+      throw new ForbiddenException(
+        'No fue posible identificar al usuario de RR. HH.',
+      );
+    if (dto.endDate < dto.startDate)
+      throw new BadRequestException(
+        'La fecha final no puede ser anterior a la fecha inicial.',
+      );
     if (dto.endDate >= this.localDateInTegucigalpa()) {
-      throw new BadRequestException('La autorización solo puede incluir fechas anteriores a hoy.');
+      throw new BadRequestException(
+        'La autorización solo puede incluir fechas anteriores a hoy.',
+      );
     }
-    const employee = await this.employeeRepository.findOne({ where: { id: dto.employeeId } });
+    const employee = await this.employeeRepository.findOne({
+      where: { id: dto.employeeId },
+    });
     if (!employee) throw new NotFoundException('Empleado no encontrado.');
-    return this.retroactiveAuthorizationRepository.save(this.retroactiveAuthorizationRepository.create({
-      employeeId: dto.employeeId,
-      authorizedByEmployeeId: currentEmployeeId,
-      startDate: dto.startDate,
-      endDate: dto.endDate,
-      isActive: true,
-    }));
+    return this.retroactiveAuthorizationRepository.save(
+      this.retroactiveAuthorizationRepository.create({
+        employeeId: dto.employeeId,
+        authorizedByEmployeeId: currentEmployeeId,
+        startDate: dto.startDate,
+        endDate: dto.endDate,
+        isActive: true,
+      }),
+    );
   }
 
   async findRetroactiveAuthorizations(employeeId: string) {
-    if (!employeeId) throw new ForbiddenException('No fue posible identificar al empleado.');
+    if (!employeeId)
+      throw new ForbiddenException('No fue posible identificar al empleado.');
     const ranges = await this.retroactiveAuthorizationRepository.find({
       where: { employeeId, isActive: true },
       order: { startDate: 'ASC' },
     });
-    return { normalMinimumDate: this.minimumRetroactiveDate(), ranges: ranges.map((item) => ({ id: item.id, startDate: item.startDate, endDate: item.endDate })) };
+    return {
+      normalMinimumDate: this.minimumRetroactiveDate(),
+      ranges: ranges.map((item) => ({
+        id: item.id,
+        startDate: item.startDate,
+        endDate: item.endDate,
+      })),
+    };
   }
 
   async findHrRetroactiveAuthorizations(params: ListHrExitPermitsDto) {
@@ -792,13 +869,27 @@ export class EmployeeExitPermitsService {
 
     if (params.search?.trim()) {
       const search = `%${params.search.trim().toLowerCase()}%`;
-      query.andWhere(new Brackets((qb) => qb
-        .where('LOWER(employee.firstName) LIKE :search', { search })
-        .orWhere('LOWER(employee.lastName) LIKE :search', { search })
-        .orWhere("LOWER(COALESCE(employee.middleName, '')) LIKE :search", { search })
-        .orWhere("LOWER(COALESCE(employee.secondLastName, '')) LIKE :search", { search })
-        .orWhere("LOWER(COALESCE(employee.dni, '')) LIKE :search", { search })
-        .orWhere("LOWER(COALESCE(employee.biometric_id, '')) LIKE :search", { search })));
+      query.andWhere(
+        new Brackets((qb) =>
+          qb
+            .where('LOWER(employee.firstName) LIKE :search', { search })
+            .orWhere('LOWER(employee.lastName) LIKE :search', { search })
+            .orWhere("LOWER(COALESCE(employee.middleName, '')) LIKE :search", {
+              search,
+            })
+            .orWhere(
+              "LOWER(COALESCE(employee.secondLastName, '')) LIKE :search",
+              { search },
+            )
+            .orWhere("LOWER(COALESCE(employee.dni, '')) LIKE :search", {
+              search,
+            })
+            .orWhere(
+              "LOWER(COALESCE(employee.biometric_id, '')) LIKE :search",
+              { search },
+            ),
+        ),
+      );
     }
 
     const [records, total] = await query
@@ -825,8 +916,13 @@ export class EmployeeExitPermitsService {
     };
   }
 
-  private async hasRetroactiveAuthorization(employeeId: string, startDate: string, endDate: string) {
-    return this.retroactiveAuthorizationRepository.createQueryBuilder('authorization')
+  private async hasRetroactiveAuthorization(
+    employeeId: string,
+    startDate: string,
+    endDate: string,
+  ) {
+    return this.retroactiveAuthorizationRepository
+      .createQueryBuilder('authorization')
       .where('authorization.employee_id = :employeeId', { employeeId })
       .andWhere('authorization.is_active = true')
       .andWhere('authorization.start_date <= :startDate', { startDate })
@@ -932,7 +1028,9 @@ export class EmployeeExitPermitsService {
         ),
       status: permit.status,
     }));
-    const halfDays = entries.filter((entry) => entry.duration === 'HALF').length;
+    const halfDays = entries.filter(
+      (entry) => entry.duration === 'HALF',
+    ).length;
     const hasFullDay = entries.some((entry) => entry.duration === 'FULL');
     const dates = entries.map((entry) => entry.date).join(', ');
     const message = hasFullDay
@@ -959,7 +1057,10 @@ export class EmployeeExitPermitsService {
     };
   }
 
-  private async getCountablePersonalPermits(employeeId: string, exitDate: string) {
+  private async getCountablePersonalPermits(
+    employeeId: string,
+    exitDate: string,
+  ) {
     const monthStart = `${exitDate.slice(0, 7)}-01`;
     const date = new Date(`${monthStart}T12:00:00`);
     date.setMonth(date.getMonth() + 1);
@@ -982,8 +1083,14 @@ export class EmployeeExitPermitsService {
     ]);
     return records.filter(
       (permit) =>
-        ![permit.status, permit.boss_status, permit.hr_status, permit.liaison_status]
-          .some((status) => rejectedValues.has(String(status || '').toLowerCase())),
+        ![
+          permit.status,
+          permit.boss_status,
+          permit.hr_status,
+          permit.liaison_status,
+        ].some((status) =>
+          rejectedValues.has(String(status || '').toLowerCase()),
+        ),
     );
   }
 
@@ -1000,7 +1107,10 @@ export class EmployeeExitPermitsService {
     requested: 'HALF' | 'FULL',
     schedule?: { startTime?: string; endTime?: string },
   ) {
-    const monthly = await this.getCountablePersonalPermits(employeeId, exitDate);
+    const monthly = await this.getCountablePersonalPermits(
+      employeeId,
+      exitDate,
+    );
 
     // Recalculate legacy rows using their actual schedule. Older versions only
     // recognized the morning window and stored afternoon half-days as FULL.
@@ -1056,7 +1166,8 @@ export class EmployeeExitPermitsService {
     const nextMonth = nextMonthDate.toISOString().slice(0, 10);
     const yearStart = `${targetDate.slice(0, 4)}-01-01`;
     const nextYear = `${Number(targetDate.slice(0, 4)) + 1}-01-01`;
-    const queryStart = evaluationStart < yearStart ? evaluationStart : yearStart;
+    const queryStart =
+      evaluationStart < yearStart ? evaluationStart : yearStart;
     const queryEnd = nextMonth > nextYear ? nextMonth : nextYear;
     const employee = await this.employeeRepository.findOne({
       where: { id: employeeId },
@@ -1109,11 +1220,11 @@ export class EmployeeExitPermitsService {
         };
       })
       .filter(Boolean) as Array<{
-        date: string;
-        scheduledExit: string;
-        actualExit: string;
-        minutes: number;
-      }>;
+      date: string;
+      scheduledExit: string;
+      actualExit: string;
+      minutes: number;
+    }>;
 
     const requests = await this.exitPermitRepository
       .createQueryBuilder('permit')
@@ -1124,11 +1235,21 @@ export class EmployeeExitPermitsService {
       .andWhere('permit.exit_date >= :queryStart', { queryStart })
       .andWhere('permit.exit_date < :queryEnd', { queryEnd })
       .getMany();
-    const rejected = new Set(['rejected', 'cancelled', 'canceled', 'cancelado', 'denied']);
+    const rejected = new Set([
+      'rejected',
+      'cancelled',
+      'canceled',
+      'cancelado',
+      'denied',
+    ]);
     const activeRequests = requests.filter(
       (permit) =>
-        ![permit.status, permit.boss_status, permit.hr_status, permit.liaison_status]
-          .some((status) => rejected.has(String(status || '').toLowerCase())),
+        ![
+          permit.status,
+          permit.boss_status,
+          permit.hr_status,
+          permit.liaison_status,
+        ].some((status) => rejected.has(String(status || '').toLowerCase())),
     );
     const evaluationRequests = activeRequests.filter(
       (permit) =>
@@ -1147,10 +1268,14 @@ export class EmployeeExitPermitsService {
     );
     const usedMinutes = evaluationRequests.reduce(
       (total, permit) =>
-        total + (this.getDurationInMinutes(permit.exit_time, permit.return_time) || 0),
+        total +
+        (this.getDurationInMinutes(permit.exit_time, permit.return_time) || 0),
       0,
     );
-    const earnedMinutes = earnedDays.reduce((total, day) => total + day.minutes, 0);
+    const earnedMinutes = earnedDays.reduce(
+      (total, day) => total + day.minutes,
+      0,
+    );
     return {
       month: targetDate.slice(0, 7),
       evaluatedFrom: evaluationStart,
@@ -1167,7 +1292,8 @@ export class EmployeeExitPermitsService {
       requests: evaluationRequests.map((permit) => ({
         id: permit.id,
         date: String(permit.exit_date),
-        minutes: this.getDurationInMinutes(permit.exit_time, permit.return_time) || 0,
+        minutes:
+          this.getDurationInMinutes(permit.exit_time, permit.return_time) || 0,
         status: permit.status,
       })),
     };
@@ -2001,8 +2127,35 @@ export class EmployeeExitPermitsService {
   }
 
   private isCompensatoryPermit(permitType?: string | null) {
-    return String(permitType || '').trim().toLocaleLowerCase('es') ===
-      'horas compensatorias';
+    return (
+      String(permitType || '')
+        .trim()
+        .toLocaleLowerCase('es') === 'horas compensatorias'
+    );
+  }
+
+  private isDisabilityPermit(permitType?: string | null) {
+    return (
+      String(permitType || '')
+        .trim()
+        .toLocaleLowerCase('es') === 'incapacidades'
+    );
+  }
+
+  private isTherapyPermit(permitType?: string | null) {
+    return (
+      String(permitType || '')
+        .trim()
+        .toLocaleLowerCase('es') === 'permiso de terapia'
+    );
+  }
+
+  private isStudyPermit(permitType?: string | null) {
+    return (
+      String(permitType || '')
+        .trim()
+        .toLocaleLowerCase('es') === 'permiso de estudio'
+    );
   }
 
   private getDurationInMinutes(exitTime: string, returnTime: string | null) {

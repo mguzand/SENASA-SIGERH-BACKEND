@@ -149,6 +149,9 @@ export function resolveAttendanceCode(input: {
       'otros permisos': 'OP',
       'otros pases': 'OP',
       'horas compensatorias': 'HC',
+      incapacidades: 'INC',
+      'permiso de terapia': 'TER',
+      'permiso de estudio': 'EST',
     };
     const permitCode = permitCodes[permit] || null;
     const code = permitCode

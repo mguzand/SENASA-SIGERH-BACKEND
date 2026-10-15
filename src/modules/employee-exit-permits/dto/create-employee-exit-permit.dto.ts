@@ -32,6 +32,9 @@ export class CreateEmployeeExitPermitDto {
     'Médico IHSS',
     'Médico Privado',
     'Servicio de Salud Pública',
+    'Incapacidades',
+    'Permiso de Terapia',
+    'Permiso de Estudio',
   ])
   permit_type: string;
 

@@ -81,6 +81,9 @@ describe('Attendance report rules', () => {
     ['Servicio de Salud Pública', 'SSP'],
     ['Otros permisos', 'OP'],
     ['Otros Pases', 'OP'],
+    ['Incapacidades', 'INC'],
+    ['Permiso de Terapia', 'TER'],
+    ['Permiso de Estudio', 'EST'],
   ])('resolves permit %s as %s', (permitType, code) => {
     expect(
       resolveAttendanceCode({
