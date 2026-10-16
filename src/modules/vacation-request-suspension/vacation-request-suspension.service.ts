@@ -28,18 +28,31 @@ import { VacationRequestDay } from '../vacation_request_days/entities/vacation_r
 import { VacationRequestDayStatus } from 'src/common/enums/vacation.enums';
 
 export function buildReverseRestorationPlan(
-  details: Array<{ id: string; vacationPeriodId: string; periodStartDate: string; daysUsed: number }>,
+  details: Array<{
+    id: string;
+    vacationPeriodId: string;
+    periodStartDate: string;
+    daysUsed: number;
+  }>,
   restoredDays: number,
 ) {
   let remaining = restoredDays;
-  const plan: Array<{ detailId: string; vacationPeriodId: string; days: number }> = [];
+  const plan: Array<{
+    detailId: string;
+    vacationPeriodId: string;
+    days: number;
+  }> = [];
   [...details]
     .sort((a, b) => b.periodStartDate.localeCompare(a.periodStartDate))
     .forEach((detail) => {
       if (remaining <= 0) return;
       const days = Math.min(Number(detail.daysUsed), remaining);
       if (days > 0) {
-        plan.push({ detailId: detail.id, vacationPeriodId: detail.vacationPeriodId, days });
+        plan.push({
+          detailId: detail.id,
+          vacationPeriodId: detail.vacationPeriodId,
+          days,
+        });
         remaining -= days;
       }
     });
@@ -66,7 +79,9 @@ export class VacationRequestSuspensionService {
     hrEmployeeId: string,
   ) {
     if (!hrEmployeeId) {
-      throw new ForbiddenException('No fue posible identificar al usuario de RR. HH.');
+      throw new ForbiddenException(
+        'No fue posible identificar al usuario de RR. HH.',
+      );
     }
 
     const queryRunner = this.dataSource.createQueryRunner();
@@ -83,25 +98,31 @@ export class VacationRequestSuspensionService {
         where: { id: vacationRequestId },
         lock: { mode: 'pessimistic_write' },
       });
-      if (!request) throw new NotFoundException('Solicitud de vacaciones no encontrada');
+      if (!request)
+        throw new NotFoundException('Solicitud de vacaciones no encontrada');
 
-      const hrAreaIds = await this.areaManagerService.findAreaIdsByEmployeeAndRole(
-        hrEmployeeId,
-        AreaManagerRole.HR,
-      );
-      if (!hrAreaIds.length && request.hr_employee_id !== hrEmployeeId) {
-        throw new ForbiddenException('Solo Recursos Humanos puede suspender vacaciones.');
-      }
+      // const hrAreaIds = await this.areaManagerService.findAreaIdsByEmployeeAndRole(
+      //   hrEmployeeId,
+      //   AreaManagerRole.HR,
+      // );
+      // if (!hrAreaIds.length && request.hr_employee_id !== hrEmployeeId) {
+      //   throw new ForbiddenException('Solo Recursos Humanos puede suspender vacaciones.');
+      // }
       if (
-        ![VacationRequestStatus.APPROVED, VacationRequestStatus.PARTIALLY_SUSPENDED].includes(
-          request.status,
-        ) ||
+        ![
+          VacationRequestStatus.APPROVED,
+          VacationRequestStatus.PARTIALLY_SUSPENDED,
+        ].includes(request.status) ||
         request.hr_status !== VacationRequestStatus.APPROVED
       ) {
-        throw new BadRequestException('Solo se pueden suspender vacaciones aprobadas por RR. HH.');
+        throw new BadRequestException(
+          'Solo se pueden suspender vacaciones aprobadas por RR. HH.',
+        );
       }
       if (!request.is_processed) {
-        throw new BadRequestException('La solicitud todavía no ha sido procesada contra el saldo.');
+        throw new BadRequestException(
+          'La solicitud todavía no ha sido procesada contra el saldo.',
+        );
       }
 
       const today = this.todayInTegucigalpa();
@@ -123,13 +144,18 @@ export class VacationRequestSuspensionService {
             queryRunner.manager,
           );
 
-      if (!dto.suspend_all_remaining && days.length !== new Set(dto.days || []).size) {
+      if (
+        !dto.suspend_all_remaining &&
+        days.length !== new Set(dto.days || []).size
+      ) {
         throw new BadRequestException(
           'Uno o más días no pertenecen a la solicitud o ya fueron suspendidos.',
         );
       }
       if (!days.length) {
-        throw new BadRequestException('No hay días válidos disponibles para suspender.');
+        throw new BadRequestException(
+          'No hay días válidos disponibles para suspender.',
+        );
       }
 
       const restoredDays = days.length;
@@ -165,7 +191,9 @@ export class VacationRequestSuspensionService {
       }
 
       for (const item of restoration.plan) {
-        const detail = details.find((candidate) => candidate.id === item.detailId)!;
+        const detail = details.find(
+          (candidate) => candidate.id === item.detailId,
+        )!;
         const restore = item.days;
 
         await this.periodService.restoreVacationDaysWithManager(
@@ -190,14 +218,19 @@ export class VacationRequestSuspensionService {
         );
       }
 
-      await this.dayService.markSuspendedWithManager(days, suspension.id, queryRunner.manager);
+      await this.dayService.markSuspendedWithManager(
+        days,
+        suspension.id,
+        queryRunner.manager,
+      );
       approvedDaysRemaining = await this.dayService.countApprovedWithManager(
         request.id,
         queryRunner.manager,
       );
-      finalStatus = approvedDaysRemaining > 0
-        ? VacationRequestStatus.PARTIALLY_SUSPENDED
-        : VacationRequestStatus.SUSPENDED;
+      finalStatus =
+        approvedDaysRemaining > 0
+          ? VacationRequestStatus.PARTIALLY_SUSPENDED
+          : VacationRequestStatus.SUSPENDED;
       request.approved_days = approvedDaysRemaining;
       request.status = finalStatus;
       await queryRunner.manager.save(VacationRequest, request);
@@ -238,18 +271,35 @@ export class VacationRequestSuspensionService {
     dto: RescheduleVacationRequestDto,
     hrEmployeeId: string,
   ) {
-    if (!hrEmployeeId) throw new ForbiddenException('No fue posible identificar al usuario de RR. HH.');
-    const originalDays = [...new Set(dto.original_days.map((day) => day.slice(0, 10)))].sort();
-    const newDays = [...new Set(dto.new_days.map((day) => day.slice(0, 10)))].sort();
+    if (!hrEmployeeId)
+      throw new ForbiddenException(
+        'No fue posible identificar al usuario de RR. HH.',
+      );
+    const originalDays = [
+      ...new Set(dto.original_days.map((day) => day.slice(0, 10))),
+    ].sort();
+    const newDays = [
+      ...new Set(dto.new_days.map((day) => day.slice(0, 10))),
+    ].sort();
     if (originalDays.length !== newDays.length) {
-      throw new BadRequestException('Debe seleccionar la misma cantidad de días de origen y destino.');
+      throw new BadRequestException(
+        'Debe seleccionar la misma cantidad de días de origen y destino.',
+      );
     }
     if (originalDays.every((day, index) => day === newDays[index])) {
-      throw new BadRequestException('Las fechas nuevas deben ser diferentes de las actuales.');
+      throw new BadRequestException(
+        'Las fechas nuevas deben ser diferentes de las actuales.',
+      );
     }
     const today = this.todayInTegucigalpa();
-    if (newDays.some((day) => [0, 6].includes(new Date(`${day}T00:00:00Z`).getUTCDay()))) {
-      throw new BadRequestException('No se pueden programar vacaciones en sábado o domingo.');
+    if (
+      newDays.some((day) =>
+        [0, 6].includes(new Date(`${day}T00:00:00Z`).getUTCDay()),
+      )
+    ) {
+      throw new BadRequestException(
+        'No se pueden programar vacaciones en sábado o domingo.',
+      );
     }
 
     const runner = this.dataSource.createQueryRunner();
@@ -258,27 +308,44 @@ export class VacationRequestSuspensionService {
     let employee: Employee | null = null;
     try {
       const request = await runner.manager.findOne(VacationRequest, {
-        where: { id: vacationRequestId }, lock: { mode: 'pessimistic_write' },
+        where: { id: vacationRequestId },
+        lock: { mode: 'pessimistic_write' },
       });
-      if (!request) throw new NotFoundException('Solicitud de vacaciones no encontrada');
-      const hrAreaIds = await this.areaManagerService.findAreaIdsByEmployeeAndRole(
-        hrEmployeeId, AreaManagerRole.HR,
-      );
+      if (!request)
+        throw new NotFoundException('Solicitud de vacaciones no encontrada');
+      const hrAreaIds =
+        await this.areaManagerService.findAreaIdsByEmployeeAndRole(
+          hrEmployeeId,
+          AreaManagerRole.HR,
+        );
       if (!hrAreaIds.length && request.hr_employee_id !== hrEmployeeId) {
-        throw new ForbiddenException('Solo Recursos Humanos puede correr días de vacaciones.');
+        throw new ForbiddenException(
+          'Solo Recursos Humanos puede correr días de vacaciones.',
+        );
       }
       if (
-        ![VacationRequestStatus.APPROVED, VacationRequestStatus.PARTIALLY_SUSPENDED].includes(request.status) ||
-        request.hr_status !== VacationRequestStatus.APPROVED || !request.is_processed
+        ![
+          VacationRequestStatus.APPROVED,
+          VacationRequestStatus.PARTIALLY_SUSPENDED,
+        ].includes(request.status) ||
+        request.hr_status !== VacationRequestStatus.APPROVED ||
+        !request.is_processed
       ) {
-        throw new BadRequestException('Solo se pueden correr días de vacaciones aprobadas y procesadas.');
+        throw new BadRequestException(
+          'Solo se pueden correr días de vacaciones aprobadas y procesadas.',
+        );
       }
 
       const days = await this.dayService.findSuspendibleWithManager(
-        request.id, originalDays, today, runner.manager,
+        request.id,
+        originalDays,
+        today,
+        runner.manager,
       );
       if (days.length !== originalDays.length) {
-        throw new BadRequestException('Uno o más días fueron suspendidos o no pertenecen a la solicitud.');
+        throw new BadRequestException(
+          'Uno o más días fueron suspendidos o no pertenecen a la solicitud.',
+        );
       }
 
       const blocked: Array<{ date: string }> = await runner.query(
@@ -294,7 +361,9 @@ export class VacationRequestSuspensionService {
         [newDays, request.employee_id],
       );
       if (blocked.length) {
-        throw new BadRequestException(`Hay fechas feriadas o no disponibles: ${blocked.map((item) => item.date).join(', ')}`);
+        throw new BadRequestException(
+          `Hay fechas feriadas o no disponibles: ${blocked.map((item) => item.date).join(', ')}`,
+        );
       }
 
       const occupied: Array<{ date: string }> = await runner.query(
@@ -310,25 +379,29 @@ export class VacationRequestSuspensionService {
         [request.employee_id, newDays, days.map((day) => day.id)],
       );
       if (occupied.length) {
-        throw new BadRequestException(`El empleado ya tiene vacaciones en: ${occupied.map((item) => item.date).join(', ')}`);
+        throw new BadRequestException(
+          `El empleado ya tiene vacaciones en: ${occupied.map((item) => item.date).join(', ')}`,
+        );
       }
 
-      const orderedDays = [...days].sort((a, b) => a.date.localeCompare(b.date));
+      const orderedDays = [...days].sort((a, b) =>
+        a.date.localeCompare(b.date),
+      );
       orderedDays.forEach((day, index) => {
         day.date = newDays[index];
         day.note = `Reprogramado desde ${originalDays[index]}. Motivo: ${dto.reason.trim()}`;
       });
       await runner.manager.save(VacationRequestDay, orderedDays);
-      await runner.manager.save(VacationRequestReschedule, runner.manager.create(
+      await runner.manager.save(
         VacationRequestReschedule,
-        {
+        runner.manager.create(VacationRequestReschedule, {
           vacation_request_id: request.id,
           hr_employee_id: hrEmployeeId,
           original_days: originalDays,
           new_days: newDays,
           reason: dto.reason.trim(),
-        },
-      ));
+        }),
+      );
 
       const activeDays = await runner.manager.find(VacationRequestDay, {
         where: {
@@ -342,10 +415,17 @@ export class VacationRequestSuspensionService {
       request.end_date = activeDays[activeDays.length - 1].date;
       request.approved_days = activeDays.length;
       await runner.manager.save(VacationRequest, request);
-      employee = await runner.manager.findOne(Employee, { where: { id: request.employee_id } });
+      employee = await runner.manager.findOne(Employee, {
+        where: { id: request.employee_id },
+      });
       await runner.commitTransaction();
 
-      await this.notifyReschedule(employee, originalDays, newDays, dto.reason.trim());
+      await this.notifyReschedule(
+        employee,
+        originalDays,
+        newDays,
+        dto.reason.trim(),
+      );
       return {
         message: 'Días de vacaciones reprogramados correctamente',
         vacation_request_id: request.id,
@@ -367,13 +447,24 @@ export class VacationRequestSuspensionService {
       month: '2-digit',
       day: '2-digit',
     }).formatToParts(new Date());
-    const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    const value = Object.fromEntries(
+      parts.map((part) => [part.type, part.value]),
+    );
     return `${value.year}-${value.month}-${value.day}`;
   }
 
-  private async notifyEmployee(employee: Employee | null, days: string[], reason: string) {
+  private async notifyEmployee(
+    employee: Employee | null,
+    days: string[],
+    reason: string,
+  ) {
     if (!employee) return;
-    const name = [employee.firstName, employee.middleName, employee.lastName, employee.secondLastName]
+    const name = [
+      employee.firstName,
+      employee.middleName,
+      employee.lastName,
+      employee.secondLastName,
+    ]
       .filter(Boolean)
       .join(' ');
     const message = `Recursos Humanos suspendió ${days.length} día(s) de sus vacaciones y los devolvió a su saldo.`;
@@ -402,17 +493,33 @@ export class VacationRequestSuspensionService {
     reason: string,
   ) {
     if (!employee) return;
-    const name = [employee.firstName, employee.middleName, employee.lastName, employee.secondLastName]
-      .filter(Boolean).join(' ');
+    const name = [
+      employee.firstName,
+      employee.middleName,
+      employee.lastName,
+      employee.secondLastName,
+    ]
+      .filter(Boolean)
+      .join(' ');
     const message = `Recursos Humanos reprogramó ${newDays.length} día(s) de sus vacaciones.`;
     await Promise.allSettled([
       sendRequestNotification(
-        employee.email, 'Reprogramación de vacaciones', name || 'Empleado', message,
-        [`Fechas anteriores: ${originalDays.join(', ')}`, `Fechas nuevas: ${newDays.join(', ')}`, `Motivo: ${reason}`],
+        employee.email,
+        'Reprogramación de vacaciones',
+        name || 'Empleado',
+        message,
+        [
+          `Fechas anteriores: ${originalDays.join(', ')}`,
+          `Fechas nuevas: ${newDays.join(', ')}`,
+          `Motivo: ${reason}`,
+        ],
         'https://sigerh.senasa.gob.hn/vacations/history',
       ),
       this.pushNotifications.sendToEmployee(
-        employee.id, 'Vacaciones reprogramadas', message, '/vacations/history',
+        employee.id,
+        'Vacaciones reprogramadas',
+        message,
+        '/vacations/history',
       ),
     ]);
   }
