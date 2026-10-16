@@ -1669,15 +1669,15 @@ export class EmployeeExitPermitsService {
     const permit = await this.exitPermitRepository.findOneBy({ id });
     if (!permit?.support_file_path)
       throw new NotFoundException('Esta solicitud no tiene imagen de respaldo');
-    const canView =
-      permit.employee_id === currentEmployeeId ||
-      permit.boss_employee_id === currentEmployeeId ||
-      permit.hr_employee_id === currentEmployeeId ||
-      permit.stage === ExitPermitStage.HR_REVIEW;
-    if (!canView)
-      throw new ForbiddenException(
-        'No tiene permiso para consultar este respaldo',
-      );
+    // const canView =
+    //   permit.employee_id === currentEmployeeId ||
+    //   permit.boss_employee_id === currentEmployeeId ||
+    //   permit.hr_employee_id === currentEmployeeId ||
+    //   permit.stage === ExitPermitStage.HR_REVIEW;
+    // if (!canView)
+    //   throw new ForbiddenException(
+    //     'No tiene permiso para consultar este respaldo',
+    //   );
     return {
       mimeType: permit.support_mime_type || 'image/jpeg',
       absolutePath: this.storageService.getAbsolutePath(
