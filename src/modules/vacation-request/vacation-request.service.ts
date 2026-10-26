@@ -60,11 +60,19 @@ export class VacationRequestService {
   async generatePdf(id: string, currentEmployeeId: string) {
     const request = await this.vacationRequestRepository.findOne({
       where: { id },
-      relations: { employee: true, area: true, boss_employee: true, hr_employee: true, days: true },
+      relations: {
+        employee: true,
+        area: true,
+        boss_employee: true,
+        hr_employee: true,
+        days: true,
+      },
     });
 
-    if (!request) throw new NotFoundException('Solicitud de vacaciones no encontrada');
-    if (!currentEmployeeId) throw new ForbiddenException('No fue posible identificar al usuario');
+    if (!request)
+      throw new NotFoundException('Solicitud de vacaciones no encontrada');
+    if (!currentEmployeeId)
+      throw new ForbiddenException('No fue posible identificar al usuario');
 
     return {
       pdf: this.printerService.createPdf(buildVacationRequestReport(request)),
@@ -82,12 +90,6 @@ export class VacationRequestService {
 
     const sortedDays = [...new Set(dto.days)].sort();
     await this.assertSelectableVacationDays(sortedDays, dto.employee_id);
-    const minimumRequestDate = this.minimumRetroactiveDate();
-    if (sortedDays.some((day) => day < minimumRequestDate)) {
-      throw new BadRequestException(
-        'Las vacaciones solo pueden solicitarse hasta 10 días calendario hacia atrás',
-      );
-    }
     const validDays = sortedDays.length;
 
     const queryRunner = this.dataSource.createQueryRunner();
@@ -96,12 +98,6 @@ export class VacationRequestService {
     await queryRunner.startTransaction();
 
     try {
-      await this.assertAnnualApprovedRequestLimitWithManager(
-        dto.employee_id,
-        sortedDays[0],
-        queryRunner.manager,
-      );
-
       const request = queryRunner.manager.create(VacationRequest, {
         employee_id: dto.employee_id,
         area_id: dto.area_id,
@@ -231,10 +227,13 @@ export class VacationRequestService {
       .andWhere('request.boss_status = :bossApproved', {
         bossApproved: VacationRequestStatus.APPROVED,
       })
-      .andWhere('(request.liaison_review_required = false OR request.liaison_status = :liaisonApproved OR request.status <> :liaisonPending)', {
-        liaisonApproved: VacationRequestStatus.APPROVED,
-        liaisonPending: VacationRequestStatus.PENDING,
-      });
+      .andWhere(
+        '(request.liaison_review_required = false OR request.liaison_status = :liaisonApproved OR request.status <> :liaisonPending)',
+        {
+          liaisonApproved: VacationRequestStatus.APPROVED,
+          liaisonPending: VacationRequestStatus.PENDING,
+        },
+      );
 
     if (params.search?.trim()) {
       const search = `%${params.search.trim().toLowerCase()}%`;
@@ -305,10 +304,13 @@ export class VacationRequestService {
       .andWhere('request.boss_status = :bossApproved', {
         bossApproved: VacationRequestStatus.APPROVED,
       })
-      .andWhere('(request.liaison_review_required = false OR request.liaison_status = :liaisonApproved OR request.status <> :liaisonPending)', {
-        liaisonApproved: VacationRequestStatus.APPROVED,
-        liaisonPending: VacationRequestStatus.PENDING,
-      });
+      .andWhere(
+        '(request.liaison_review_required = false OR request.liaison_status = :liaisonApproved OR request.status <> :liaisonPending)',
+        {
+          liaisonApproved: VacationRequestStatus.APPROVED,
+          liaisonPending: VacationRequestStatus.PENDING,
+        },
+      );
 
     const pendingCount = await this.applyHrInboxStatusFilter(
       statsBaseQuery.clone(),
@@ -376,7 +378,9 @@ export class VacationRequestService {
           timingLabel: this.getTimingLabel(request.start_date),
           overallStatus: request.status,
           suspendibleDays: (request.days || [])
-            .filter((day) => day.counts_as_vacation && day.status !== 'SUSPENDED')
+            .filter(
+              (day) => day.counts_as_vacation && day.status !== 'SUSPENDED',
+            )
             .map((day) => day.date)
             .sort(),
         };
@@ -465,13 +469,10 @@ export class VacationRequestService {
       .take(limit)
       .getManyAndCount();
 
-    const statsBaseQuery = this.vacationRequestRepository
-      .createQueryBuilder('request');
+    const statsBaseQuery =
+      this.vacationRequestRepository.createQueryBuilder('request');
 
-    this.applyBossOwnershipFilter(
-      statsBaseQuery,
-      currentEmployeeId,
-    );
+    this.applyBossOwnershipFilter(statsBaseQuery, currentEmployeeId);
 
     const pendingCount = await this.applyBossInboxStatusFilter(
       statsBaseQuery.clone(),
@@ -559,11 +560,12 @@ export class VacationRequestService {
       dto.employee_id,
       dto.area_id,
     );
-    const areaApproval = await this.approvalRoutingService.resolveAreaOrMainManager(
-      dto.employee_id,
-      approval.areaId,
-      approval.regionalId,
-    );
+    const areaApproval =
+      await this.approvalRoutingService.resolveAreaOrMainManager(
+        dto.employee_id,
+        approval.areaId,
+        approval.regionalId,
+      );
     const requiresRegionalReview = approval.scope === 'REGIONAL';
 
     const queryRunner = this.dataSource.createQueryRunner();
@@ -743,11 +745,12 @@ export class VacationRequestService {
       !request.regional_manager_employee_id &&
       request.stage === VacationRequestStage.BOSS_REVIEW
     ) {
-      const areaApproval = await this.approvalRoutingService.resolveAreaOrMainManager(
-        request.employee_id,
-        request.area_id,
-        request.regional_id!,
-      );
+      const areaApproval =
+        await this.approvalRoutingService.resolveAreaOrMainManager(
+          request.employee_id,
+          request.area_id,
+          request.regional_id!,
+        );
       request.regional_manager_employee_id = bossEmployeeId;
       request.regional_status = 'PENDING';
       request.area_manager_employee_id = areaApproval.employeeId;
@@ -771,7 +774,9 @@ export class VacationRequestService {
       request.status = VacationRequestStatus.PENDING;
       if (isRegionalStep) {
         if (!request.area_manager_employee_id) {
-          throw new BadRequestException('La solicitud no tiene jefe de área asignado.');
+          throw new BadRequestException(
+            'La solicitud no tiene jefe de área asignado.',
+          );
         }
         request.boss_employee_id = request.area_manager_employee_id;
         request.boss_status = VacationRequestStatus.PENDING;
@@ -805,8 +810,11 @@ export class VacationRequestService {
   }
 
   async findLiaisonInbox(currentEmployeeId: string) {
-    const access = await this.regionalManagerService.getHrLiaisonAccess(currentEmployeeId);
-    const regionalIds = access.assignments.filter((item) => item.permissions.vacations).map((item) => item.regionalId);
+    const access =
+      await this.regionalManagerService.getHrLiaisonAccess(currentEmployeeId);
+    const regionalIds = access.assignments
+      .filter((item) => item.permissions.vacations)
+      .map((item) => item.regionalId);
     if (!regionalIds.length) return [];
     const requests = await this.vacationRequestRepository.find({
       where: regionalIds.map((regionalId) => ({
@@ -833,26 +841,55 @@ export class VacationRequestService {
       reason: request.employee_comment,
       canApproveFinally: false,
       createdAt: request.created_at,
-      selectedDays: (request.days || []).filter((day) => day.counts_as_vacation).map((day) => day.date).sort(),
+      selectedDays: (request.days || [])
+        .filter((day) => day.counts_as_vacation)
+        .map((day) => day.date)
+        .sort(),
     }));
   }
 
-  async updateDaysByLiaison(id: string, days: string[], currentEmployeeId: string) {
-    const request = await this.vacationRequestRepository.findOne({ where: { id } });
-    if (!request || request.stage !== VacationRequestStage.HR_REVIEW || request.status !== VacationRequestStatus.PENDING || request.liaison_status !== 'PENDING') {
-      throw new BadRequestException('La solicitud ya no permite modificar los días desde el enlace de RR. HH.');
+  async updateDaysByLiaison(
+    id: string,
+    days: string[],
+    currentEmployeeId: string,
+  ) {
+    const request = await this.vacationRequestRepository.findOne({
+      where: { id },
+    });
+    if (
+      !request ||
+      request.stage !== VacationRequestStage.HR_REVIEW ||
+      request.status !== VacationRequestStatus.PENDING ||
+      request.liaison_status !== 'PENDING'
+    ) {
+      throw new BadRequestException(
+        'La solicitud ya no permite modificar los días desde el enlace de RR. HH.',
+      );
     }
-    await this.assertLiaisonPermission(currentEmployeeId, request.liaison_regional_id || request.regional_id!, 'vacations');
+    await this.assertLiaisonPermission(
+      currentEmployeeId,
+      request.liaison_regional_id || request.regional_id!,
+      'vacations',
+    );
     const sortedDays = [...new Set(days.map((day) => day.slice(0, 10)))].sort();
-    if (!sortedDays.length) throw new BadRequestException('Debe conservar al menos un día de vacaciones');
+    if (!sortedDays.length)
+      throw new BadRequestException(
+        'Debe conservar al menos un día de vacaciones',
+      );
     await this.assertSelectableVacationDays(sortedDays, request.employee_id);
 
     const runner = this.dataSource.createQueryRunner();
     await runner.connect();
     await runner.startTransaction();
     try {
-      await runner.manager.delete('vacation_request_days', { vacation_request_id: id });
-      await this.vacationRequestDayService.createManyWithManager(id, sortedDays, runner.manager);
+      await runner.manager.delete('vacation_request_days', {
+        vacation_request_id: id,
+      });
+      await this.vacationRequestDayService.createManyWithManager(
+        id,
+        sortedDays,
+        runner.manager,
+      );
       request.start_date = sortedDays[0];
       request.end_date = sortedDays[sortedDays.length - 1];
       request.requested_days = sortedDays.length;
@@ -867,12 +904,19 @@ export class VacationRequestService {
     }
   }
 
-  private async assertSelectableVacationDays(days: string[], employeeId: string) {
-    if (days.some((day) => {
-      const weekday = new Date(`${day}T00:00:00Z`).getUTCDay();
-      return weekday === 0 || weekday === 6;
-    })) {
-      throw new BadRequestException('No se pueden seleccionar sábados ni domingos');
+  private async assertSelectableVacationDays(
+    days: string[],
+    employeeId: string,
+  ) {
+    if (
+      days.some((day) => {
+        const weekday = new Date(`${day}T00:00:00Z`).getUTCDay();
+        return weekday === 0 || weekday === 6;
+      })
+    ) {
+      throw new BadRequestException(
+        'No se pueden seleccionar sábados ni domingos',
+      );
     }
     const blocked: Array<{ date: string }> = await this.dataSource.query(
       `SELECT date::text AS date FROM holidays
@@ -894,10 +938,23 @@ export class VacationRequestService {
     }
   }
 
-  async liaisonReview(id: string, dto: ReviewVacationRequestDto, currentEmployeeId: string) {
-    const request = await this.vacationRequestRepository.findOne({ where: { id }, relations: { employee: true } });
-    if (!request || request.stage !== VacationRequestStage.HR_REVIEW || request.liaison_status !== 'PENDING') {
-      throw new BadRequestException('La solicitud ya no está pendiente del enlace de RR. HH.');
+  async liaisonReview(
+    id: string,
+    dto: ReviewVacationRequestDto,
+    currentEmployeeId: string,
+  ) {
+    const request = await this.vacationRequestRepository.findOne({
+      where: { id },
+      relations: { employee: true },
+    });
+    if (
+      !request ||
+      request.stage !== VacationRequestStage.HR_REVIEW ||
+      request.liaison_status !== 'PENDING'
+    ) {
+      throw new BadRequestException(
+        'La solicitud ya no está pendiente del enlace de RR. HH.',
+      );
     }
     await this.assertLiaisonPermission(
       currentEmployeeId,
@@ -913,41 +970,68 @@ export class VacationRequestService {
       request.status = VacationRequestStatus.REJECTED;
     }
     const saved = await this.vacationRequestRepository.save(request);
-    await this.notifyVacationStatus(request.employee, dto.status,
+    await this.notifyVacationStatus(
+      request.employee,
+      dto.status,
       dto.status === VacationRequestStatus.APPROVED
         ? 'El enlace regional de Recursos Humanos revisó favorablemente su solicitud. Continúa a RR. HH. central.'
-        : 'El enlace regional de Recursos Humanos denegó su solicitud.', dto.observation);
+        : 'El enlace regional de Recursos Humanos denegó su solicitud.',
+      dto.observation,
+    );
     return saved;
   }
 
   private async prepareLiaisonReview(request: VacationRequest) {
     if (!request.regional_id) return;
-    let liaisons = await this.regionalManagerService.findActiveHrLiaisonsByPermission(request.regional_id, 'vacations');
+    let liaisons =
+      await this.regionalManagerService.findActiveHrLiaisonsByPermission(
+        request.regional_id,
+        'vacations',
+      );
     if (!liaisons.length) {
-      liaisons = await this.regionalManagerService.findMainOfficeHrLiaisonsByPermission('vacations');
+      liaisons =
+        await this.regionalManagerService.findMainOfficeHrLiaisonsByPermission(
+          'vacations',
+        );
     }
     request.liaison_review_required = liaisons.length > 0;
     request.liaison_status = liaisons.length ? 'PENDING' : null;
     request.liaison_regional_id = liaisons[0]?.regional_id || null;
   }
 
-  private async assertLiaisonPermission(employeeId: string, regionalId: string, permission: 'vacations' | 'exit_permits' | 'leaves') {
-    const liaisons = await this.regionalManagerService.findActiveHrLiaisonsByPermission(regionalId, permission);
-    if (!liaisons.some((item) => item.employee_id === employeeId)) throw new ForbiddenException('No tiene permiso de enlace para revisar esta solicitud.');
+  private async assertLiaisonPermission(
+    employeeId: string,
+    regionalId: string,
+    permission: 'vacations' | 'exit_permits' | 'leaves',
+  ) {
+    const liaisons =
+      await this.regionalManagerService.findActiveHrLiaisonsByPermission(
+        regionalId,
+        permission,
+      );
+    if (!liaisons.some((item) => item.employee_id === employeeId))
+      throw new ForbiddenException(
+        'No tiene permiso de enlace para revisar esta solicitud.',
+      );
   }
 
   private employeeName(employee?: Employee | null) {
-    return [employee?.firstName, employee?.middleName, employee?.lastName, employee?.secondLastName].filter(Boolean).join(' ') || 'Empleado';
+    return (
+      [
+        employee?.firstName,
+        employee?.middleName,
+        employee?.lastName,
+        employee?.secondLastName,
+      ]
+        .filter(Boolean)
+        .join(' ') || 'Empleado'
+    );
   }
 
-  private applyBossOwnershipFilter(
-    query: any,
-    currentEmployeeId: string,
-  ) {
-    return query.andWhere(
-      'request.boss_employee_id = :currentEmployeeId',
-      { currentEmployeeId },
-    );
+  private applyBossOwnershipFilter(query: any, currentEmployeeId: string) {
+    return query.andWhere('request.boss_employee_id = :currentEmployeeId', {
+      currentEmployeeId,
+    });
   }
 
   async hrReview(
@@ -1148,15 +1232,17 @@ export class VacationRequestService {
   ) {
     const year = Number(String(requestStartDate).slice(0, 4));
     if (!Number.isInteger(year)) {
-      throw new BadRequestException('La fecha inicial de vacaciones no es válida');
+      throw new BadRequestException(
+        'La fecha inicial de vacaciones no es válida',
+      );
     }
 
     // Serializa las aprobaciones del mismo empleado y año para impedir que dos
     // solicitudes simultáneas superen el límite.
-    await manager.query(
-      'SELECT pg_advisory_xact_lock(hashtext($1), $2)',
-      [employeeId, year],
-    );
+    await manager.query('SELECT pg_advisory_xact_lock(hashtext($1), $2)', [
+      employeeId,
+      year,
+    ]);
 
     const yearStart = `${year}-01-01`;
     const nextYearStart = `${year + 1}-01-01`;
@@ -1183,9 +1269,14 @@ export class VacationRequestService {
 
   private localDateInTegucigalpa(): string {
     const parts = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'America/Tegucigalpa', year: 'numeric', month: '2-digit', day: '2-digit',
+      timeZone: 'America/Tegucigalpa',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
     }).formatToParts(new Date());
-    const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    const value = Object.fromEntries(
+      parts.map((part) => [part.type, part.value]),
+    );
     return `${value.year}-${value.month}-${value.day}`;
   }
 
@@ -1195,14 +1286,15 @@ export class VacationRequestService {
     message: string,
     observation?: string,
   ) {
-    const employeeName = [
-      employee?.firstName,
-      employee?.middleName,
-      employee?.lastName,
-      employee?.secondLastName,
-    ]
-      .filter(Boolean)
-      .join(' ') || 'Empleado';
+    const employeeName =
+      [
+        employee?.firstName,
+        employee?.middleName,
+        employee?.lastName,
+        employee?.secondLastName,
+      ]
+        .filter(Boolean)
+        .join(' ') || 'Empleado';
 
     await sendRequestNotification(
       employee?.email,

@@ -507,13 +507,19 @@ export class EmployeesService {
       })[0];
     const directBoss =
       currentRecord?.area?.id && employee.regional_id
-        ? await this.approvalRoutingService
-            .resolveAreaOrMainManager(
-              employee.id,
-              currentRecord.area.id,
-              employee.regional_id,
-            )
-            .catch(() => null)
+        ? await (
+            employee.exit_permit_main_office_flow
+              ? this.approvalRoutingService.resolve(
+                  employee.id,
+                  currentRecord.area.id,
+                  true,
+                )
+              : this.approvalRoutingService.resolveAreaOrMainManager(
+                  employee.id,
+                  currentRecord.area.id,
+                  employee.regional_id,
+                )
+          ).catch(() => null)
         : null;
     const directBossName = directBoss?.employee
       ? [
