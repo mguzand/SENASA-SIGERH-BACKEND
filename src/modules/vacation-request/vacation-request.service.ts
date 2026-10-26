@@ -91,6 +91,17 @@ export class VacationRequestService {
     const sortedDays = [...new Set(dto.days)].sort();
     await this.assertSelectableVacationDays(sortedDays, dto.employee_id);
     const validDays = sortedDays.length;
+    const approval = await this.approvalRoutingService.resolve(
+      dto.employee_id,
+      dto.area_id,
+    );
+    const areaApproval =
+      await this.approvalRoutingService.resolveAreaOrMainManager(
+        dto.employee_id,
+        approval.areaId,
+        approval.regionalId,
+      );
+    const requiresRegionalReview = approval.scope === 'REGIONAL';
 
     const queryRunner = this.dataSource.createQueryRunner();
 
@@ -98,34 +109,53 @@ export class VacationRequestService {
     await queryRunner.startTransaction();
 
     try {
+      const employee = await queryRunner.manager.findOne(Employee, {
+        where: { id: dto.employee_id },
+      });
+      if (!employee) {
+        throw new NotFoundException('Empleado no encontrado');
+      }
+
       const request = queryRunner.manager.create(VacationRequest, {
         employee_id: dto.employee_id,
-        area_id: dto.area_id,
+        area_id: approval.areaId,
+        regional_id: approval.regionalId,
+        approval_scope: approval.scope,
 
         start_date: sortedDays[0],
         end_date: sortedDays[sortedDays.length - 1],
 
         requested_days: validDays,
-        approved_days: validDays,
+        approved_days: 0,
 
         employee_comment: dto.employee_comment ?? null,
 
-        stage: VacationRequestStage.COMPLETED,
-        status: VacationRequestStatus.APPROVED,
+        stage: VacationRequestStage.BOSS_REVIEW,
+        status: VacationRequestStatus.PENDING,
 
-        boss_employee_id: null,
-        boss_status: VacationRequestStatus.APPROVED,
-        boss_observation: 'Solicitud ingresada manualmente por RRHH',
-        boss_reviewed_at: new Date(),
+        boss_employee_id: approval.employeeId,
+        boss_status: VacationRequestStatus.PENDING,
+        boss_observation: null,
+        boss_reviewed_at: null,
+        regional_manager_employee_id: requiresRegionalReview
+          ? approval.employeeId
+          : null,
+        regional_status: requiresRegionalReview ? 'PENDING' : null,
+        regional_observation: null,
+        regional_reviewed_at: null,
+        area_manager_employee_id: areaApproval.employeeId,
 
-        hr_employee_id: hrEmployeeId,
-        hr_status: VacationRequestStatus.APPROVED,
+        hr_employee_id: null,
+        hr_status: VacationRequestStatus.PENDING,
         hr_observation:
-          dto.hr_observation ?? 'Solicitud manual aprobada por RRHH',
-        hr_reviewed_at: new Date(),
+          dto.hr_observation ?? 'Solicitud ingresada manualmente por RR. HH.',
+        hr_reviewed_at: null,
 
-        is_processed: true,
-        processed_at: new Date(),
+        liaison_review_required: false,
+        liaison_status: null,
+        liaison_regional_id: null,
+        is_processed: false,
+        processed_at: null,
 
         is_manual: true,
       });
@@ -141,41 +171,31 @@ export class VacationRequestService {
         queryRunner.manager,
       );
 
-      const periodsConsumed =
-        await this.employeeVacationPeriodService.consumeVacationDaysWithManager(
-          {
-            employee_id: dto.employee_id,
-            requested_days: validDays,
-          },
-          queryRunner.manager,
-        );
-
-      for (const item of periodsConsumed) {
-        await this.vacationRequestDetailService.createWithManager(
-          {
-            vacation_request_id: savedRequest.id,
-            vacation_period_id: item.vacation_period_id,
-            daysUsed: item.days_used,
-          },
-          queryRunner.manager,
-        );
-
-        await this.vacationMovementService.createWithManager(
-          {
-            employeeId: dto.employee_id,
-            vacationPeriodId: item.vacation_period_id,
-            vacationRequestId: savedRequest.id,
-            type: VacationMovementType.REQUEST,
-            days: item.days_used,
-            movementDate: this.formatDate(new Date()),
-            description: 'Solicitud manual de vacaciones registrada por RRHH',
-            createdByUserId: hrEmployeeId,
-          },
-          queryRunner.manager,
-        );
-      }
-
       await queryRunner.commitTransaction();
+
+      const employeeName = this.employeeName(employee);
+      const formattedDays = sortedDays
+        .map((date) => date.split('-').reverse().join('/'))
+        .join(', ');
+      await sendRequestNotification(
+        approval.employee.email,
+        `Nueva solicitud de vacaciones de ${employeeName}`,
+        this.employeeName(approval.employee),
+        'Recursos Humanos registró una solicitud de vacaciones que requiere su revisión.',
+        [
+          `Empleado: ${employeeName}`,
+          `Días solicitados: ${validDays}`,
+          `Fechas: ${formattedDays}`,
+          `Comentario: ${dto.employee_comment || 'Sin comentario'}`,
+        ],
+        `https://sigerh.senasa.gob.hn/private/autorizations/boos/${savedRequest.id}/approved`,
+      );
+      await this.pushNotifications.sendToEmployee(
+        approval.employeeId,
+        'Nueva solicitud de vacaciones',
+        `${employeeName} tiene una solicitud pendiente de revisión.`,
+        `/private/autorizations/boos/${savedRequest.id}/approved`,
+      );
 
       return this.findOne(savedRequest.id);
     } catch (error) {
@@ -573,6 +593,12 @@ export class VacationRequestService {
     await queryRunner.startTransaction();
 
     try {
+      await this.assertAnnualApprovedRequestLimitWithManager(
+        dto.employee_id,
+        sortedDays[0],
+        queryRunner.manager,
+      );
+
       const request = queryRunner.manager.create(VacationRequest, {
         employee_id: dto.employee_id,
         // Persist the area resolved from the current active job record, not the
@@ -1098,12 +1124,14 @@ export class VacationRequestService {
     await queryRunner.startTransaction();
 
     try {
-      await this.assertAnnualApprovedRequestLimitWithManager(
-        request.employee_id,
-        request.start_date,
-        queryRunner.manager,
-        request.id,
-      );
+      if (!request.is_manual) {
+        await this.assertAnnualApprovedRequestLimitWithManager(
+          request.employee_id,
+          request.start_date,
+          queryRunner.manager,
+          request.id,
+        );
+      }
 
       const periodsConsumed =
         await this.employeeVacationPeriodService.consumeVacationDaysWithManager(
