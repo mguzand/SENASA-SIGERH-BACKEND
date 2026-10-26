@@ -599,17 +599,18 @@ export class EmployeeExitPermitsService {
   async create(dto: CreateEmployeeExitPermitDto) {
     const minimumRequestDate = this.minimumRetroactiveDate();
     const endDate = dto.end_date || dto.exit_date;
-    if (
-      dto.exit_date < minimumRequestDate &&
-      !(await this.hasRetroactiveAuthorization(
+    let retroactiveAuthorization: ExitPermitRetroactiveAuthorization | null =
+      null;
+    if (dto.exit_date < minimumRequestDate) {
+      retroactiveAuthorization = await this.findUsableRetroactiveAuthorization(
         dto.employee_id,
         dto.exit_date,
-        endDate,
-      ))
-    ) {
-      throw new BadRequestException(
-        'Los pases de salida solo pueden solicitarse hasta 10 días calendario hacia atrás, salvo autorización previa de RR. HH.',
       );
+      if (!retroactiveAuthorization) {
+        throw new BadRequestException(
+          'Los pases de salida solo pueden solicitarse hasta 10 días calendario hacia atrás, salvo autorización previa de RR. HH.',
+        );
+      }
     }
     const approval = await this.approvalRoutingService.resolve(
       dto.employee_id,
@@ -767,6 +768,12 @@ export class EmployeeExitPermitsService {
     });
 
     const savedPermit = await this.exitPermitRepository.save(exitPermit);
+    if (retroactiveAuthorization) {
+      retroactiveAuthorization.isActive = false;
+      await this.retroactiveAuthorizationRepository.save(
+        retroactiveAuthorization,
+      );
+    }
     if (dto.base64FileFoto) {
       const extension =
         supportMimeType === 'application/pdf'
@@ -917,18 +924,22 @@ export class EmployeeExitPermitsService {
     };
   }
 
-  private async hasRetroactiveAuthorization(
+  private async findUsableRetroactiveAuthorization(
     employeeId: string,
-    startDate: string,
-    endDate: string,
+    requestedStartDate: string,
   ) {
     return this.retroactiveAuthorizationRepository
       .createQueryBuilder('authorization')
       .where('authorization.employee_id = :employeeId', { employeeId })
       .andWhere('authorization.is_active = true')
-      .andWhere('authorization.start_date <= :startDate', { startDate })
-      .andWhere('authorization.end_date >= :endDate', { endDate })
-      .getExists();
+      .andWhere('authorization.start_date <= :requestedStartDate', {
+        requestedStartDate,
+      })
+      .andWhere('authorization.end_date >= :requestedStartDate', {
+        requestedStartDate,
+      })
+      .orderBy('authorization.created_at', 'DESC')
+      .getOne();
   }
 
   private classifyPersonalPermit(
