@@ -4,7 +4,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
+import { randomUUID } from 'crypto';
 import { Employee } from '../employees/entities/employee.entity';
 import { Regional } from '../regional/entities/regional.entity';
 import { CreateRegionalManagerDto } from './dto/create-regional-manager.dto';
@@ -15,6 +16,8 @@ import { Components } from '../components/entities/components.entity';
 import { ConfigService } from '@nestjs/config';
 import { User } from '../users/entities/user.entity';
 import { RolUser } from '../rol-user/entities/rol-user.entity';
+import { StorageService } from 'src/common/services/storage.service';
+import { UpdateRegionalManagerSignatureDto } from './dto/update-regional-manager-signature.dto';
 
 @Injectable()
 export class RegionalManagerService {
@@ -28,6 +31,7 @@ export class RegionalManagerService {
     @InjectRepository(Components)
     private readonly componentsRepository: Repository<Components>,
     private readonly configService: ConfigService,
+    private readonly storageService: StorageService,
   ) {}
 
   async ensureHrLiaisonPermissionComponent() {
@@ -75,6 +79,7 @@ export class RegionalManagerService {
         .filter(Boolean)
         .join(' '),
       employeeEmail: record.employee?.email || null,
+      hasSignature: Boolean(record.signature_path),
       createdAt: record.created_at || null,
     }));
   }
@@ -195,6 +200,38 @@ export class RegionalManagerService {
     });
   }
 
+  async getAttendanceReportSignatories(regionalId: string) {
+    const [manager, liaisons] = await Promise.all([
+      this.regionalManagerRepository.findOne({
+        where: {
+          regional_id: regionalId,
+          is_active: true,
+          role: RegionalManagerRole.REGIONAL_MANAGER,
+        },
+        relations: { employee: true },
+        order: { created_at: 'DESC' },
+      }),
+      this.regionalManagerRepository.find({
+        where: {
+          regional_id: regionalId,
+          is_active: true,
+          role: RegionalManagerRole.HR_LIAISON,
+        },
+        relations: { employee: true },
+        order: { created_at: 'DESC' },
+      }),
+    ]);
+    const liaison = liaisons.find((item) => item.signature_path) || liaisons[0] || null;
+    return [
+      manager ? this.mapAttendanceSignatory(manager, 'JEFE REGIONAL') : null,
+      liaison ? this.mapAttendanceSignatory(liaison, 'ENLACE DE RR. HH. REGIONAL') : null,
+    ].filter(Boolean) as Array<{
+      name: string;
+      title: string;
+      signaturePath: string | null;
+    }>;
+  }
+
   findRegionalIdsByEmployee(employeeId: string) {
     return this.regionalManagerRepository
       .find({
@@ -250,6 +287,51 @@ export class RegionalManagerService {
       where: { id: liaison.id },
       relations: { employee: true, regional: true },
     });
+  }
+
+  async updateSignature(id: string, dto: UpdateRegionalManagerSignatureDto) {
+    const record = await this.regionalManagerRepository.findOne({
+      where: {
+        id,
+        is_active: true,
+        role: In([
+          RegionalManagerRole.REGIONAL_MANAGER,
+          RegionalManagerRole.HR_LIAISON,
+        ]),
+      },
+    });
+    if (!record)
+      throw new NotFoundException('Jefe regional o enlace de RR. HH. no encontrado.');
+
+    const match = dto.signature_base64.match(/^data:(image\/(?:png|jpeg|webp));base64,(.+)$/s);
+    if (!match || match[1] !== dto.mime_type)
+      throw new BadRequestException('La firma debe ser una imagen PNG, JPG o WebP válida.');
+    const size = Buffer.from(match[2], 'base64').length;
+    if (!size || size > 3 * 1024 * 1024)
+      throw new BadRequestException('La firma no puede superar los 3 MB.');
+
+    const extension = dto.mime_type === 'image/jpeg' ? 'jpg' : dto.mime_type.split('/')[1];
+    const previousPath = record.signature_path;
+    record.signature_path = this.storageService.saveBase64File(
+      dto.signature_base64,
+      'regional-signatures',
+      `${record.id}-${randomUUID()}.${extension}`,
+    );
+    record.signature_mime_type = dto.mime_type;
+    record.signature_original_name = dto.original_name.trim();
+    await this.regionalManagerRepository.save(record);
+    if (previousPath) this.storageService.deleteFile(previousPath);
+    return { id: record.id, hasSignature: true };
+  }
+
+  async getSignature(id: string) {
+    const record = await this.regionalManagerRepository.findOne({ where: { id } });
+    if (!record?.signature_path)
+      throw new NotFoundException('Esta asignación no tiene una firma registrada.');
+    return {
+      absolutePath: this.storageService.getAbsolutePath(record.signature_path),
+      mimeType: record.signature_mime_type || 'image/png',
+    };
   }
 
   async deactivateHrLiaison(id: string) {
@@ -444,6 +526,7 @@ export class RegionalManagerService {
         .filter(Boolean)
         .join(' '),
       employeeEmail: record.employee?.email || null,
+      hasSignature: Boolean(record.signature_path),
       role: record.role,
       permissions: {
         vacations: record.can_review_vacations,
@@ -451,6 +534,24 @@ export class RegionalManagerService {
         leaves: record.can_review_leaves,
       },
       createdAt: record.created_at || null,
+    };
+  }
+
+  private mapAttendanceSignatory(record: RegionalManager, title: string) {
+    return {
+      name: [
+        record.employee?.firstName,
+        record.employee?.middleName,
+        record.employee?.lastName,
+        record.employee?.secondLastName,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLocaleUpperCase('es-HN'),
+      title,
+      signaturePath: record.signature_path
+        ? this.storageService.getAbsolutePath(record.signature_path)
+        : null,
     };
   }
 }

@@ -7,6 +7,7 @@ import {
   MonthlyAttendanceReport,
 } from '../interfaces/monthly-attendance.interface';
 import { join } from 'path';
+import { existsSync } from 'fs';
 
 type ReportColumn =
   | { kind: 'day'; day: MonthlyAttendanceDay }
@@ -189,86 +190,9 @@ export class MonthlyAttendancePdfReport {
         },
 
         {
-          columns: [
-            {
-              alignment: 'center',
-              stack: [
-                {
-                  image: join(
-                    __dirname,
-                    '../../leave-requests/assets/hr-signature-1.png',
-                  ),
-                  width: 200,
-                  alignment: 'center',
-                  margin: [0, 0, 0, 0],
-                },
-                {
-                  text: 'NOLVIA YOLANDA MARTINEZ HERRERA',
-                  bold: true,
-                  fontSize: 7.5,
-                  alignment: 'center',
-                  margin: [0, -9, 0, 0],
-                },
-                {
-                  text: 'ENCARGADA DE CONVENIOS Y ASISTENCIA NIVEL CENTRAL',
-                  fontSize: 7,
-                  alignment: 'center',
-                },
-              ],
-            },
-            {
-              alignment: 'center',
-              stack: [
-                {
-                  image: join(
-                    __dirname,
-                    '../../leave-requests/assets/hr-signature.png',
-                  ),
-                  width: 200,
-                  alignment: 'center',
-                  margin: [0, 0, 0, 0],
-                },
-                {
-                  text: 'ING. KEVIN ERNESTO MENDOZA LIRA',
-                  bold: true,
-                  fontSize: 7.5,
-                  alignment: 'center',
-                  margin: [0, -9, 0, 0],
-                },
-                {
-                  text: 'DIRECTOR DE RECURSOS HUMANOS Y CAPACITACIÓN DEL SENASA',
-                  fontSize: 7,
-                  alignment: 'center',
-                },
-              ],
-            },
-            {
-              alignment: 'center',
-              stack: [
-                {
-                  image: join(
-                    __dirname,
-                    '../../leave-requests/assets/hr-signature-2.png',
-                  ),
-                  width: 200,
-                  alignment: 'center',
-                  margin: [0, 0, 0, 0],
-                },
-                {
-                  text: 'RAFAEL MAURICIO DERAS PADILLA',
-                  bold: true,
-                  fontSize: 7.5,
-                  alignment: 'center',
-                  margin: [0, -9, 0, 0],
-                },
-                {
-                  text: 'JEFE DEL DEPARTAMENTO COMPENSACIONES Y CONTROL DE PERSONAL',
-                  fontSize: 7,
-                  alignment: 'center',
-                },
-              ],
-            },
-          ],
+          columns: report.regional.isMainOffice
+            ? this.centralSignatureColumns()
+            : this.regionalSignatureColumns(report),
         },
       ],
       styles: {},
@@ -284,6 +208,70 @@ export class MonthlyAttendancePdfReport {
       }
     });
     return columns;
+  }
+
+  private centralSignatureColumns() {
+    return [
+      this.signatureColumn(
+        join(__dirname, '../../leave-requests/assets/hr-signature-1.png'),
+        'NOLVIA YOLANDA MARTINEZ HERRERA',
+        'ENCARGADA DE CONVENIOS Y ASISTENCIA NIVEL CENTRAL',
+        true,
+      ),
+      this.signatureColumn(
+        join(__dirname, '../../leave-requests/assets/hr-signature.png'),
+        'ING. KEVIN ERNESTO MENDOZA LIRA',
+        'DIRECTOR DE RECURSOS HUMANOS Y CAPACITACIÓN DEL SENASA',
+        true,
+      ),
+      this.signatureColumn(
+        join(__dirname, '../../leave-requests/assets/hr-signature-2.png'),
+        'RAFAEL MAURICIO DERAS PADILLA',
+        'JEFE DEL DEPARTAMENTO COMPENSACIONES Y CONTROL DE PERSONAL',
+        true,
+      ),
+    ];
+  }
+
+  private regionalSignatureColumns(report: MonthlyAttendanceReport) {
+    const columns = report.signatories.slice(0, 2).map((signatory) =>
+      this.signatureColumn(
+        signatory.signaturePath,
+        signatory.name,
+        signatory.title,
+        false,
+      ),
+    );
+    while (columns.length < 2) {
+      columns.push({ width: '*', text: '' } as any);
+    }
+    return columns;
+  }
+
+  private signatureColumn(
+    signaturePath: string | null,
+    name: string,
+    title: string,
+    staticAsset: boolean,
+  ) {
+    const hasImage = Boolean(signaturePath) && (staticAsset || existsSync(signaturePath!));
+    return {
+      width: '*',
+      alignment: 'center' as const,
+      stack: [
+        ...(hasImage
+          ? [{ image: signaturePath!, width: 200, alignment: 'center' as const, margin: [0, 0, 0, 0] }]
+          : [{ text: '', margin: [0, 38, 0, 0] }]),
+        {
+          text: name,
+          bold: true,
+          fontSize: 7.5,
+          alignment: 'center' as const,
+          margin: [0, hasImage ? -9 : 0, 0, 0],
+        },
+        { text: title, fontSize: 7, alignment: 'center' as const },
+      ],
+    };
   }
 
   private displayValue(day?: AttendanceDayResult) {

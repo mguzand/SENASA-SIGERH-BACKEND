@@ -46,7 +46,12 @@ export interface AttendanceDayResult {
 }
 export interface MonthlyAttendanceReport {
   period: { month: number; year: number; monthName: string };
-  regional: { id: string | null; name: string };
+  regional: { id: string | null; name: string; isMainOffice: boolean };
+  signatories: Array<{
+    name: string;
+    title: string;
+    signaturePath: string | null;
+  }>;
   days: MonthlyAttendanceDay[];
   employees: Array<{
     id: string;

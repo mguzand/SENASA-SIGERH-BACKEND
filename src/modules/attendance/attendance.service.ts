@@ -17,6 +17,7 @@ import {
 } from '../leave-requests/enums/leave-request.enums';
 import { VacationRequest } from '../vacation-request/entities/vacation-request.entity';
 import { WatchesService } from '../watches/watches.service';
+import { RegionalManagerService } from '../area-manager/regional-manager.service';
 import { MonthlyAttendanceFilterDto } from './dto/monthly-attendance-filter.dto';
 import {
   AttendanceDayResult,
@@ -260,6 +261,7 @@ export class AttendanceService {
     private readonly components: Repository<Components>,
     private readonly configService: ConfigService,
     private readonly watchesService: WatchesService,
+    private readonly regionalManagerService: RegionalManagerService,
   ) {}
 
   async ensurePermissionComponent() {
@@ -391,18 +393,35 @@ export class AttendanceService {
           }),
       );
     }
+    const employeeRegionalIds = [
+      ...new Set(employees.map((employee) => employee.regional_id).filter(Boolean)),
+    ];
+    const effectiveRegionalId =
+      filter.regionalId ||
+      (employeeRegionalIds.length === 1 ? employeeRegionalIds[0] : null);
+    const isMainOffice = effectiveRegionalId
+      ? Boolean(employees[0]?.regional?.is_main_office)
+      : true;
+    const signatories =
+      effectiveRegionalId && !isMainOffice
+        ? await this.regionalManagerService.getAttendanceReportSignatories(
+            effectiveRegionalId,
+          )
+        : [];
     return {
       period: {
         month: filter.month,
         year: filter.year,
         monthName: MONTH_NAMES[filter.month - 1],
       },
-      regional: filter.regionalId
+      regional: effectiveRegionalId
         ? {
-            id: filter.regionalId,
+            id: effectiveRegionalId,
             name: employees[0]?.regional?.name || 'Regional seleccionada',
+            isMainOffice,
           }
-        : { id: null, name: 'Todas las regionales' },
+        : { id: null, name: 'Todas las regionales', isMainOffice: true },
+      signatories,
       days,
       employees: employees.map((employee) => ({
         id: employee.id,

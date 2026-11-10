@@ -41,6 +41,15 @@ export class RegionalManager {
   @Column({ default: false })
   can_review_leaves: boolean;
 
+  @Column({ type: 'text', nullable: true })
+  signature_path: string | null;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  signature_mime_type: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  signature_original_name: string | null;
+
   @ManyToOne(() => Regional)
   @JoinColumn({ name: 'regional_id' })
   regional: Regional;

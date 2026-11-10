@@ -6,7 +6,9 @@ import {
   Patch,
   Post,
   Query,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { AreaManagerService } from './area-manager.service';
 import { CreateAreaManagerDto } from './dto/create-area-manager.dto';
 import { ListAreaManagersDto } from './dto/list-area-managers.dto';
@@ -15,6 +17,7 @@ import { RegionalManagerService } from './regional-manager.service';
 import { CreateRegionalManagerDto } from './dto/create-regional-manager.dto';
 import { UpdateHrLiaisonPermissionsDto } from './dto/update-hr-liaison-permissions.dto';
 import { AssignLeaveFinalApproverDto } from './dto/assign-leave-final-approver.dto';
+import { UpdateRegionalManagerSignatureDto } from './dto/update-regional-manager-signature.dto';
 
 @Controller('area-manager')
 export class AreaManagerController {
@@ -89,5 +92,21 @@ export class AreaManagerController {
   @Get('regional/hr-liaisons/access/:employeeId')
   getRegionalHrLiaisonAccess(@Param('employeeId') employeeId: string) {
     return this.regionalManagerService.getHrLiaisonAccess(employeeId);
+  }
+
+  @Patch('regional/:id/signature')
+  updateRegionalSignature(
+    @Param('id') id: string,
+    @Body() dto: UpdateRegionalManagerSignatureDto,
+  ) {
+    return this.regionalManagerService.updateSignature(id, dto);
+  }
+
+  @Get('regional/:id/signature')
+  async getRegionalSignature(@Param('id') id: string, @Res() response: Response) {
+    const signature = await this.regionalManagerService.getSignature(id);
+    response.type(signature.mimeType);
+    response.setHeader('Cache-Control', 'private, no-store');
+    return response.sendFile(signature.absolutePath);
   }
 }

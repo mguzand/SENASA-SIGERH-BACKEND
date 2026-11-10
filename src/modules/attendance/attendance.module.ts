@@ -14,9 +14,10 @@ import { AttendanceController } from './attendance.controller';
 import { AttendanceService } from './attendance.service';
 import { MonthlyAttendancePdfReport } from './reports/monthly-attendance.report';
 import { MonthlyAttendanceExcelReport } from './reports/monthly-attendance-excel.report';
+import { AreaManagerModule } from '../area-manager/area-manager.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Employee, VacationRequest, EmployeeExitPermit, LeaveRequest, Holiday, GovernmentVacationDay, EmployeeGovernmentVacationExclusion, Components]), WatchesModule, CommonModule],
+  imports: [TypeOrmModule.forFeature([Employee, VacationRequest, EmployeeExitPermit, LeaveRequest, Holiday, GovernmentVacationDay, EmployeeGovernmentVacationExclusion, Components]), WatchesModule, CommonModule, AreaManagerModule],
   controllers: [AttendanceController], providers: [AttendanceService, MonthlyAttendancePdfReport, MonthlyAttendanceExcelReport],
 })
 export class AttendanceModule implements OnModuleInit {
