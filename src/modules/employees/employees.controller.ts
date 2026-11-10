@@ -39,6 +39,24 @@ export class EmployeesController {
     });
   }
 
+  @Get(':id/requests')
+  findEmployeeRequests(
+    @Param('id') id: string,
+    @Query('type') type?: string,
+    @Query('status') status?: string,
+    @Query('year') year?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.employeesService.findEmployeeRequests(id, {
+      type,
+      status,
+      year,
+      page,
+      limit,
+    });
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.employeesService.findOne(id);

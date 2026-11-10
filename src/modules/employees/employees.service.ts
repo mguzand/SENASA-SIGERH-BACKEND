@@ -51,6 +51,14 @@ interface FindAllEmployeesParams {
   limit?: string;
 }
 
+interface FindEmployeeRequestsParams {
+  type?: string;
+  status?: string;
+  year?: string;
+  page?: string;
+  limit?: string;
+}
+
 @Injectable()
 export class EmployeesService {
   constructor(
@@ -82,6 +90,144 @@ export class EmployeesService {
       dto.password,
       dto.mustChangePassword !== false,
     );
+  }
+
+  async findEmployeeRequests(
+    employeeId: string,
+    params: FindEmployeeRequestsParams = {},
+  ) {
+    const employeeExists = await this._employee.exist({
+      where: { id: employeeId },
+    });
+    if (!employeeExists) throw new NotFoundException('Empleado no encontrado.');
+
+    const allowedTypes = ['exit-permit', 'vacation', 'leave', 'certificate'];
+    const requestedType = String(params.type || 'all').toLowerCase();
+    const type = allowedTypes.includes(requestedType) ? requestedType : 'all';
+    const status = String(params.status || 'all').trim().toUpperCase();
+    const parsedYear = Number(params.year);
+    const year = Number.isInteger(parsedYear) && parsedYear >= 2000 && parsedYear <= 2100
+      ? parsedYear
+      : null;
+    const page = Math.max(1, Number(params.page) || 1);
+    const limit = Math.min(50, Math.max(5, Number(params.limit) || 10));
+    const offset = (page - 1) * limit;
+
+    const unionSql = `
+      SELECT permit.id,
+             'exit-permit'::text AS request_type,
+             permit.permit_type::text AS subtype,
+             permit.status::text AS status,
+             permit.stage::text AS stage,
+             permit.exit_date::date AS start_date,
+             COALESCE(permit.end_date, permit.exit_date)::date AS end_date,
+             permit.created_at,
+             permit.description::text AS description,
+             NULL::text AS request_number,
+             NULL::numeric AS amount
+        FROM employee_exit_permits permit
+       WHERE permit.employee_id = $1
+      UNION ALL
+      SELECT vacation.id,
+             'vacation'::text,
+             'VACATION'::text,
+             vacation.status::text,
+             vacation.stage::text,
+             vacation.start_date::date,
+             vacation.end_date::date,
+             vacation.created_at,
+             vacation.employee_comment::text,
+             NULL::text,
+             vacation.requested_days::numeric
+        FROM vacation_requests vacation
+       WHERE vacation.employee_id = $1
+      UNION ALL
+      SELECT leave_request.id,
+             'leave'::text,
+             leave_request.reason_type::text,
+             leave_request.status::text,
+             leave_request.stage::text,
+             leave_request.start_date::date,
+             leave_request.end_date::date,
+             leave_request.created_at,
+             leave_request.reason::text,
+             leave_request.request_number::text,
+             leave_request.business_days::numeric
+        FROM leave_requests leave_request
+       WHERE leave_request.employee_id = $1
+      UNION ALL
+      SELECT certificate.id,
+             'certificate'::text,
+             certificate.type::text,
+             certificate.status::text,
+             certificate.status::text,
+             certificate.created_at::date,
+             certificate.created_at::date,
+             certificate.created_at,
+             certificate.observation::text,
+             certificate.document_number::text,
+             NULL::numeric
+        FROM employment_certificate_requests certificate
+       WHERE certificate.employee_id = $1
+    `;
+    const filters: string[] = [];
+    const values: unknown[] = [employeeId];
+    if (type !== 'all') {
+      values.push(type);
+      filters.push(`request_type = $${values.length}`);
+    }
+    if (status !== 'ALL') {
+      values.push(status);
+      filters.push(`UPPER(status) = $${values.length}`);
+    }
+    if (year !== null) {
+      values.push(year);
+      filters.push(`EXTRACT(YEAR FROM start_date)::int = $${values.length}`);
+    }
+    const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+
+    const [countRow] = await this.dataSource.query(
+      `WITH requests AS (${unionSql}) SELECT COUNT(*)::int AS total FROM requests ${where}`,
+      values,
+    );
+    const dataValues = [...values, limit, offset];
+    const rows = await this.dataSource.query(
+      `WITH requests AS (${unionSql})
+       SELECT id, request_type AS "requestType", subtype, status, stage,
+              start_date AS "startDate", end_date AS "endDate", created_at AS "createdAt",
+              description, request_number AS "requestNumber", amount
+         FROM requests
+         ${where}
+        ORDER BY created_at DESC, id DESC
+        LIMIT $${dataValues.length - 1} OFFSET $${dataValues.length}`,
+      dataValues,
+    );
+
+    const currentYear = new Date().getFullYear();
+    const [summary] = await this.dataSource.query(
+      `WITH requests AS (${unionSql})
+       SELECT COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE request_type = 'exit-permit')::int AS "exitPermits",
+              COUNT(*) FILTER (WHERE request_type = 'vacation')::int AS vacations,
+              COUNT(*) FILTER (WHERE request_type = 'leave')::int AS leaves,
+              COUNT(*) FILTER (WHERE request_type = 'certificate')::int AS certificates,
+              COUNT(*) FILTER (
+                WHERE request_type = 'vacation'
+                  AND EXTRACT(YEAR FROM start_date)::int = $2
+              )::int AS "vacationsCurrentYear"
+         FROM requests`,
+      [employeeId, currentYear],
+    );
+
+    const total = Number(countRow?.total || 0);
+    return {
+      data: rows.map((row: any) => ({
+        ...row,
+        amount: row.amount === null ? null : Number(row.amount),
+      })),
+      meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      summary: { ...summary, currentYear },
+    };
   }
 
   async initializeBiometricIdSequence() {
