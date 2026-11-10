@@ -328,8 +328,29 @@ export class EmploymentCertificateRequestsService {
     request.generatedByEmployeeId = request.generatedByEmployeeId || processorEmployeeId;
     await this.requestRepository.save(request);
 
+    const isComplementaryPayroll = (receipt: EmployeePaymentReceipt) =>
+      `${receipt.payrollClass || ''} ${receipt.payrollType || ''}`
+        .toLocaleUpperCase('es-HN')
+        .includes('COMPLEMENT');
+    // Imports can contain the same ordinary payroll more than once. Use only
+    // the newest ordinary receipt and add the genuinely complementary ones.
+    const regularPayroll = payrollReceipts.find(
+      (receipt) => !isComplementaryPayroll(receipt),
+    );
+    const complementaryPayrolls = payrollReceipts.filter(isComplementaryPayroll);
+    const consolidatedPayrolls = [
+      ...(regularPayroll ? [regularPayroll] : []),
+      ...complementaryPayrolls,
+    ].filter(
+      (receipt, index, receipts) =>
+        receipts.findIndex((candidate) => candidate.id === receipt.id) === index,
+    );
+    const effectivePayrolls = consolidatedPayrolls.length
+      ? consolidatedPayrolls
+      : payrollReceipts.slice(0, 1);
+
     const deductionGroups = new Map<string, { description: string; amount: number }>();
-    payrollReceipts
+    effectivePayrolls
       .flatMap((receipt) => receipt.items || [])
       .filter((item: any) =>
         [PayrollItemType.DEDUCTION, PayrollItemType.WITHHOLDING].includes(item.itemType),
@@ -344,12 +365,6 @@ export class EmploymentCertificateRequestsService {
         });
       });
     const deductions = [...deductionGroups.values()];
-    const regularPayroll = payrollReceipts.find(
-      (receipt) =>
-        !`${receipt.payrollClass || ''} ${receipt.payrollType || ''}`
-          .toLocaleUpperCase('es-HN')
-          .includes('COMPLEMENT'),
-    );
     const salaryPayroll = regularPayroll || payrollData;
     const grossSalary = salaryPayroll
       ? Number(salaryPayroll.integralSalary || salaryPayroll.ordinarySalary || activeJob?.salary || 0)
@@ -358,7 +373,7 @@ export class EmploymentCertificateRequestsService {
       (total, deduction) => total + Number(deduction.amount || 0),
       0,
     );
-    const consolidatedNetSalary = payrollReceipts.reduce(
+    const consolidatedNetSalary = effectivePayrolls.reduce(
       (total, receipt) => total + Number(receipt.netSalary || 0),
       0,
     );
