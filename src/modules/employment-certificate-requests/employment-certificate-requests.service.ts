@@ -348,9 +348,14 @@ export class EmploymentCertificateRequestsService {
     const effectivePayrolls = consolidatedPayrolls.length
       ? consolidatedPayrolls
       : payrollReceipts.slice(0, 1);
+    const deductionPayrolls = regularPayroll
+      ? [regularPayroll]
+      : effectivePayrolls.slice(0, 1);
 
     const deductionGroups = new Map<string, { description: string; amount: number }>();
-    effectivePayrolls
+    // Complementary payrolls contribute only to the consolidated net salary.
+    // Their concepts must not duplicate the ordinary monthly deductions.
+    deductionPayrolls
       .flatMap((receipt) => receipt.items || [])
       .filter((item: any) =>
         [PayrollItemType.DEDUCTION, PayrollItemType.WITHHOLDING].includes(item.itemType),
