@@ -269,6 +269,7 @@ export class EmploymentCertificateRequestsService {
       request.documentNumber = `CL-${now.getFullYear()}-${request.id.slice(0, 6).toUpperCase()}`;
     }
     let payrollData: any = null;
+    let payrollReceipts: EmployeePaymentReceipt[] = [];
     if (
       [
         EmploymentCertificateType.WITH_DEDUCTIONS,
@@ -281,6 +282,24 @@ export class EmploymentCertificateRequestsService {
         relations: { items: true },
         order: { year: 'DESC', createdAt: 'DESC' },
       });
+      if (
+        payrollData &&
+        request.type === EmploymentCertificateType.WITH_DEDUCTIONS &&
+        payrollData.month &&
+        payrollData.year
+      ) {
+        payrollReceipts = await this.receiptRepository.find({
+          where: {
+            employeeId: request.employeeId,
+            month: payrollData.month,
+            year: payrollData.year,
+          },
+          relations: { items: true },
+          order: { createdAt: 'DESC' },
+        });
+      } else if (payrollData) {
+        payrollReceipts = [payrollData];
+      }
       if (
         !payrollData &&
         request.type === EmploymentCertificateType.WITH_DEDUCTIONS
@@ -295,19 +314,43 @@ export class EmploymentCertificateRequestsService {
     request.generatedByEmployeeId = request.generatedByEmployeeId || processorEmployeeId;
     await this.requestRepository.save(request);
 
-    const deductions = payrollData?.items
-      ?.filter((item: any) =>
+    const deductionGroups = new Map<string, { description: string; amount: number }>();
+    payrollReceipts
+      .flatMap((receipt) => receipt.items || [])
+      .filter((item: any) =>
         [PayrollItemType.DEDUCTION, PayrollItemType.WITHHOLDING].includes(item.itemType),
       )
-      .map((item: any) => ({ description: item.description, amount: Number(item.amount || 0) })) || [];
-    const grossSalary = payrollData
-      ? Number(payrollData.integralSalary || payrollData.ordinarySalary || activeJob?.salary || 0)
+      .forEach((item: any) => {
+        const description = String(item.description || 'Deducción').trim();
+        const key = `${String(item.code || '').trim().toUpperCase()}|${description.toUpperCase()}`;
+        const current = deductionGroups.get(key);
+        deductionGroups.set(key, {
+          description,
+          amount: Number(current?.amount || 0) + Number(item.amount || 0),
+        });
+      });
+    const deductions = [...deductionGroups.values()];
+    const regularPayroll = payrollReceipts.find(
+      (receipt) =>
+        !`${receipt.payrollClass || ''} ${receipt.payrollType || ''}`
+          .toLocaleUpperCase('es-HN')
+          .includes('COMPLEMENT'),
+    );
+    const salaryPayroll = regularPayroll || payrollData;
+    const grossSalary = salaryPayroll
+      ? Number(salaryPayroll.integralSalary || salaryPayroll.ordinarySalary || activeJob?.salary || 0)
       : Number(activeJob?.salary || 0);
     const totalDeductions = deductions.reduce(
       (total, deduction) => total + Number(deduction.amount || 0),
       0,
     );
-    const netSalary = Math.max(grossSalary - totalDeductions, 0);
+    const consolidatedNetSalary = payrollReceipts.reduce(
+      (total, receipt) => total + Number(receipt.netSalary || 0),
+      0,
+    );
+    const netSalary = payrollData
+      ? consolidatedNetSalary
+      : Math.max(grossSalary - totalDeductions, 0);
     const modality =
       activeJob?.modality?.name?.trim().toLocaleLowerCase('es') === 'contrato'
         ? 'Contrato'

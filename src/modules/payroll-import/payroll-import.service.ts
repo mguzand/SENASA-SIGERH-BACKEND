@@ -971,15 +971,21 @@ export class PayrollImportService {
   private formatDateOnly(value?: Date | string | null) {
     if (!value) return null;
 
-    const date = value instanceof Date ? value : new Date(value);
-    if (Number.isNaN(date.getTime())) return null;
+    // PostgreSQL DATE represents a calendar day, not an instant in time. Avoid
+    // converting it to the server timezone because midnight UTC would become
+    // the previous day in Honduras.
+    const calendarDate =
+      typeof value === 'string'
+        ? value.match(/^(\d{4})-(\d{2})-(\d{2})/)
+        : [
+            '',
+            String(value.getUTCFullYear()),
+            String(value.getUTCMonth() + 1).padStart(2, '0'),
+            String(value.getUTCDate()).padStart(2, '0'),
+          ];
+    if (!calendarDate) return null;
 
-    return date.toLocaleDateString('es-HN', {
-      timeZone: 'America/Tegucigalpa',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    });
+    return `${calendarDate[3]}/${calendarDate[2]}/${calendarDate[1]}`;
   }
 
   private formatVoucherNumber(
