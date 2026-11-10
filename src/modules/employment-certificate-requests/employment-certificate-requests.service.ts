@@ -277,26 +277,40 @@ export class EmploymentCertificateRequestsService {
         EmploymentCertificateType.EMBASSY,
       ].includes(request.type)
     ) {
-      payrollData = await this.receiptRepository.findOne({
-        where: { employeeId: request.employeeId },
-        relations: { items: true },
-        order: { year: 'DESC', createdAt: 'DESC' },
-      });
+      payrollData = await this.receiptRepository
+        .createQueryBuilder('receipt')
+        .leftJoinAndSelect('receipt.items', 'item')
+        .where('receipt.employeeId = :employeeId', {
+          employeeId: request.employeeId,
+        })
+        .orderBy(
+          'COALESCE(receipt.year, EXTRACT(YEAR FROM receipt.created_at)::int)',
+          'DESC',
+        )
+        .addOrderBy('receipt.createdAt', 'DESC')
+        .getOne();
       if (
         payrollData &&
         request.type === EmploymentCertificateType.WITH_DEDUCTIONS &&
-        payrollData.month &&
-        payrollData.year
+        payrollData.month
       ) {
-        payrollReceipts = await this.receiptRepository.find({
-          where: {
+        const effectivePayrollYear =
+          Number(payrollData.year) || payrollData.createdAt.getFullYear();
+        payrollReceipts = await this.receiptRepository
+          .createQueryBuilder('receipt')
+          .leftJoinAndSelect('receipt.items', 'item')
+          .where('receipt.employeeId = :employeeId', {
             employeeId: request.employeeId,
+          })
+          .andWhere('UPPER(BTRIM(receipt.month)) = UPPER(BTRIM(:month))', {
             month: payrollData.month,
-            year: payrollData.year,
-          },
-          relations: { items: true },
-          order: { createdAt: 'DESC' },
-        });
+          })
+          .andWhere(
+            'COALESCE(receipt.year, EXTRACT(YEAR FROM receipt.created_at)::int) = :year',
+            { year: effectivePayrollYear },
+          )
+          .orderBy('receipt.createdAt', 'DESC')
+          .getMany();
       } else if (payrollData) {
         payrollReceipts = [payrollData];
       }
