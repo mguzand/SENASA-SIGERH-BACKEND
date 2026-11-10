@@ -20,6 +20,21 @@ export function withDeductionsContent(data: any): Content[] {
           { text: money(0), fontSize: 8, alignment: 'right' },
         ],
       ];
+  const complementaryPayments = (data.complementaryPayments || []).map((item: any) => [
+    {
+      text: item.description,
+      bold: true,
+      fontSize: 8,
+      fillColor: '#f0f9ff',
+    },
+    {
+      text: money(item.amount),
+      bold: true,
+      fontSize: 8,
+      alignment: 'right',
+      fillColor: '#f0f9ff',
+    },
+  ]);
 
   return [
     introductoryParagraph(data),
@@ -70,6 +85,7 @@ export function withDeductionsContent(data: any): Content[] {
               alignment: 'right',
             },
           ],
+          ...complementaryPayments,
           [
             {
               text: 'SALARIO NETO',

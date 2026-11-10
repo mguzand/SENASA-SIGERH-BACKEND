@@ -378,6 +378,21 @@ export class EmploymentCertificateRequestsService {
       (total, deduction) => total + Number(deduction.amount || 0),
       0,
     );
+    const complementaryPaymentGroups = new Map<string, number>();
+    complementaryPayrolls.forEach((receipt) => {
+      const payrollName = [receipt.payrollClass, receipt.payrollType]
+        .filter(Boolean)
+        .join(' ')
+        .trim();
+      const label = `PLANILLA ${payrollName || 'COMPLEMENTARIA'}`.toLocaleUpperCase('es-HN');
+      complementaryPaymentGroups.set(
+        label,
+        Number(complementaryPaymentGroups.get(label) || 0) + Number(receipt.netSalary || 0),
+      );
+    });
+    const complementaryPayments = [...complementaryPaymentGroups.entries()].map(
+      ([description, amount]) => ({ description, amount }),
+    );
     const consolidatedNetSalary = effectivePayrolls.reduce(
       (total, receipt) => total + Number(receipt.netSalary || 0),
       0,
@@ -429,6 +444,7 @@ export class EmploymentCertificateRequestsService {
       amountInWords: numberToLempirasWords(grossSalary),
       deductions,
       totalDeductions,
+      complementaryPayments,
       netSalary,
       employerNumber: '101201607261',
       issueDate: this.formatIssueDate(now),
