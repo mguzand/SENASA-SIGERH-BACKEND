@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -19,6 +19,7 @@ import { VacationRequest } from '../vacation-request/entities/vacation-request.e
 import { WatchesService } from '../watches/watches.service';
 import { RegionalManagerService } from '../area-manager/regional-manager.service';
 import { MonthlyAttendanceFilterDto } from './dto/monthly-attendance-filter.dto';
+import { CreateManualAttendanceDto } from './dto/create-manual-attendance.dto';
 import {
   AttendanceDayResult,
   AttendanceIncident,
@@ -297,6 +298,7 @@ export class AttendanceService {
         'employee.lastName',
         'employee.secondLastName',
         'employee.regional_id',
+        'employee.biometric_id',
       ])
       .where('employee.status = :status', { status: 'ACTIVE' })
       .orderBy('employee.firstName', 'ASC')
@@ -307,7 +309,71 @@ export class AttendanceService {
       id: employee.id,
       name: this.fullName(employee),
       regionalId: employee.regional_id,
+      biometricId: employee.biometric_id || null,
     }));
+  }
+
+  async createManualCheckin(dto: CreateManualAttendanceDto, userId?: string | number) {
+    await this.assertManualCheckinPermission(userId);
+    const employee = await this.employees.findOne({
+      where: { id: dto.employeeId },
+      select: {
+        id: true,
+        firstName: true,
+        middleName: true,
+        lastName: true,
+        secondLastName: true,
+        status: true,
+        regional_id: true,
+        biometric_id: true,
+      },
+    });
+    if (!employee || employee.status !== 'ACTIVE')
+      throw new NotFoundException('El empleado no está activo o no existe.');
+    if (employee.regional_id !== dto.regionalId)
+      throw new BadRequestException('El empleado no pertenece a la regional seleccionada.');
+    if (!employee.biometric_id)
+      throw new BadRequestException('El empleado no tiene ID biométrico configurado.');
+
+    const result = await this.watchesService.createManualCheckin(
+      employee.biometric_id,
+      dto.date,
+      dto.time,
+    );
+    return {
+      ...result,
+      employeeId: employee.id,
+      employeeName: this.fullName(employee),
+      biometricId: employee.biometric_id,
+    };
+  }
+
+  private async assertManualCheckinPermission(userId?: string | number) {
+    if (userId === undefined || userId === null)
+      throw new ForbiddenException('Debe iniciar sesión para registrar marcaciones.');
+    const permission = await this.components.manager.query(
+      `
+      SELECT 1
+      FROM roles_user permission
+      INNER JOIN components component
+        ON component.components_id = permission.component_id
+      LEFT JOIN system_roles system_role
+        ON system_role.id = permission.system_role_id
+      INNER JOIN users app_user
+        ON app_user.id::text = permission.user_id::text
+      WHERE permission.user_id::text = $1
+        AND app_user.is_active = true
+        AND component.visible = true
+        AND LOWER(component.description) = LOWER('Reporte de asistencia')
+        AND LOWER(COALESCE(system_role.code, permission.rol)) IN ('admin', 'ingreso')
+      LIMIT 1
+      `,
+      [String(userId)],
+    );
+    if (!permission.length)
+      throw new ForbiddenException(
+        'Solo usuarios con acceso total o permiso de ingreso pueden registrar marcaciones.',
+      );
   }
 
   async getMonthlyReport(

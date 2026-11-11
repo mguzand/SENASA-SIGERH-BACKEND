@@ -1,10 +1,11 @@
-import { BadRequestException, Controller, Get, Query, Req, Res } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Post, Query, Req, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { AttendanceService } from './attendance.service';
 import { MonthlyAttendanceFilterDto } from './dto/monthly-attendance-filter.dto';
 import { MonthlyAttendancePdfReport } from './reports/monthly-attendance.report';
 import { MonthlyAttendanceExcelReport } from './reports/monthly-attendance-excel.report';
 import { Public } from 'src/common/decorators/public.decorator';
+import { CreateManualAttendanceDto } from './dto/create-manual-attendance.dto';
 
 @Controller('attendance')
 export class AttendanceController {
@@ -20,6 +21,11 @@ export class AttendanceController {
     @Query() query: MonthlyAttendanceFilterDto,
   ) {
     return this.service.getMonthlyReport(query);
+  }
+
+  @Post('manual-checkin')
+  createManualCheckin(@Body() dto: CreateManualAttendanceDto, @Req() req: any) {
+    return this.service.createManualCheckin(dto, req.user?.id);
   }
 
   @Get('my-month')
