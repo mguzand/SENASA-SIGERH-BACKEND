@@ -306,9 +306,14 @@ export class RegionalManagerService {
     const match = dto.signature_base64.match(/^data:(image\/(?:png|jpeg|webp));base64,(.+)$/s);
     if (!match || match[1] !== dto.mime_type)
       throw new BadRequestException('La firma debe ser una imagen PNG, JPG o WebP válida.');
-    const size = Buffer.from(match[2], 'base64').length;
+    const signatureBuffer = Buffer.from(match[2], 'base64');
+    const size = signatureBuffer.length;
     if (!size || size > 3 * 1024 * 1024)
       throw new BadRequestException('La firma no puede superar los 3 MB.');
+    if (!this.isValidSignatureImage(signatureBuffer, dto.mime_type))
+      throw new BadRequestException(
+        'El contenido del archivo no corresponde a una imagen PNG, JPG o WebP válida.',
+      );
 
     const extension = dto.mime_type === 'image/jpeg' ? 'jpg' : dto.mime_type.split('/')[1];
     const previousPath = record.signature_path;
@@ -322,6 +327,28 @@ export class RegionalManagerService {
     await this.regionalManagerRepository.save(record);
     if (previousPath) this.storageService.deleteFile(previousPath);
     return { id: record.id, hasSignature: true };
+  }
+
+  private isValidSignatureImage(buffer: Buffer, mimeType: string): boolean {
+    if (mimeType === 'image/png') {
+      return (
+        buffer.length >= 8 &&
+        buffer.subarray(0, 8).equals(
+          Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+        )
+      );
+    }
+    if (mimeType === 'image/jpeg') {
+      return buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+    }
+    if (mimeType === 'image/webp') {
+      return (
+        buffer.length >= 12 &&
+        buffer.subarray(0, 4).toString('ascii') === 'RIFF' &&
+        buffer.subarray(8, 12).toString('ascii') === 'WEBP'
+      );
+    }
+    return false;
   }
 
   async getSignature(id: string) {
