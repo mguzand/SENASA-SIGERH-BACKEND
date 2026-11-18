@@ -37,6 +37,7 @@ import { AttendanceModule } from './attendance/attendance.module';
 import { WatchUsersModule } from './watch-users/watch-users.module';
 import { PushNotificationsModule } from './push-notifications/push-notifications.module';
 import { VacationRequestSuspensionModule } from './vacation-request-suspension/vacation-request-suspension.module';
+import { DigitalSignatureRequestsModule } from './digital-signature-requests/digital-signature-requests.module';
 
 @Module({
   imports: [
@@ -78,6 +79,7 @@ import { VacationRequestSuspensionModule } from './vacation-request-suspension/v
     WatchUsersModule,
     PushNotificationsModule,
     VacationRequestSuspensionModule,
+    DigitalSignatureRequestsModule,
   ],
   exports: [],
 })
