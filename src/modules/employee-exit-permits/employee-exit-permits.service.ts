@@ -1212,29 +1212,45 @@ export class EmployeeExitPermitsService {
       ),
     );
     const marks = monthlyMarks.flat();
+    const scheduledEntry = this.timeToMinutes(employee.schedule.startTime);
     const scheduledExit = this.timeToMinutes(employee.schedule.endTime);
     const earnedDays = (marks || [])
       .map((mark: any) => {
-        if (!mark.Hora_Salida) return null;
-        const actualExit = this.timeToMinutes(mark.Hora_Salida);
-        const earnedMinutes = this.calculateCompensatoryMinutes(
-          scheduledExit,
-          actualExit,
-        );
-        // An overtime day qualifies only after reaching two hours, but once it
-        // qualifies the complete excess after the scheduled exit is credited.
+        const actualEntry = mark.Hora_Ingreso
+          ? this.timeToMinutes(mark.Hora_Ingreso)
+          : null;
+        const actualExit = mark.Hora_Salida
+          ? this.timeToMinutes(mark.Hora_Salida)
+          : null;
+        const entryMinutes = actualEntry === null
+          ? 0
+          : this.calculateEarlyCompensatoryMinutes(scheduledEntry, actualEntry);
+        const exitMinutes = actualExit === null
+          ? 0
+          : this.calculateCompensatoryMinutes(scheduledExit, actualExit);
+        const earnedMinutes = entryMinutes + exitMinutes;
+        // Each block (before entry or after exit) must independently reach two
+        // hours. Once it qualifies, the complete excess of that block is credited.
         if (!earnedMinutes) return null;
         return {
           date: this.normalizeWatchDate(mark.Fecha),
+          scheduledEntry: employee.schedule.startTime,
+          actualEntry: mark.Hora_Ingreso || null,
           scheduledExit: employee.schedule.endTime,
-          actualExit: mark.Hora_Salida,
+          actualExit: mark.Hora_Salida || null,
+          entryMinutes,
+          exitMinutes,
           minutes: earnedMinutes,
         };
       })
       .filter(Boolean) as Array<{
       date: string;
+      scheduledEntry: string;
+      actualEntry: string | null;
       scheduledExit: string;
-      actualExit: string;
+      actualExit: string | null;
+      entryMinutes: number;
+      exitMinutes: number;
       minutes: number;
     }>;
 
@@ -1353,6 +1369,14 @@ export class EmployeeExitPermitsService {
   ) {
     const overtime = Math.max(actualExitMinutes - scheduledExitMinutes, 0);
     return overtime >= 120 ? overtime : 0;
+  }
+
+  private calculateEarlyCompensatoryMinutes(
+    scheduledEntryMinutes: number,
+    actualEntryMinutes: number,
+  ) {
+    const earlyTime = Math.max(scheduledEntryMinutes - actualEntryMinutes, 0);
+    return earlyTime >= 120 ? earlyTime : 0;
   }
 
   private normalizeWatchDate(value: unknown) {
