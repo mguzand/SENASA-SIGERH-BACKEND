@@ -11,6 +11,7 @@ export class DigitalSignatureRequest {
   @Column({ name: 'full_name', type: 'varchar', length: 220 }) fullName: string;
   @Column({ type: 'varchar', length: 150 }) email: string;
   @Column({ type: 'varchar', length: 30 }) phone: string;
+  @Column({ name: 'functional_position', type: 'varchar', length: 180, nullable: true }) functionalPosition: string | null;
   @Column({ name: 'identity_front_path', type: 'text' }) identityFrontPath: string;
   @Column({ name: 'identity_front_mime_type', type: 'varchar', length: 80 }) identityFrontMimeType: string;
   @Column({ name: 'identity_back_path', type: 'text' }) identityBackPath: string;

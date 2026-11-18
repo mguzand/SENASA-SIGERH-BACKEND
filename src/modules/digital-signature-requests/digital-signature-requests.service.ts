@@ -20,18 +20,19 @@ export class DigitalSignatureRequestsService {
 
   async lookup(identity: string) {
     if (!/^\d{13}$/.test(identity)) throw new BadRequestException('La identidad debe contener 13 dígitos.');
-    const employee = await this.employees.findOne({ where: { dni: identity, status: 'ACTIVE' } });
+    const employee = await this.findEmployee(identity);
     if (!employee) throw new NotFoundException('No se encontró un empleado activo con esa identidad.');
     return {
       identity: employee.dni,
       fullName: this.fullName(employee),
       email: employee.email || '',
       phone: employee.phone || '',
+      functionalPosition: employee.jobRecords?.[0]?.functionalPosition?.name || null,
     };
   }
 
   async create(dto: CreateDigitalSignatureRequestDto) {
-    const employee = await this.employees.findOne({ where: { dni: dto.identity, status: 'ACTIVE' } });
+    const employee = await this.findEmployee(dto.identity);
     if (!employee) throw new NotFoundException('No se encontró un empleado activo con esa identidad.');
     const files: string[] = [];
     try {
@@ -51,6 +52,7 @@ export class DigitalSignatureRequestsService {
           fullName: this.fullName(employee),
           email: dto.email.trim().toLowerCase(),
           phone: dto.phone.trim(),
+          functionalPosition: employee.jobRecords?.[0]?.functionalPosition?.name || null,
           identityFrontPath: front,
           identityFrontMimeType: dto.identityFrontMimeType,
           identityBackPath: back,
@@ -65,7 +67,7 @@ export class DigitalSignatureRequestsService {
         'Nueva solicitud de firma digital',
         'Equipo de firma digital',
         `${saved.fullName} completó una nueva solicitud de firma digital.`,
-        [`Identidad: ${saved.identity}`, `Correo: ${saved.email}`, `Teléfono: ${saved.phone}`],
+        [`Identidad: ${saved.identity}`, `Puesto funcional: ${saved.functionalPosition || 'No registrado'}`, `Correo: ${saved.email}`, `Teléfono: ${saved.phone}`],
       );
       return { id: saved.id, message: 'Solicitud de firma digital enviada correctamente.' };
     } catch (error) {
@@ -110,6 +112,15 @@ export class DigitalSignatureRequestsService {
   }
   private fullName(employee: Employee) { return [employee.firstName, employee.middleName, employee.lastName, employee.secondLastName].filter(Boolean).join(' '); }
   private serialize(item: DigitalSignatureRequest) {
-    return { id: item.id, identity: item.identity, fullName: item.fullName, email: item.email, phone: item.phone, status: item.status, createdAt: item.createdAt };
+    return { id: item.id, identity: item.identity, fullName: item.fullName, functionalPosition: item.functionalPosition, email: item.email, phone: item.phone, status: item.status, createdAt: item.createdAt };
+  }
+  private findEmployee(identity: string) {
+    return this.employees
+      .createQueryBuilder('employee')
+      .leftJoinAndSelect('employee.jobRecords', 'jobRecord', 'jobRecord.isCurrent = true')
+      .leftJoinAndSelect('jobRecord.functionalPosition', 'functionalPosition')
+      .where('employee.dni = :identity', { identity })
+      .andWhere('employee.status = :status', { status: 'ACTIVE' })
+      .getOne();
   }
 }
